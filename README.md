@@ -17,6 +17,16 @@ Athena 是一个通用 AI Agent Platform Runtime。
 - 当前真相：
   - `docs/当前能力总览.md`
 
+## 协作工作流
+
+为了让多人拉取后按统一流程开发，仓库保留了协作资产：
+
+- `AGENTS.md`
+- `.agents/`
+- `.claude/`
+- `docs/REPO_WORKFLOW_GUIDE.md`
+- `docs/TASK_DELIVERY_GUIDE.md`
+
 ## Athena 现在是什么
 
 Athena 不是通用聊天机器人脚手架，也不只是模型调用封装层。

@@ -1,0 +1,32 @@
+{
+  "name": "athena-local",
+  "interface": {
+    "displayName": "Athena Local Plugins"
+  },
+  "plugins": [
+    {
+      "name": "send-to-claude",
+      "source": {
+        "source": "local",
+        "path": "./plugins/send-to-claude"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "send-to-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/send-to-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
