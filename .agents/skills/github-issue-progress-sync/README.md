@@ -1,11 +1,11 @@
-# gitlab-issue-progress-sync
+# github-issue-progress-sync
 
 ## 作用域
 
-本 skill 用于在 GitLab issue 下同步当前仓的进度评论，覆盖：
+本 skill 用于在 GitHub issue 下同步当前仓的进度评论，覆盖：
 
 - 分支推送远端后
-- MR 创建后
+- PR 创建后
 - 合并完成后
 
 它不负责：
@@ -18,7 +18,7 @@
 
 - `issue-intake`
 - 仓库工作流文档
-- MR 模板
+- PR 模板
 
 共同负责。
 

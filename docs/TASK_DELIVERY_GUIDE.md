@@ -193,8 +193,8 @@
 - 仓库内文档、skill、模板和脚本说明，默认使用仓库内相对路径或逻辑路径，例如：
   - `docs/REPO_WORKFLOW_GUIDE.md`
   - `.agents/skills/issue-intake/SKILL.md`
-  - `.agents/skills/gitlab-issue-create/SKILL.md`
-  - `.agents/skills/gitlab-issue-close/SKILL.md`
+  - `.agents/skills/github-issue-create/SKILL.md`
+  - `.agents/skills/github-issue-close/SKILL.md`
   - `scripts/check_no_absolute_paths.py`
 - 不要在仓库正文中写个人机器绝对路径，例如：
   - `<user-home>/...`
@@ -269,11 +269,11 @@
 
 - 若本轮任务改变了“当前代码已经具备什么”，应同步更新 `docs/当前能力总览.md`。
 - 若任务归属到具体版本或 issue，交付说明中应明确写出对应编号。
-- 若涉及 `git commit` 或 `git push`，必须先确认对应本仓 GitLab issue。
+- 若涉及 `git commit` 或 `git push`，必须先确认对应本仓 GitHub issue。
 - 若任务属于阶段性或部分完成交付，交付前必须明确：
   - 本仓已完成什么
   - 本仓明确不做什么
-  - 是否需要在分支推送、MR 创建、合并完成三个节点回当前 issue 评论同步真实进度
+  - 是否需要在分支推送、PR 创建、合并完成三个节点回当前 issue 评论同步真实进度
 - 若任务新增或修改文档、skill、模板或脚本说明，交付前应执行：
   - `python3 scripts/check_no_absolute_paths.py`
   以确认没有再次引入个人机器绝对路径

@@ -34,7 +34,7 @@
 - 版本目录、issue 归属和开发日志也统一看 `docs/REPO_WORKFLOW_GUIDE.md`。
 - 对版本化的非微小任务，默认进入 `ai-collab-workflow`；由 AI 主动判断 plan、correction、worktree、review、delivery 和 cleanup 阶段，而不是等待开发者逐步指挥。
 - 提交或推送前，必须先执行 `repo-task-delivery` skill 做质量门禁检查。
-- 若要提交或推送，默认应先确认对应的上游 issue 标识；提交说明与 MR 回链规则统一看 `docs/REPO_WORKFLOW_GUIDE.md`。
+- 若要提交或推送，默认应先确认对应的上游 issue 标识；提交说明与 PR 回链规则统一看 `docs/REPO_WORKFLOW_GUIDE.md`。
 - 一笔提交默认只承载一个上游 issue 主语义，提交标题必须准确描述这一次改动，不要用泛化标题覆盖多类内容。
 - 修改 API、SSE 事件、运行时装配、模型接入或 tool 契约时，默认同步检查 `docs/api.md`、`docs/architecture.md`、`docs/implementation.md` 是否需要更新。
 - skill 只保留入口、流程和判断标准；共享正文统一指向 `docs/*`。

@@ -1,23 +1,23 @@
 ---
-name: gitlab-issue-create
-description: Use when the user wants to create, draft, preview, or post a GitLab issue for this repository workflow. Trigger for requests like “新建 issue”, “帮我提 issue”, “create a GitLab issue”, or when work requires opening an issue before planning because it changes feature boundaries, cross-service contracts, schema, local runtime boundaries, version freeze scope, or module-level defects.
+name: github-issue-create
+description: Use when the user wants to create, draft, preview, or post a GitHub issue for this repository workflow. Trigger for requests like “新建 issue”, “帮我提 issue”, “create a GitHub issue”, or when work requires opening an issue before planning because it changes feature boundaries, cross-service contracts, schema, local runtime boundaries, version freeze scope, or module-level defects.
 ---
 
-# GitLab Issue Create
+# GitHub Issue Create
 
-Use this skill when a task needs a new canonical GitLab issue, either as a preview draft or an actual posted issue.
+Use this skill when a task needs a new canonical GitHub issue, either as a preview draft or an actual posted issue.
 
 This skill complements:
 
 - `issue-intake`: read an existing issue before planning or implementation.
-- `gitlab-issue-progress-sync`: sync progress comments after push, MR, or merge milestones.
+- `github-issue-progress-sync`: sync progress comments after push, PR, or merge milestones.
 
 ## Read First
 
 - `docs/REPO_WORKFLOW_GUIDE.md`
 - `docs/TASK_DELIVERY_GUIDE.md`
-- `scripts/create_gitlab_issue.py`
-- Repository issue template: `.gitlab/issue_templates/统一问题.md`
+- `scripts/create_github_issue.py`
+- Repository issue template: `.github/ISSUE_TEMPLATE/统一问题.md`
 
 ## When to create an issue
 
@@ -32,7 +32,7 @@ Create or draft an issue before implementation when the work affects any of thes
 - integration work
 - module-level defects
 
-Do not create issues for tiny local implementation details unless the user explicitly asks. Small same-module bugfixes, tests, styling, or documentation refinements can usually go straight to MR, while still following review and delivery rules.
+Do not create issues for tiny local implementation details unless the user explicitly asks. Small same-module bugfixes, tests, styling, or documentation refinements can usually go straight to PR, while still following review and delivery rules.
 
 ## Required intake fields
 
@@ -70,14 +70,14 @@ Maintainer triage fields are optional at issue creation and should not be invent
 
 1. Decide whether a new issue is actually required by the repository workflow.
 2. Confirm the target project:
-   - use a full GitLab project URL, or
-   - use `group/project` with `GITLAB_BASE_URL` set.
+   - use a full GitHub project URL, or
+   - use `owner/repo` with `GITHUB_BASE_URL` set.
 3. Build a draft using the unified issue body shape.
 4. Preview first unless the user explicitly asked to post.
 5. If posting:
-   - prefer `glab` when local GitLab auth exists;
-   - otherwise use `GITLAB_TOKEN` or `GITLAB_PRIVATE_TOKEN`;
-   - never invent a GitLab URL or project path.
+   - prefer `gh` when local GitHub auth exists;
+   - otherwise use `GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_PAT`;
+   - never invent a GitHub URL or project path.
 6. Return the issue URL or the previewed title/body.
 
 ## Script usage
@@ -85,8 +85,8 @@ Maintainer triage fields are optional at issue creation and should not be invent
 Preview a draft:
 
 ```bash
-python3 .agents/skills/gitlab-issue-create/scripts/create_gitlab_issue.py \
-  --project "example-org/athena" \
+python3 .agents/skills/github-issue-create/scripts/create_github_issue.py \
+  --project "Super-Sky/Athena" \
   --title "Skill 管理支持完整包编辑" \
   --issue-type "需要增强现有能力" \
   --background "控制台需要调试 uploaded skill 和 builtin skill 覆盖关系" \
@@ -100,8 +100,8 @@ python3 .agents/skills/gitlab-issue-create/scripts/create_gitlab_issue.py \
 Post the issue:
 
 ```bash
-python3 .agents/skills/gitlab-issue-create/scripts/create_gitlab_issue.py \
-  --project-url "https://git.example.com/example-org/athena" \
+python3 .agents/skills/github-issue-create/scripts/create_github_issue.py \
+  --project-url "https://github.com/Super-Sky/Athena" \
   --title "Skill 管理支持完整包编辑" \
   --issue-type "需要增强现有能力" \
   --background "控制台需要调试 uploaded skill 和 builtin skill 覆盖关系" \
@@ -134,5 +134,5 @@ When posting, return:
 ## Notes
 
 - This skill creates the issue; it does not replace `issue-intake` for reading the issue before implementation.
-- If the issue is posted, future branch / commit / MR work should use that canonical issue reference.
-- If the work is only a local fix and does not require a new issue, say so and recommend continuing with the existing issue or direct MR path.
+- If the issue is posted, future branch / commit / PR work should use that canonical issue reference.
+- If the work is only a local fix and does not require a new issue, say so and recommend continuing with the existing issue or direct PR path.

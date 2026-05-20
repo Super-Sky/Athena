@@ -11,7 +11,7 @@
 
 当前默认链路已经收敛为：
 
-`athena issue -> athena branch/commit -> athena MR`
+`athena issue -> athena branch/commit -> athena PR`
 
 含义：
 
@@ -19,10 +19,10 @@
   - 承载当前仓库的正式需求、版本范围和问题真相。
 - `athena branch/commit`
   - 承载本仓实现过程中的开发分支、提交记录和 issue 回链语义。
-- `athena MR`
+- `athena PR`
   - 承载本仓代码审阅、门禁确认和合并动作。
 
-因此，本仓当前采用“本仓 GitLab issue 驱动 + 本仓 MR 承接”的模型。
+因此，本仓当前采用“本仓 GitHub issue 驱动 + 本仓 PR 承接”的模型。
 
 ## 版本管理
 
@@ -61,15 +61,15 @@
 
 ## 本仓 Issue 规则
 
-本仓 GitLab issue 是当前默认的需求真源，也是 commit 回链与 MR 回链的默认依据。
+本仓 GitHub issue 是当前默认的需求真源，也是 commit 回链与 PR 回链的默认依据。
 
 当前默认要求：
 
 - 分支命名默认带本仓 issue 标识
 - commit message 默认回链本仓 issue
-- MR 描述默认回链本仓 issue
-- 进入 plan / implementation 前，若用户已给出 issue URL 或 `group/project#iid`，优先通过仓库内置 `issue-intake` skill 读取 issue 内容，而不是手工复制网页内容
-- 需要新建本仓 GitLab issue 时，优先通过 `gitlab-issue-create` skill 生成统一模板草稿或实际提单
+- PR 描述默认回链本仓 issue
+- 进入 plan / implementation 前，若用户已给出 issue URL 或 `owner/repo#number`，优先通过仓库内置 `issue-intake` skill 读取 issue 内容，而不是手工复制网页内容
+- 需要新建本仓 GitHub issue 时，优先通过 `github-issue-create` skill 生成统一模板草稿或实际提单
 
 ## Issue 时间线同步
 
@@ -86,9 +86,9 @@
 
 ### 2. `Refs` 与 `Closes` 不能混用
 
-- `Refs group/project#iid`
+- `Refs owner/repo#number`
   - 用于部分完成、阶段性交付或当前提交还不是最终收口
-- `Closes group/project#iid`
+- `Closes owner/repo#number`
   - 仅用于当前提交已经完成该 issue 在本仓内的全部要求，不再依赖后续动作
 
 默认规则：
@@ -96,9 +96,9 @@
 - 只要 issue 仍依赖后续动作，优先使用 `Refs`
 - 不允许把“部分完成”写成 `Closes`
 
-### 3. MR 必须说明本仓完成范围
+### 3. PR 必须说明本仓完成范围
 
-MR 描述不能只写关联 issue，还必须明确：
+PR 描述不能只写关联 issue，还必须明确：
 
 - 本仓已完成什么
 - 本仓明确不做什么
@@ -110,7 +110,7 @@ MR 描述不能只写关联 issue，还必须明确：
 以下三个节点都应检查并默认执行 issue 评论同步：
 
 1. 分支推送远端后
-2. MR 创建后
+2. PR 创建后
 3. 合并完成后
 
 原因：
@@ -121,26 +121,26 @@ MR 描述不能只写关联 issue，还必须明确：
 若满足以下任一条件，以上三个节点都不应省略评论同步：
 
 - 当前仓只完成 issue 的一部分
-- issue 会跨多个提交或多个 MR 完成
+- issue 会跨多个提交或多个 PR 完成
 - 当前提交使用了 `Refs`
 - 当前仓完成后仍需要后续动作
 
 推荐评论内容至少包括：
 
 - 当前仓已完成内容
-- 对应提交或 MR
+- 对应提交或 PR
 - 当前仓明确未完成内容
 - 后续动作
 
 推荐工具化方式：
 
-- 新建 issue 使用 `gitlab-issue-create`
+- 新建 issue 使用 `github-issue-create`
 - 读取 issue 正文使用 `issue-intake`
-- issue 进度评论使用 `gitlab-issue-progress-sync`
-- 关闭 issue 使用 `gitlab-issue-close`；关闭前必须先读取 issue 并将原始要求与交付证据对账
+- issue 进度评论使用 `github-issue-progress-sync`
+- 关闭 issue 使用 `github-issue-close`；关闭前必须先读取 issue 并将原始要求与交付证据对账
 - 评论事件统一使用：
   - `push`
-  - `mr`
+  - `pr`
   - `merge`
 
 ## 入口模型
@@ -149,8 +149,8 @@ MR 描述不能只写关联 issue，还必须明确：
 
 - Codex 入口：`AGENTS.md`
 - Claude 入口：`CLAUDE.md`
-- Issue 模板入口：`.gitlab/issue_templates/统一问题.md`
-- MR 模板入口：`.gitlab/merge_request_templates/`
+- Issue 模板入口：`.github/ISSUE_TEMPLATE/统一问题.md`
+- PR 模板入口：`.github/PULL_REQUEST_TEMPLATE/`
 - 共享正文：`docs/*`
 - 主 skill：`.agents/skills/`
 - Claude 镜像 skill：`.claude/skills/`
@@ -169,15 +169,15 @@ MR 描述不能只写关联 issue，还必须明确：
 - 默认不要把大规模功能改动和长期治理改动混在同一个任务中。
 - 若功能改动顺带暴露了通用规则缺口，可以做最小必要的治理补充，但不要借题发挥做大范围重构。
 
-## MR 与提交规则
+## PR 与提交规则
 
-- branch / commit / 本地交付默认以本仓 GitLab issue 为主驱动
-- MR 描述必须明确填写：
+- branch / commit / 本地交付默认以本仓 GitHub issue 为主驱动
+- PR 描述必须明确填写：
   - 对应 issue
   - 如有，额外记录关联依赖或外部协同信息
 - 本仓默认使用：
-  - `.gitlab/merge_request_templates/标准变更.md`
-  - `.gitlab/merge_request_templates/合并确认.md`
+  - `.github/PULL_REQUEST_TEMPLATE/标准变更.md`
+  - `.github/PULL_REQUEST_TEMPLATE/合并确认.md`
 - commit message 默认使用：
 
 ```text
@@ -194,19 +194,19 @@ Refs Super-Sky/Athena#1
   - `Closes Super-Sky/Athena#编号`
 - `Closes` 不应用在中间态开发提交中，避免过早关闭本仓 issue
 - 对于阶段性或部分完成任务，`Refs` 不是结束条件；合并后还需回 issue 评论同步真实进度
-- 对于阶段性或部分完成任务，分支推送、MR 创建、合并完成三次都应检查是否已回 issue 评论
+- 对于阶段性或部分完成任务，分支推送、PR 创建、合并完成三次都应检查是否已回 issue 评论
 - 一笔提交默认只承载一个本仓 issue 主语义；不要把多个 issue 的改动压成同一笔提交
 - 提交标题必须写当前这一笔的真实改动，不应用泛化标题掩盖多类内容，例如：
-  - 不推荐：`chore: align issue-driven workflow and GitLab skills`
+  - 不推荐：`chore: align issue-driven workflow and GitHub skills`
   - 推荐：`docs: tighten issue-driven workflow rules`
   - 推荐：`ci: add absolute path guard`
-  - 推荐：`feat: add gitlab issue progress sync skill`
+  - 推荐：`feat: add github issue progress sync skill`
 
-## GitLab CI
+## GitHub CI
 
-本仓库当前默认使用 GitLab CI，配置入口为：
+本仓库当前默认使用 GitHub CI，配置入口为：
 
-- `.gitlab-ci.yml`
+- `.github/workflows/ci.yml`
 
 当前最小阻断流水线覆盖：
 
@@ -228,19 +228,19 @@ Refs Super-Sky/Athena#1
 
 当前触发策略：
 
-- MR pipeline 优先
-- 当分支已经存在打开中的 MR 时，普通 branch pipeline 默认不再重复触发
+- PR pipeline 优先
+- 当分支已经存在打开中的 PR 时，普通 branch pipeline 默认不再重复触发
 - 目标是避免同一份提交同时生成：
-  - 一条 merge request pipeline
+  - 一条 pull request pipeline
   - 一条普通 branch pipeline
 - 若后续确需同时保留两类 pipeline，必须先说明：
-  - 为什么现有 MR-only 策略不够
+  - 为什么现有 PR-only 策略不够
   - 哪些 job 只应在 branch 跑
   - 是否会引入重复构建成本
 
 命名约束：
 
-- GitLab UI 展示层使用中文：
+- GitHub UI 展示层使用中文：
   - stage 例如 `校验`、`构建`
   - job 例如 `Go 测试`、`Web 构建`
 - 执行模板层使用英文：
@@ -252,7 +252,7 @@ Refs Super-Sky/Athena#1
 - 新增会影响构建、测试、部署脚本或 Web 前端的改动时，应优先复用现有 CI job，而不是平行发明第二套校验路径
 - 若新增 job 依赖外部密钥、数据库、镜像仓库或远端主机，必须显式说明：
   - 依赖的 CI 变量
-  - 失败时是否阻断 MR
+  - 失败时是否阻断 PR
   - 是否只在默认分支或手动触发
 - 若某项检查只能在本地或手工环境执行，不应伪装成默认 CI 阻断项；应先以文档或非阻断 job 形式引入
 
@@ -824,7 +824,7 @@ review 重点：
 - 治理改动提交优先描述规范或入口变化。
 - 提交信息建议格式：
   - 标题行：`type: 描述`
-  - footer：`Refs group/project#iid` 或 `Closes group/project#iid`
+  - footer：`Refs owner/repo#number` 或 `Closes owner/repo#number`
 - 只有在当前提交确实完成本仓 issue 的收尾语义时，才使用 `Closes`
 - 若同一次提交同时改代码和文档，提交说明应明确：
   - 改了什么行为

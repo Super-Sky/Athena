@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compose and optionally create one GitLab issue using the repository issue template."""
+"""Compose and optionally create one GitHub issue using the repository issue template."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ import sys
 import urllib.error
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
-PROJECT_URL_RE = re.compile(r"^(?P<base>https?://[^/]+)/(?P<project>.+)$")
+PROJECT_URL_RE = re.compile(r"^(?P<base>https?://[^/]+)/(?P<project>[^/]+/[^/]+)$")
 VALID_ISSUE_TYPES = {
     "需要新增能力",
     "需要增强现有能力",
@@ -34,32 +34,64 @@ class ProjectRef:
     project_path: str
 
 
+def normalize_project_path(raw: str) -> str:
+    project = raw.strip().strip("/")
+    if project.endswith(".git"):
+        project = project[: -len(".git")]
+    if project.count("/") != 1:
+        raise ValueError(f"unsupported GitHub repository path: {raw}")
+    owner, repo = project.split("/", 1)
+    if not owner or not repo:
+        raise ValueError(f"unsupported GitHub repository path: {raw}")
+    return f"{owner}/{repo}"
+
+
 def parse_project_ref(*, project: str | None, project_url: str | None) -> ProjectRef:
     if project_url:
         raw = project_url.strip().rstrip("/")
         match = PROJECT_URL_RE.match(raw)
         if not match:
-            raise ValueError(f"unsupported GitLab project URL: {project_url}")
-        return ProjectRef(base_url=match.group("base"), project_path=match.group("project"))
+            raise ValueError(f"unsupported GitHub repository URL: {project_url}")
+        return ProjectRef(
+            base_url=match.group("base"),
+            project_path=normalize_project_path(match.group("project")),
+        )
     if project:
-        raw = project.strip().strip("/")
-        if not raw or raw.startswith("http://") or raw.startswith("https://") or "/" not in raw:
-            raise ValueError(f"unsupported GitLab project path: {project}")
-        return ProjectRef(base_url=None, project_path=raw)
+        return ProjectRef(base_url=None, project_path=normalize_project_path(project))
     raise ValueError("--project or --project-url is required")
 
 
 def resolve_base_url(explicit_base: str | None) -> str:
     if explicit_base:
         return explicit_base.rstrip("/")
-    configured = os.getenv("GITLAB_BASE_URL", "").strip()
+    configured = os.getenv("GITHUB_BASE_URL", "").strip()
     if configured:
         return configured.rstrip("/")
-    raise RuntimeError("missing GitLab base URL; provide --project-url or set GITLAB_BASE_URL")
+    return "https://github.com"
 
 
-def glab_available() -> bool:
-    return shutil.which("glab") is not None
+def resolve_api_base(base_url: str) -> str:
+    configured = os.getenv("GITHUB_API_BASE_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    host = (urlparse(base_url).hostname or "").lower()
+    if host == "github.com":
+        return "https://api.github.com"
+    if base_url.rstrip("/").endswith("/api/v3"):
+        return base_url.rstrip("/")
+    return f"{base_url.rstrip('/')}/api/v3"
+
+
+def resolve_token() -> str:
+    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT"):
+        token = os.getenv(key, "").strip()
+        if token:
+            return token
+    raise RuntimeError("missing GitHub token; set GITHUB_TOKEN, GH_TOKEN, or GITHUB_PAT")
+
+
+def gh_available() -> bool:
+    return shutil.which("gh") is not None
 
 
 def split_items(values: list[str]) -> list[str]:
@@ -156,47 +188,61 @@ def render_issue_body(
     return "\n".join(lines).strip() + "\n"
 
 
-def create_issue_with_glab(project: str, title: str, body: str, labels: list[str], assignee: str | None, milestone: str | None) -> dict[str, Any]:
-    cmd = ["glab", "api", f"projects/{quote(project, safe='')}/issues", "--method", "POST", "--field", f"title={title}", "--field", f"description={body}"]
-    if labels:
-        cmd.extend(["--field", f"labels={','.join(labels)}"])
+def create_issue_with_gh(
+    project: str,
+    title: str,
+    body: str,
+    labels: list[str],
+    assignee: str | None,
+    milestone: str | None,
+) -> dict[str, Any]:
+    cmd = ["gh", "issue", "create", "--repo", project, "--title", title, "--body", body]
+    for label in labels:
+        cmd.extend(["--label", label])
     if assignee:
-        cmd.extend(["--field", f"assignee_username={assignee}"])
+        cmd.extend(["--assignee", assignee])
     if milestone:
-        cmd.extend(["--field", f"milestone={milestone}"])
-    out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
-    return json.loads(out)
+        cmd.extend(["--milestone", milestone])
+    out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT).strip()
+    return {"web_url": out, "html_url": out}
 
 
-def create_issue_with_http(base_url: str, project: str, title: str, body: str, labels: list[str], assignee: str | None, milestone: str | None) -> dict[str, Any]:
-    token = os.getenv("GITLAB_TOKEN") or os.getenv("GITLAB_PRIVATE_TOKEN")
-    if not token:
-        raise RuntimeError("missing GITLAB_TOKEN or GITLAB_PRIVATE_TOKEN")
-    payload: dict[str, Any] = {"title": title, "description": body}
+def create_issue_with_http(
+    api_base: str,
+    project: str,
+    title: str,
+    body: str,
+    labels: list[str],
+    assignee: str | None,
+    milestone: str | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"title": title, "body": body}
     if labels:
-        payload["labels"] = ",".join(labels)
+        payload["labels"] = labels
     if assignee:
-        payload["assignee_username"] = assignee
-    if milestone:
-        payload["milestone"] = milestone
-    url = f"{base_url}/api/v4/projects/{quote(project, safe='')}/issues"
+        payload["assignees"] = [assignee]
+    if milestone and milestone.strip().isdigit():
+        payload["milestone"] = int(milestone.strip())
+
+    url = f"{api_base}/repos/{project}/issues"
     req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST")
-    req.add_header("PRIVATE-TOKEN", token)
+    req.add_header("Authorization", f"Bearer {resolve_token()}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
     req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
     try:
         with urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"gitlab issue create failed: {exc.code} {detail}") from exc
+        raise RuntimeError(f"github issue create failed: {exc.code} {detail}") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Compose and optionally create one GitLab issue.")
+    parser = argparse.ArgumentParser(description="Compose and optionally create one GitHub issue.")
     target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--project", help="GitLab project path like group/project. Requires GITLAB_BASE_URL when posting without glab.")
-    target.add_argument("--project-url", help="Full GitLab project URL like https://git.example.com/group/project")
+    target.add_argument("--project", help="GitHub repository path like owner/repo.")
+    target.add_argument("--project-url", help="Full GitHub repository URL like https://github.com/owner/repo")
     parser.add_argument("--title", required=True)
     parser.add_argument("--issue-type", required=True, choices=sorted(VALID_ISSUE_TYPES))
     parser.add_argument("--background", default="")
@@ -209,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--handling-mode")
     parser.add_argument("--target-version")
     parser.add_argument("--delivery-unit")
-    parser.add_argument("--canonical-issue", help="Canonical Athena issue reference like example-org/athena#3.")
+    parser.add_argument("--canonical-issue", help="Canonical issue reference like Super-Sky/Athena#3.")
     parser.add_argument("--primary-repository", choices=["athena"], default="athena")
     parser.add_argument("--external-reference", action="append", default=[], help="Optional non-blocking external reference. Can be repeated or separated by semicolons.")
     parser.add_argument("--owner")
@@ -275,19 +321,42 @@ def main(argv: list[str] | None = None) -> int:
                 print("\n" + body, end="")
             return 0
 
-        if glab_available():
+        base_url = resolve_base_url(target.base_url)
+        api_base = resolve_api_base(base_url)
+        if gh_available():
             try:
-                created = create_issue_with_glab(target.project_path, args.title, body, labels, args.assignee, args.milestone)
+                created = create_issue_with_gh(
+                    target.project_path,
+                    args.title,
+                    body,
+                    labels,
+                    args.assignee,
+                    args.milestone,
+                )
             except Exception:
-                if not target.base_url:
-                    raise
-                created = create_issue_with_http(resolve_base_url(target.base_url), target.project_path, args.title, body, labels, args.assignee, args.milestone)
+                created = create_issue_with_http(
+                    api_base,
+                    target.project_path,
+                    args.title,
+                    body,
+                    labels,
+                    args.assignee,
+                    args.milestone,
+                )
         else:
-            created = create_issue_with_http(resolve_base_url(target.base_url), target.project_path, args.title, body, labels, args.assignee, args.milestone)
+            created = create_issue_with_http(
+                api_base,
+                target.project_path,
+                args.title,
+                body,
+                labels,
+                args.assignee,
+                args.milestone,
+            )
         if args.json:
             print(json.dumps(created, ensure_ascii=False, indent=2))
         else:
-            print(created.get("web_url") or json.dumps(created, ensure_ascii=False))
+            print(created.get("html_url") or created.get("web_url") or json.dumps(created, ensure_ascii=False))
         return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)

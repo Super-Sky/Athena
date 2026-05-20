@@ -13,7 +13,7 @@ DEFAULT_TARGETS = [
     "docs",
     ".agents",
     ".claude",
-    ".gitlab",
+    ".github",
     "README.md",
     "AGENTS.md",
     "CLAUDE.md",
