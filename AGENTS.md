@@ -29,6 +29,7 @@
 - 代码实现规范只维护在 `docs/CODE_STYLE_GUIDE.md`。
 - 任务完成后需要补哪些文档，统一看 `docs/TASK_DELIVERY_GUIDE.md`。
 - 分支、提交、文档落点和技能主从同步，统一看 `docs/REPO_WORKFLOW_GUIDE.md`。
+- 本仓任务推进只使用 GitHub issue，不再使用 Jira 作为流程入口或状态真相。
 - 前端页面读取、SPA 检查、本地后台页面 smoke、截图或交互验证，优先使用 Codex 页面内置 `Browser` 插件；只有该插件不可用或不足以完成验证时，再使用 Dokobot / Playwright 等回退方案。
 - `chrome-devtools-mcp` 只用于用户明确要求的低层浏览器调试，例如 console、network、performance、protocol 或 DOM internals，不作为常规页面验收默认工具。
 - 版本目录、issue 归属和开发日志也统一看 `docs/REPO_WORKFLOW_GUIDE.md`。

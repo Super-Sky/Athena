@@ -24,6 +24,11 @@
 
 因此，本仓当前采用“本仓 GitHub issue 驱动 + 本仓 PR 承接”的模型。
 
+补充约束：
+
+- 本仓不再维护 Jira 流程镜像，也不将 Jira ticket 作为提交、PR 或交付前置。
+- 任务范围、状态推进、回链语义和关闭动作全部以本仓 GitHub issue 为准。
+
 ## 版本管理
 
 本仓库默认采用“稳定主分支 + 文档版本目录”的轻量版本模型：
@@ -70,6 +75,7 @@
 - PR 描述默认回链本仓 issue
 - 进入 plan / implementation 前，若用户已给出 issue URL 或 `owner/repo#number`，优先通过仓库内置 `issue-intake` skill 读取 issue 内容，而不是手工复制网页内容
 - 需要新建本仓 GitHub issue 时，优先通过 `github-issue-create` skill 生成统一模板草稿或实际提单
+- 不接受“先走 Jira 再同步到 issue”的双轨流程；若出现双轨，默认以 GitHub issue 版本为唯一真相
 
 ## Issue 时间线同步
 
