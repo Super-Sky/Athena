@@ -1,0 +1,28 @@
+id: decision_options
+name: Decision Options Contract
+summary: Structured governance options for security review
+kind: output
+
+required_fields:
+  - conservative_option
+  - balanced_option
+  - aggressive_option
+  - recommended_default
+
+properties:
+  conservative_option:
+    type: object
+  balanced_option:
+    type: object
+  aggressive_option:
+    type: object
+  tradeoffs:
+    type: array
+  recommended_default:
+    type: string
+
+validation_rules:
+  - contract_rule.all_option_tiers_present
+
+completion_rules:
+  - contract_rule.options_must_differ_substantively

@@ -1,0 +1,75 @@
+id: workflow_main
+name: Workflow Planning Workflow
+summary: Main workflow for planning, contract generation, and verification
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.safety_constitution
+    - policy_rule.core.evidence_sufficiency
+
+stages:
+  - id: understand_goal
+    title: Understand Goal
+    mode: llm
+    purpose: Clarify the workflow goal, scope, and expected outputs
+    uses_skills: []
+    uses_contracts: []
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if: []
+    complete_when:
+      - goal_understood
+    block_when: []
+    next:
+      on_success: generate_plan
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: generate_plan
+    title: Generate Plan
+    mode: hybrid
+    purpose: Produce a structured workflow plan or governance contract
+    uses_skills:
+      - skill.workflow.contract_generation
+    uses_contracts:
+      - contract.workflow.workflow_plan
+      - contract.workflow.governance_contract
+      - contract.workflow.automation_create_payload
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if:
+      - goal_understood
+    complete_when:
+      - plan_ready
+    block_when:
+      - missing_required_context
+    next:
+      on_success: optional_verify
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: optional_verify
+    title: Confirm And Verify
+    mode: manual
+    purpose: Require explicit confirmation before finalizing a plan or closing a verification result
+    uses_skills:
+      - skill.workflow.verification_loop
+    uses_contracts:
+      - contract.workflow.verification_result
+    checks:
+      policy_rules:
+        - policy_rule.core.evidence_sufficiency
+    entry_if:
+      - plan_ready
+    complete_when:
+      - verification_resolved
+    block_when: []
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed

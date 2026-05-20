@@ -1,0 +1,14 @@
+.git
+.github
+.agents
+.claude
+web
+web/node_modules
+web/dist
+tmp
+output
+*.test
+.idea
+*.log
+develop.log
+docs

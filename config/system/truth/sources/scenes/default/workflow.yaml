@@ -1,0 +1,53 @@
+id: default_main
+name: Default Workflow
+summary: Main workflow for the default scene
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.safety_constitution
+
+stages:
+  - id: understand_request
+    title: Understand Request
+    mode: llm
+    purpose: Clarify the user's request and determine whether more context is required
+    uses_skills:
+      - skill.default.user_overview
+    uses_contracts: []
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if: []
+    complete_when:
+      - request_understood
+    block_when: []
+    next:
+      on_success: answer_or_route
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: answer_or_route
+    title: Answer Or Route
+    mode: hybrid
+    purpose: Answer directly when enough context exists or route to a stronger scene
+    uses_skills:
+      - skill.default.user_overview
+    uses_contracts:
+      - contract.default.general_answer
+      - contract.default.clarification_request
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if:
+      - request_understood
+    complete_when:
+      - answer_ready
+    block_when:
+      - missing_required_context
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed

@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: athena-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-secure_digital}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - athena-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-secure_digital}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  athena-api:
+    image: ${ATHENA_IMAGE:-athena:local}
+    container_name: athena-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./athena.env
+    command: ["/bin/sh", "-lc", "/app/athena migrate && exec /app/athena api-server"]
+    ports:
+      - "${ATHENA_HTTP_PORT:-8090}:8080"
+    volumes:
+      - athena-controlplane-data:/app/config/controlplane
+      - athena-shared-data:/srv/shared
+    healthcheck:
+      test: ["/app/athena", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  athena-web:
+    image: ${ATHENA_WEB_IMAGE:-athena-web:local}
+    container_name: athena-web
+    restart: unless-stopped
+    profiles:
+      - control-plane
+    depends_on:
+      athena-api:
+        condition: service_healthy
+    ports:
+      - "${ATHENA_WEB_PORT:-5173}:80"
+
+volumes:
+  athena-postgres-data:
+  athena-controlplane-data:
+  athena-shared-data:

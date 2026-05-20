@@ -1,0 +1,27 @@
+{
+  "version_id": "cfg_20260422T093743.679419000Z",
+  "created_at": "2026-04-22T09:37:43Z",
+  "summary": "update governance",
+  "document": {
+    "governance": {
+      "choice_required_enabled": true,
+      "automation_fallback_enabled": true,
+      "planning_progress_enabled": true,
+      "fact_quality_gate_enabled": true,
+      "tool_hint_emission_enabled": true,
+      "knowledge_retrieval_emission_enabled": true,
+      "max_planning_steps": 5,
+      "max_tool_hints": 10
+    },
+    "runtime": {
+      "choice_required_enabled": true,
+      "automation_fallback_enabled": true,
+      "planning_progress_enabled": true,
+      "fact_quality_gate_enabled": true,
+      "tool_hint_emission_enabled": true,
+      "knowledge_retrieval_emission_enabled": true,
+      "max_planning_steps": 5,
+      "max_tool_hints": 10
+    }
+  }
+}

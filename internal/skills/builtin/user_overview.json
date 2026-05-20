@@ -1,0 +1,6 @@
+{
+  "name": "user_overview",
+  "description": "Summarize the user's current identity, memory, and persona context without inventing subject-specific data.",
+  "tool_names": [],
+  "guidance": "Use this skill when the user wants a concise overview based only on context already provided in the request or loaded from trusted platform context. Do not fabricate profile, order, or risk data."
+}

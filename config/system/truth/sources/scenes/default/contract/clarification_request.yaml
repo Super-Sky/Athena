@@ -1,0 +1,19 @@
+id: clarification_request
+name: Clarification Request Contract
+summary: Structured clarification request for the default scene
+kind: output
+
+required_fields:
+  - question
+
+properties:
+  question:
+    type: string
+  why_needed:
+    type: string
+
+validation_rules:
+  - contract_rule.question_required
+
+completion_rules:
+  - contract_rule.question_non_empty

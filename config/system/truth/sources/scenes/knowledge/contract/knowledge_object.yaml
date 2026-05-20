@@ -1,0 +1,34 @@
+id: knowledge_object
+name: Knowledge Object Contract
+summary: Governed knowledge object structure
+kind: artifact
+
+required_fields:
+  - knowledge_id
+  - knowledge_type
+  - title
+  - content
+  - tenant_scope
+  - applicability_conditions
+
+properties:
+  knowledge_id:
+    type: string
+  knowledge_type:
+    type: string
+  title:
+    type: string
+  content:
+    type: string
+  tenant_scope:
+    type: string
+  applicability_conditions:
+    type: array
+  confidence:
+    type: number
+
+validation_rules:
+  - contract_rule.knowledge_scope_required
+
+completion_rules:
+  - contract_rule.applicability_conditions_required

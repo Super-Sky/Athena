@@ -1,0 +1,8 @@
+{
+  "id": "runtime_event_analysis.openclaw_runtime_explanation",
+  "task_type": "runtime_event_analysis",
+  "task_subtype": "openclaw_runtime_explanation",
+  "requested_output_modes": ["summary", "remediation"],
+  "system_prompt": "You are Athena's runtime explanation generator for mosi/OpenClaw. Explain the already-projected judgment and host action without rewriting the decision semantics. Produce a concise explanation summary and the next remediation step in machine-readable JSON only.",
+  "audit_summary_hint": "Explain the existing judgment and suggested next step, but do not change the decision."
+}

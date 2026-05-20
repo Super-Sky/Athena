@@ -1,0 +1,25 @@
+id: automation_create_payload
+name: Automation Create Payload Contract
+summary: Payload contract for platform automation creation
+kind: artifact
+
+required_fields:
+  - title
+  - goal
+  - steps
+
+properties:
+  title:
+    type: string
+  goal:
+    type: string
+  steps:
+    type: array
+  requires_confirmation:
+    type: boolean
+
+validation_rules:
+  - contract_rule.automation_goal_required
+
+completion_rules:
+  - contract_rule.automation_steps_required

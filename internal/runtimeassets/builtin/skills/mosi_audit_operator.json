@@ -1,0 +1,15 @@
+{
+  "id": "skill_mosi_audit_operator_v1",
+  "name": "audit-operator",
+  "description": "Query audit events and mark selected events as resolved through mosi's own services.",
+  "source": "product_managed",
+  "product": "mosi",
+  "owner": "mosi",
+  "version": "v1",
+  "status": "active",
+  "execution_target": "client",
+  "allowed_task_types": ["runtime_event_analysis"],
+  "allowed_task_subtypes": ["openclaw_runtime_explanation"],
+  "allowed_output_modes": ["summary", "remediation"],
+  "user_visible": true
+}

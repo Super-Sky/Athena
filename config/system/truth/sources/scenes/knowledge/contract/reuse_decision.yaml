@@ -1,0 +1,25 @@
+id: reuse_decision
+name: Reuse Decision Contract
+summary: Structured judgment on whether historical knowledge can be reused
+kind: output
+
+required_fields:
+  - reusable_items
+  - blocked_items
+  - recompute_required_parts
+
+properties:
+  reusable_items:
+    type: array
+  blocked_items:
+    type: array
+  recompute_required_parts:
+    type: array
+  overall_reuse_confidence:
+    type: number
+
+validation_rules:
+  - contract_rule.recompute_required_parts_required
+
+completion_rules:
+  - contract_rule.reuse_decision_explicit

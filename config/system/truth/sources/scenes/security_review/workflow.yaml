@@ -1,0 +1,102 @@
+id: security_review_main
+name: Security Review Workflow
+summary: Main workflow for the security_review scene
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.safety_constitution
+    - policy_rule.core.evidence_sufficiency
+
+stages:
+  - id: understand_request
+    title: Understand Request
+    mode: llm
+    purpose: Clarify the review goal, scope, and available context
+    uses_skills:
+      - skill.security_review.signal_extraction
+    uses_contracts: []
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if: []
+    complete_when:
+      - review_scope_understood
+    block_when: []
+    next:
+      on_success: build_risk_profile
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: build_risk_profile
+    title: Build Risk Profile
+    mode: hybrid
+    purpose: Produce structured risk understanding from context, signals, and architecture
+    uses_skills:
+      - skill.security_review.threat_modeling
+      - skill.security_review.risk_profiling
+    uses_contracts:
+      - contract.security_review.risk_profile
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+        - policy_rule.core.evidence_sufficiency
+    entry_if:
+      - review_scope_understood
+    complete_when:
+      - risk_profile_ready
+    block_when:
+      - missing_required_context
+    next:
+      on_success: generate_decision_options
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: generate_decision_options
+    title: Generate Decision Options
+    mode: hybrid
+    purpose: Turn risk findings into differentiated governance options
+    uses_skills:
+      - skill.security_review.decision_planning
+      - skill.security_review.narrative_adaptation
+    uses_contracts:
+      - contract.security_review.decision_options
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if:
+      - risk_profile_ready
+    complete_when:
+      - decision_options_ready
+    block_when:
+      - evidence_insufficient
+    next:
+      on_success: finalize_review
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: finalize_review
+    title: Finalize Review
+    mode: llm
+    purpose: Produce a structured, evidence-aware review answer
+    uses_skills:
+      - skill.security_review.evidence_reporting
+    uses_contracts:
+      - contract.security_review.evidence_report
+      - contract.security_review.security_review_answer
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+        - policy_rule.core.evidence_sufficiency
+    entry_if:
+      - decision_options_ready
+    complete_when:
+      - review_answer_ready
+    block_when:
+      - evidence_insufficient
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed

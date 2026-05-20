@@ -1,0 +1,16 @@
+[Unit]
+Description=Athena API Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/athena
+EnvironmentFile=/opt/athena/athena.env
+ExecStartPre=/opt/athena/athena migrate
+ExecStart=/opt/athena/athena api-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

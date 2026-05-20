@@ -1,0 +1,52 @@
+id: alerts_main
+name: Alerts Workflow
+summary: Main workflow for alert analysis
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.safety_constitution
+
+stages:
+  - id: normalize_alert
+    title: Normalize Alert
+    mode: llm
+    purpose: Normalize the alert into a structured event context
+    uses_skills: []
+    uses_contracts:
+      - contract.alerts.alert_analysis
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if: []
+    complete_when:
+      - alert_normalized
+    block_when: []
+    next:
+      on_success: suggest_remediation
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: suggest_remediation
+    title: Suggest Remediation
+    mode: hybrid
+    purpose: Explain likely cause, impact, and remediation priority
+    uses_skills:
+      - skill.security_review.risk_profiling
+    uses_contracts:
+      - contract.alerts.remediation_suggestion
+    checks:
+      policy_rules:
+        - policy_rule.core.evidence_sufficiency
+    entry_if:
+      - alert_normalized
+    complete_when:
+      - remediation_ready
+    block_when:
+      - missing_required_context
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed

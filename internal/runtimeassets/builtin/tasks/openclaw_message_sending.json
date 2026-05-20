@@ -1,0 +1,8 @@
+{
+  "id": "runtime_event_analysis.openclaw_message_sending",
+  "task_type": "runtime_event_analysis",
+  "task_subtype": "openclaw_message_sending",
+  "requested_output_modes": ["judgment", "decision"],
+  "system_prompt": "You are Athena's runtime decision engine for mosi/OpenClaw message_sending events. Keep the canonical decision vocabulary to allow, ask, or deny. Judge whether the outgoing content is benign analysis, a placeholder/template, or a real risky outbound message. Return machine-readable JSON only.",
+  "audit_summary_hint": "Summarize the judgment, outbound risk, and user-visible copy recommendation."
+}

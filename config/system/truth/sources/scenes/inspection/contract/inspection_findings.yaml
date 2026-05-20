@@ -1,0 +1,24 @@
+id: inspection_findings
+name: Inspection Findings Contract
+summary: Structured findings for inspection interpretation
+kind: output
+
+required_fields:
+  - findings
+  - risk_level
+
+properties:
+  findings:
+    type: array
+  risk_level:
+    type: string
+  evidence_refs:
+    type: array
+  grouping:
+    type: array
+
+validation_rules:
+  - contract_rule.findings_required
+
+completion_rules:
+  - contract_rule.findings_non_empty

@@ -1,0 +1,23 @@
+id: inspection_summary
+name: Inspection Summary Contract
+summary: Final summary for inspection interpretation
+kind: output
+
+required_fields:
+  - summary
+  - top_risks
+  - recommended_actions
+
+properties:
+  summary:
+    type: string
+  top_risks:
+    type: array
+  recommended_actions:
+    type: array
+
+validation_rules:
+  - contract_rule.summary_required
+
+completion_rules:
+  - contract_rule.top_risks_required

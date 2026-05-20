@@ -1,0 +1,22 @@
+id: remediation_suggestion
+name: Remediation Suggestion Contract
+summary: Structured remediation suggestion for alerts
+kind: output
+
+required_fields:
+  - recommended_actions
+  - priority
+
+properties:
+  recommended_actions:
+    type: array
+  priority:
+    type: string
+  blocking_risks:
+    type: array
+
+validation_rules:
+  - contract_rule.recommended_actions_required
+
+completion_rules:
+  - contract_rule.priority_required

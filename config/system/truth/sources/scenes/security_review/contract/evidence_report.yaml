@@ -1,0 +1,28 @@
+id: evidence_report
+name: Evidence Report Contract
+summary: Evidence mapping and sufficiency output for security review
+kind: evidence
+
+required_fields:
+  - summary
+  - evidence_items
+  - mapped_findings
+  - coverage_gaps
+
+properties:
+  summary:
+    type: string
+  evidence_items:
+    type: array
+  mapped_findings:
+    type: array
+  coverage_gaps:
+    type: array
+  recommended_followups:
+    type: array
+
+validation_rules:
+  - contract_rule.evidence_items_required
+
+completion_rules:
+  - contract_rule.coverage_gaps_explicit

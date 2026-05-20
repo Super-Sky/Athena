@@ -1,0 +1,6 @@
+{
+  "name": "cso_review",
+  "description": "Run one infrastructure-first security review covering secrets, supply chain, CI/CD, AI security, OWASP, and STRIDE.",
+  "tool_names": [],
+  "guidance": "Use this skill when the user asks for a CSO-style security review, threat model, OWASP review, secrets archaeology, dependency supply-chain analysis, CI/CD pipeline review, or AI/LLM security assessment. Prioritize infrastructure and control-plane risks first. Treat session context as clues and prefer explicit evidence before reporting findings. Organize output around: attack surface, key risks, confidence, evidence, and recommended actions."
+}

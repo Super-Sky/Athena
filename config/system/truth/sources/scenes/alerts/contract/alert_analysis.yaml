@@ -1,0 +1,45 @@
+id: alert_analysis
+name: Alert Analysis Contract
+summary: Structured alert analysis output for triage, impact, evidence, and next actions
+kind: output
+
+required_fields:
+  - alert_id
+  - summary
+  - severity
+  - status
+  - evidence
+  - recommended_actions
+
+properties:
+  alert_id:
+    type: string
+  summary:
+    type: string
+  severity:
+    type: string
+    enum: [info, low, medium, high, critical]
+  status:
+    type: string
+    enum: [new, investigating, mitigated, resolved, false_positive]
+  affected_assets:
+    type: array
+  evidence:
+    type: array
+  suspected_causes:
+    type: array
+  recommended_actions:
+    type: array
+  confidence:
+    type: number
+  open_questions:
+    type: array
+
+validation_rules:
+  - contract_rule.alert_id_required
+  - contract_rule.severity_must_be_enum
+  - contract_rule.evidence_required
+
+completion_rules:
+  - contract_rule.summary_required
+  - contract_rule.recommended_actions_non_empty

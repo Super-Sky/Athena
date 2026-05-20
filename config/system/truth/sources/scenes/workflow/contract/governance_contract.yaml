@@ -1,0 +1,28 @@
+id: governance_contract
+name: Governance Contract
+summary: Actionable governance contract for execution and tracking
+kind: output
+
+required_fields:
+  - objective
+  - actions
+  - acceptance_criteria
+  - evidence_required
+
+properties:
+  objective:
+    type: string
+  actions:
+    type: array
+  acceptance_criteria:
+    type: array
+  evidence_required:
+    type: array
+  requires_approval:
+    type: boolean
+
+validation_rules:
+  - contract_rule.actions_required
+
+completion_rules:
+  - contract_rule.every_action_needs_owner_and_due_date

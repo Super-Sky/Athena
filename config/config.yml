@@ -1,0 +1,47 @@
+server:
+  http_port: 8080
+
+model:
+  store_driver: postgres
+
+runtime:
+  max_concurrent_requests: 256
+  max_concurrent_tools: 8
+  request_timeout_seconds: 60
+  deferred_queue_limit: 32
+  closed_resume_token_ttl_seconds: 86400
+  skill_package_revision_limit: 10
+
+control_plane:
+  store_path: config/controlplane/overrides.json
+  allowed_origins:
+    - http://localhost:5173
+
+system:
+  truth_dir: config/system/truth
+  active_state_dir: output/system-state
+  compiled_assets_dir: output/system-assets
+
+session:
+  driver: postgres
+  postgres_update_retries: 3
+
+security:
+  encryption_key: athena-dev-encryption-key-change-me
+
+database:
+  db_type: postgres
+  db_host: 127.0.0.1
+  db_port: 5432
+  db_config: sslmode=disable search_path=athena  client_encoding=UTF8
+  db_name: athena
+  db_username: postgres
+  db_password: change-me-public
+  max_idle_conns: 10
+  max_open_conns: 70
+  db_log_mode: true
+  log_zap: info
+  conn_max_lifetime_seconds: 300
+
+observability:
+  log_level: info

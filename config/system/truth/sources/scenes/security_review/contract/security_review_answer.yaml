@@ -1,0 +1,29 @@
+id: security_review_answer
+name: Security Review Answer Contract
+summary: Final structured answer contract for security review
+kind: output
+
+required_fields:
+  - main_answer
+  - risk_level
+  - key_findings
+  - recommended_actions
+
+properties:
+  main_answer:
+    type: string
+  risk_level:
+    type: string
+  key_findings:
+    type: array
+  recommended_actions:
+    type: array
+  open_questions:
+    type: array
+
+validation_rules:
+  - contract_rule.main_answer_required
+  - contract_rule.key_findings_required
+
+completion_rules:
+  - contract_rule.recommendations_required_for_security_review

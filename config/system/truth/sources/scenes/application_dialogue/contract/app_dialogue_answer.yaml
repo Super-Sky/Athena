@@ -1,0 +1,23 @@
+id: app_dialogue_answer
+name: Application Dialogue Answer Contract
+summary: Structured answer contract for application dialogue
+kind: output
+
+required_fields:
+  - main_answer
+
+properties:
+  main_answer:
+    type: string
+  used_contexts:
+    type: array
+  recommendations:
+    type: array
+  next_questions:
+    type: array
+
+validation_rules:
+  - contract_rule.main_answer_required
+
+completion_rules:
+  - contract_rule.main_answer_non_empty

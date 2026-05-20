@@ -1,0 +1,25 @@
+id: knowledge_candidate
+name: Knowledge Candidate Contract
+summary: Candidate update structure for new reusable knowledge
+kind: candidate_update
+
+required_fields:
+  - candidate_id
+  - source_summary
+  - proposed_updates
+
+properties:
+  candidate_id:
+    type: string
+  source_summary:
+    type: string
+  proposed_updates:
+    type: array
+  sanitization_applied:
+    type: array
+
+validation_rules:
+  - contract_rule.proposed_updates_required
+
+completion_rules:
+  - contract_rule.sanitization_required_for_shared_candidates

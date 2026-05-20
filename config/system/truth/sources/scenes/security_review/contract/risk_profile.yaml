@@ -1,0 +1,39 @@
+id: risk_profile
+name: Risk Profile Contract
+summary: Structured risk profile for security review
+kind: output
+
+required_fields:
+  - summary
+  - risk_level
+  - core_assets
+  - threats
+  - gaps
+  - confidence
+
+properties:
+  summary:
+    type: string
+  risk_level:
+    type: string
+    enum: [low, medium, high, critical]
+  core_assets:
+    type: array
+  threats:
+    type: array
+  existing_controls:
+    type: array
+  gaps:
+    type: array
+  confidence:
+    type: number
+  open_questions:
+    type: array
+
+validation_rules:
+  - contract_rule.risk_level_must_be_enum
+  - contract_rule.confidence_required
+
+completion_rules:
+  - contract_rule.summary_required
+  - contract_rule.assets_and_threats_required

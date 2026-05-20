@@ -1,0 +1,25 @@
+id: verification_result
+name: Verification Result Contract
+summary: Result of contract verification or closure review
+kind: output
+
+required_fields:
+  - overall_verdict
+  - action_verdicts
+
+properties:
+  overall_verdict:
+    type: string
+    enum: [close, supplement, reopen]
+  action_verdicts:
+    type: array
+  open_issues:
+    type: array
+  summary:
+    type: string
+
+validation_rules:
+  - contract_rule.overall_verdict_required
+
+completion_rules:
+  - contract_rule.action_verdicts_required

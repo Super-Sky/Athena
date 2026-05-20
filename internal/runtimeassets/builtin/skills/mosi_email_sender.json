@@ -1,0 +1,15 @@
+{
+  "id": "skill_mosi_email_sender_v1",
+  "name": "email-sender",
+  "description": "Send notification emails through mosi's workspace-owned SMTP configuration.",
+  "source": "product_managed",
+  "product": "mosi",
+  "owner": "mosi",
+  "version": "v1",
+  "status": "active",
+  "execution_target": "client",
+  "allowed_task_types": ["runtime_event_analysis"],
+  "allowed_task_subtypes": ["openclaw_runtime_explanation"],
+  "allowed_output_modes": ["summary", "remediation"],
+  "user_visible": true
+}

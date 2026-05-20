@@ -1,0 +1,27 @@
+id: workflow_plan
+name: Workflow Plan Contract
+summary: Structured workflow plan for downstream execution
+kind: output
+
+required_fields:
+  - plan_id
+  - title
+  - steps
+
+properties:
+  plan_id:
+    type: string
+  title:
+    type: string
+  summary:
+    type: string
+  steps:
+    type: array
+  requires_confirmation:
+    type: boolean
+
+validation_rules:
+  - contract_rule.workflow_steps_required
+
+completion_rules:
+  - contract_rule.workflow_steps_non_empty

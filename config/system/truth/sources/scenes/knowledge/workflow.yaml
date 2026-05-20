@@ -1,0 +1,55 @@
+id: knowledge_main
+name: Knowledge Workflow
+summary: Main workflow for knowledge extraction and reuse judgment
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.knowledge_governance
+
+stages:
+  - id: identify_relevant_knowledge
+    title: Identify Relevant Knowledge
+    mode: llm
+    purpose: Identify candidate knowledge objects or reuse targets
+    uses_skills:
+      - skill.knowledge.reuse_judgment
+    uses_contracts:
+      - contract.knowledge.reuse_decision
+    checks:
+      policy_rules:
+        - policy_rule.core.knowledge_governance
+    entry_if: []
+    complete_when:
+      - knowledge_judged
+    block_when:
+      - knowledge_scope_violation
+    next:
+      on_success: extract_candidate
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: extract_candidate
+    title: Extract Candidate
+    mode: hybrid
+    purpose: Extract or sanitize reusable knowledge candidates when allowed
+    uses_skills:
+      - skill.knowledge.knowledge_extraction
+    uses_contracts:
+      - contract.knowledge.knowledge_object
+      - contract.knowledge.knowledge_candidate
+    checks:
+      policy_rules:
+        - policy_rule.core.knowledge_governance
+    entry_if:
+      - knowledge_judged
+    complete_when:
+      - knowledge_candidate_ready
+    block_when:
+      - sanitization_incomplete
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed

@@ -1,0 +1,25 @@
+server:
+  http_port: 18080
+
+model:
+  store_driver: memory
+
+session:
+  driver: memory
+
+database:
+  db_type: postgres
+  db_host: 127.0.0.1
+  db_port: 5432
+  db_config: sslmode=disable search_path=athena client_encoding=UTF8
+  db_name: secure_digital
+  db_username: postgres
+  db_password: ""
+  max_idle_conns: 5
+  max_open_conns: 10
+  db_log_mode: true
+  log_zap: info
+  conn_max_lifetime_seconds: 60
+
+observability:
+  log_level: debug

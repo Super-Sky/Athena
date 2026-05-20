@@ -1,0 +1,53 @@
+id: inspection_main
+name: Inspection Workflow
+summary: Main workflow for inspection result interpretation
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.safety_constitution
+
+stages:
+  - id: normalize_findings
+    title: Normalize Findings
+    mode: llm
+    purpose: Normalize inspection findings into a comparable structure
+    uses_skills: []
+    uses_contracts:
+      - contract.inspection.inspection_findings
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if: []
+    complete_when:
+      - findings_normalized
+    block_when: []
+    next:
+      on_success: summarize_findings
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: summarize_findings
+    title: Summarize Findings
+    mode: hybrid
+    purpose: Explain top findings, risk order, and next actions
+    uses_skills:
+      - skill.security_review.risk_profiling
+      - skill.security_review.evidence_reporting
+    uses_contracts:
+      - contract.inspection.inspection_summary
+    checks:
+      policy_rules:
+        - policy_rule.core.evidence_sufficiency
+    entry_if:
+      - findings_normalized
+    complete_when:
+      - inspection_summary_ready
+    block_when:
+      - missing_required_context
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed

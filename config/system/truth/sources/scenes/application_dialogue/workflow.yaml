@@ -1,0 +1,50 @@
+id: application_dialogue_main
+name: Application Dialogue Workflow
+summary: Main workflow for the application_dialogue scene
+
+entry:
+  allow_waiting: true
+  allow_resume: true
+  required_contracts: []
+  required_policy_rules:
+    - policy_rule.core.safety_constitution
+
+stages:
+  - id: understand_app_context
+    title: Understand App Context
+    mode: llm
+    purpose: Determine which app and platform contexts are relevant to the current question
+    uses_skills: []
+    uses_contracts: []
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if: []
+    complete_when:
+      - app_context_understood
+    block_when: []
+    next:
+      on_success: answer_with_context
+      on_waiting: waiting_for_information
+      on_failure: failed
+
+  - id: answer_with_context
+    title: Answer With Context
+    mode: hybrid
+    purpose: Produce an expert answer grounded in app and platform context
+    uses_skills: []
+    uses_contracts:
+      - contract.application_dialogue.app_dialogue_answer
+    checks:
+      policy_rules:
+        - policy_rule.core.safety_constitution
+    entry_if:
+      - app_context_understood
+    complete_when:
+      - context_answer_ready
+    block_when:
+      - missing_required_context
+    next:
+      on_success: done
+      on_waiting: waiting_for_information
+      on_failure: failed
