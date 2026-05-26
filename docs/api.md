@@ -48,6 +48,7 @@ API 语义按以下边界理解：
 - `GET /api/control-plane/runtime/runs/:runID/traces`
 - `GET /api/control-plane/runtime/runs/:runID/usage`
 - `GET /api/control-plane/runtime/runs/:runID/projections`
+- `GET /api/control-plane/runtime/runs/:runID/checkpoints`
 - `GET /api/control-plane/governance`
 - `PUT /api/control-plane/governance`
 - `GET /api/control-plane/tool-governance/policy`
@@ -362,6 +363,10 @@ Athena 当前会优先消费 summary，再决定是否返回：
   - 读取该 run 下的 generic `Usage` 记录，支持 `step_id`、`limit`
 - `GET /api/control-plane/runtime/runs/:runID/projections`
   - 读取该 run 下的 `ProjectionCandidate` 记录，支持 `step_id`、`limit`；当前读模型会额外暴露 `schema_version`、`semantic_payload`、`artifact_refs`、`ui_hints` 和 `materialization_target`
+- `GET /api/control-plane/runtime/runs/:runID/checkpoints`
+  - 读取该 run 推导出的 checkpoint-backed waiting readout 安全摘要
+  - 只返回 `checkpoint_id`、`run_id`、`stage`、`resume_token_present`、`payload_size`、`payload_sha256`、`created_at`、`updated_at`、`snapshot_available` 和 `source`
+  - 不返回 Eino private checkpoint payload，也不返回 resume token 原文；没有 checkpoint metadata 时返回空 `items`
 - `GET/PUT /api/control-plane/governance`
   - 推荐使用的治理策略控制面入口
 - `GET /api/control-plane/tool-governance/policy`

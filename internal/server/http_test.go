@@ -1367,6 +1367,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/traces"]; !ok {
 		t.Fatalf("openapi spec missing runtime traces path: %#v", paths)
 	}
+	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/checkpoints"]; !ok {
+		t.Fatalf("openapi spec missing runtime checkpoints path: %#v", paths)
+	}
 	if _, ok := paths["/api/control-plane/validation-mcp/invocations"]; !ok {
 		t.Fatalf("openapi spec missing validation mcp invocation path: %#v", paths)
 	}
@@ -1375,6 +1378,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	}
 	if _, ok := schemas["RuntimeTraceListResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeTraceListResponse schema: %#v", schemas)
+	}
+	if _, ok := schemas["RuntimeCheckpointReadoutListResponse"]; !ok {
+		t.Fatalf("openapi spec missing RuntimeCheckpointReadoutListResponse schema: %#v", schemas)
 	}
 	if _, ok := schemas["RuntimeValidationRunResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeValidationRunResponse schema: %#v", schemas)

@@ -176,6 +176,19 @@ export type RuntimeProjectionCandidate = {
   created_at: string;
 };
 
+export type RuntimeCheckpointReadout = {
+  checkpoint_id: string;
+  run_id: string;
+  stage?: string;
+  resume_token_present: boolean;
+  payload_size?: number;
+  payload_sha256?: string;
+  created_at?: string;
+  updated_at?: string;
+  snapshot_available: boolean;
+  source?: string;
+};
+
 export type RuntimeContract = {
   id: string;
   name: string;

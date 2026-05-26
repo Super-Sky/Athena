@@ -443,6 +443,9 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.GET("/api/control-plane/runtime/runs/:runID/projections", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeProjectionCandidates)(ctx, c, cfg, application)
 	})
+	h.GET("/api/control-plane/runtime/runs/:runID/checkpoints", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeCheckpoints)(ctx, c, cfg, application)
+	})
 	h.GET("/api/control-plane/runtime/contracts/foundation", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleGetControlPlaneRuntimeContractFoundation)(ctx, c, cfg, application)
 	})

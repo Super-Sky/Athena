@@ -32,10 +32,27 @@ func TestControlPlaneRuntimeReadEndpointsReturnPersistedRecords(t *testing.T) {
 			WorkspaceID:     "ws-read",
 			Status:          runtime.TaskRunStatusCompleted,
 			RetentionPolicy: "default",
-			Metadata:        map[string]any{"graph": "eino"},
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			Metadata: map[string]any{
+				"graph": "eino",
+				"checkpoint_ref": map[string]any{
+					"checkpoint_id":        "checkpoint-read-1",
+					"stage":                string(runtime.StageTurnExecution),
+					"resume_token_present": true,
+					"resume_token":         "secret-resume-token",
+				},
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
 		}},
+		snapshots: map[string]runtime.RuntimeGraphCheckpointSnapshot{
+			"checkpoint-read-1": {
+				CheckpointID:  "checkpoint-read-1",
+				PayloadSize:   29,
+				PayloadSHA256: "93f86c65b3442f5fd41e8ce8ce42e9ba151c3f3f4e8841879f566f07ded57bf9",
+				CreatedAt:     now,
+				UpdatedAt:     now,
+			},
+		},
 		steps: []runtime.TaskStep{{
 			ID:        "step-read-1",
 			RunID:     "run-read-1",
@@ -149,6 +166,7 @@ func TestControlPlaneRuntimeReadEndpointsReturnPersistedRecords(t *testing.T) {
 		{path: "/api/control-plane/runtime/runs/run-read-1/traces?step_id=step-read-1", want: `"summary":"model callback summary"`},
 		{path: "/api/control-plane/runtime/runs/run-read-1/usage?step_id=step-read-1", want: `"resource_type":"model_tokens"`},
 		{path: "/api/control-plane/runtime/runs/run-read-1/projections?step_id=step-read-1", want: `"schema_version":"runtime_projection.v1"`},
+		{path: "/api/control-plane/runtime/runs/run-read-1/checkpoints", want: `"payload_sha256":"93f86c65b3442f5fd41e8ce8ce42e9ba151c3f3f4e8841879f566f07ded57bf9"`},
 		{path: "/api/control-plane/runtime/contracts/foundation", want: `"binding_ref":"runtime_contract_guard"`},
 	}
 	for _, tt := range cases {
@@ -159,6 +177,12 @@ func TestControlPlaneRuntimeReadEndpointsReturnPersistedRecords(t *testing.T) {
 			}
 			if !strings.Contains(resp.Body.String(), tt.want) {
 				t.Fatalf("body = %s, want %s", resp.Body.String(), tt.want)
+			}
+			if strings.Contains(tt.path, "/checkpoints") {
+				body := resp.Body.String()
+				if strings.Contains(body, `"payload":`) || strings.Contains(body, "secret-resume-token") {
+					t.Fatalf("checkpoint body leaks private payload or resume token: %s", body)
+				}
 			}
 		})
 	}
@@ -562,6 +586,7 @@ type testRuntimeReadStore struct {
 	traces       []runtime.RuntimeTrace
 	usages       []runtime.Usage
 	projections  []runtime.ProjectionCandidate
+	snapshots    map[string]runtime.RuntimeGraphCheckpointSnapshot
 	contracts    []runtime.RuntimeContract
 	taskTypes    []runtime.TaskTypeRegistration
 	hooks        []runtime.HookBinding
@@ -750,6 +775,14 @@ func (s *testRuntimeReadStore) ListProjectionCandidates(_ context.Context, filte
 		}
 	}
 	return out, nil
+}
+
+func (s *testRuntimeReadStore) GetCheckpointSnapshot(_ context.Context, checkpointID string) (runtime.RuntimeGraphCheckpointSnapshot, bool, error) {
+	if s.snapshots == nil {
+		return runtime.RuntimeGraphCheckpointSnapshot{}, false, nil
+	}
+	snapshot, ok := s.snapshots[strings.TrimSpace(checkpointID)]
+	return snapshot, ok, nil
 }
 
 func (s *testRuntimeReadStore) CreateRuntimeContract(_ context.Context, contract runtime.RuntimeContract) (runtime.RuntimeContract, error) {

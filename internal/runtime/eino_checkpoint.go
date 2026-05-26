@@ -35,6 +35,12 @@ type RuntimeGraphCheckpointByteStore interface {
 	Set(context.Context, string, []byte) error
 }
 
+// RuntimeGraphCheckpointSnapshotStore exposes safe checkpoint metadata without payload bytes.
+// RuntimeGraphCheckpointSnapshotStore 暴露不含 payload 字节的 checkpoint 安全元数据。
+type RuntimeGraphCheckpointSnapshotStore interface {
+	GetCheckpointSnapshot(context.Context, string) (RuntimeGraphCheckpointSnapshot, bool, error)
+}
+
 // RuntimeGraphCheckpointSnapshot exposes safe checkpoint metadata without the opaque payload.
 // RuntimeGraphCheckpointSnapshot 暴露不含 opaque payload 的安全 checkpoint 元数据。
 type RuntimeGraphCheckpointSnapshot struct {
@@ -105,13 +111,20 @@ func (s *MemoryRuntimeGraphCheckpointStore) Set(_ context.Context, checkpointID 
 // Snapshot returns safe metadata for one checkpoint if it exists.
 // Snapshot 返回一个 checkpoint 的安全元数据。
 func (s *MemoryRuntimeGraphCheckpointStore) Snapshot(checkpointID string) (RuntimeGraphCheckpointSnapshot, bool) {
+	snapshot, ok, _ := s.GetCheckpointSnapshot(context.Background(), checkpointID)
+	return snapshot, ok
+}
+
+// GetCheckpointSnapshot returns safe metadata for one checkpoint if it exists.
+// GetCheckpointSnapshot 返回一个 checkpoint 的安全元数据。
+func (s *MemoryRuntimeGraphCheckpointStore) GetCheckpointSnapshot(_ context.Context, checkpointID string) (RuntimeGraphCheckpointSnapshot, bool, error) {
 	if s == nil {
-		return RuntimeGraphCheckpointSnapshot{}, false
+		return RuntimeGraphCheckpointSnapshot{}, false, nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snapshot, ok := s.snapshots[strings.TrimSpace(checkpointID)]
-	return snapshot, ok
+	return snapshot, ok, nil
 }
 
 func (s *MemoryRuntimeGraphCheckpointStore) currentTime() time.Time {

@@ -465,6 +465,18 @@ func buildOpenAPIPaths() map[string]any {
 				},
 			},
 		},
+		"/api/control-plane/runtime/runs/{runID}/checkpoints": map[string]any{
+			"get": map[string]any{
+				"tags":        []string{"control-plane"},
+				"summary":     "列出 runtime run checkpoint 安全摘要",
+				"operationId": "listControlPlaneRuntimeCheckpoints",
+				"description": "仅返回 checkpoint ID、stage、payload size、payload sha256 和时间戳等安全元数据；不会返回 Eino private checkpoint payload。",
+				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"responses": map[string]any{
+					"200": jsonResponse("runtime checkpoint 安全摘要列表", "RuntimeCheckpointReadoutListResponse"),
+				},
+			},
+		},
 		"/api/control-plane/runtime/contracts/foundation": map[string]any{
 			"get": map[string]any{
 				"tags":        []string{"control-plane"},
@@ -1282,6 +1294,21 @@ func buildOpenAPISchemas() map[string]any {
 		}, []string{"id", "run_id", "candidate_kind", "created_at"}),
 		"RuntimeProjectionCandidateListResponse": objectSchema(map[string]any{
 			"items": arraySchema(refSchema("RuntimeProjectionCandidate")),
+		}, []string{"items"}),
+		"RuntimeCheckpointReadout": objectSchema(map[string]any{
+			"checkpoint_id":        stringSchema("checkpoint ID。", "athena_runtime_graph:sess:req:run:turn_execution:resume"),
+			"run_id":               stringSchema("runtime run ID。", "run_20260507_001"),
+			"stage":                stringSchema("等待或恢复 stage。", "turn_execution"),
+			"resume_token_present": boolSchema("是否存在 resume token；不返回 token 原文。", true),
+			"payload_size":         intSchema("opaque checkpoint payload 字节数。", 128),
+			"payload_sha256":       stringSchema("opaque checkpoint payload sha256。", "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"),
+			"created_at":           dateTimeSchema("checkpoint 创建时间。", "2026-05-07T10:00:00Z"),
+			"updated_at":           dateTimeSchema("checkpoint 最近更新时间。", "2026-05-07T10:00:01Z"),
+			"snapshot_available":   boolSchema("当前 store 是否读到了安全 snapshot。", true),
+			"source":               stringSchema("readout 来源。", "checkpoint_store"),
+		}, []string{"checkpoint_id", "run_id", "resume_token_present", "snapshot_available"}),
+		"RuntimeCheckpointReadoutListResponse": objectSchema(map[string]any{
+			"items": arraySchema(refSchema("RuntimeCheckpointReadout")),
 		}, []string{"items"}),
 		"RuntimeContract": objectSchema(map[string]any{
 			"id":                     stringSchema("runtime contract ID。", "contract_runtime_validation_v1"),

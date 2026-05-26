@@ -22,6 +22,7 @@ import {
   loadConfigVersion,
   loadModelProviders,
   loadOpenAPISpec,
+  loadRuntimeCheckpoints,
   loadRuntimeContractFoundation,
   loadRuntimeLifecycleEvents,
   loadRuntimeProjectionCandidates,
@@ -86,6 +87,7 @@ import type {
   ProviderInput,
   ProviderModelInput,
   ProviderModelRecord,
+  RuntimeCheckpointReadout,
   RuntimeContractFoundation,
   RuntimeContractUpsertInput,
   RuntimeHookBindingUpsertInput,
@@ -967,7 +969,8 @@ function buildReleaseReadinessChecks(
     "GET /api/control-plane/runtime/runs/{runID}/lifecycle",
     "GET /api/control-plane/runtime/runs/{runID}/traces",
     "GET /api/control-plane/runtime/runs/{runID}/usage",
-    "GET /api/control-plane/runtime/runs/{runID}/projections"
+    "GET /api/control-plane/runtime/runs/{runID}/projections",
+    "GET /api/control-plane/runtime/runs/{runID}/checkpoints"
   ];
   const governanceEndpoints = [
     "GET /api/control-plane/tool-governance/policy",
@@ -2567,6 +2570,7 @@ function SystemValidationPanel({
   const [runtimeTraces, setRuntimeTraces] = useState<RuntimeTrace[]>([]);
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage[]>([]);
   const [runtimeProjections, setRuntimeProjections] = useState<RuntimeProjectionCandidate[]>([]);
+  const [runtimeCheckpoints, setRuntimeCheckpoints] = useState<RuntimeCheckpointReadout[]>([]);
   const [runtimeFoundation, setRuntimeFoundation] = useState<RuntimeContractFoundation | null>(null);
   const [runtimeContractDraft, setRuntimeContractDraft] = useState("");
   const [runtimeTaskTypeDraft, setRuntimeTaskTypeDraft] = useState("");
@@ -2702,16 +2706,18 @@ function SystemValidationPanel({
         setRuntimeTraces([]);
         setRuntimeUsage([]);
         setRuntimeProjections([]);
+        setRuntimeCheckpoints([]);
         setRuntimeReadError("");
         return;
       }
-      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextUsage, nextProjections] = await Promise.all([
+      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextUsage, nextProjections, nextCheckpoints] = await Promise.all([
         loadRuntimeRun(nextRunID),
         loadRuntimeSteps(nextRunID),
         loadRuntimeLifecycleEvents(nextRunID),
         loadRuntimeTraces(nextRunID),
         loadRuntimeUsage(nextRunID),
-        loadRuntimeProjectionCandidates(nextRunID)
+        loadRuntimeProjectionCandidates(nextRunID),
+        loadRuntimeCheckpoints(nextRunID)
       ]);
       setRuntimeRun(nextRun);
       setRuntimeSteps(nextSteps.items ?? []);
@@ -2719,6 +2725,7 @@ function SystemValidationPanel({
       setRuntimeTraces(nextTraces.items ?? []);
       setRuntimeUsage(nextUsage.items ?? []);
       setRuntimeProjections(nextProjections.items ?? []);
+      setRuntimeCheckpoints(nextCheckpoints.items ?? []);
       setRuntimeReadError("");
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -2733,6 +2740,7 @@ function SystemValidationPanel({
       setRuntimeTraces([]);
       setRuntimeUsage([]);
       setRuntimeProjections([]);
+      setRuntimeCheckpoints([]);
     } finally {
       setRuntimeReadLoading(false);
     }
@@ -3328,6 +3336,11 @@ function SystemValidationPanel({
                 <strong>{runtimeProjections.length} candidates</strong>
                 <span>{runtimeProjectionLabel(runtimeProjections[0])}</span>
               </div>
+              <div className={runtimeCheckpoints.some((item) => item.snapshot_available) ? "info-card success" : "info-card"} data-testid="runtime-checkpoint-readout">
+                <span className="status-label">Checkpoint</span>
+                <strong>{runtimeCheckpoints.length} safe refs</strong>
+                <span>{summarizeRuntimeCheckpoints(runtimeCheckpoints)}</span>
+              </div>
             </div>
             <div className="runtime-timeline">
               {runtimeSteps.map((step) => (
@@ -3341,6 +3354,21 @@ function SystemValidationPanel({
                 </div>
               ))}
             </div>
+            {runtimeCheckpoints.length > 0 ? (
+              <div className="runtime-record-list">
+                <div className="section-header">
+                  <h3>Checkpoint Safe Metadata</h3>
+                  <span className="muted">payload hidden</span>
+                </div>
+                {runtimeCheckpoints.map((checkpoint) => (
+                  <div className="runtime-record-row" key={checkpoint.checkpoint_id}>
+                    <span className="status-label">{checkpoint.stage || "checkpoint"}</span>
+                    <strong>{checkpoint.payload_sha256 ? shortHash(checkpoint.payload_sha256) : checkpoint.snapshot_available ? "snapshot" : "metadata ref"}</strong>
+                    <span>{checkpoint.payload_size ? `${checkpoint.payload_size} bytes` : "payload size hidden"} · {checkpoint.resume_token_present ? "resume token present" : "no resume token"} · {checkpoint.source || "runtime"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="split-panel embedded-split">
               <div className="runtime-record-list">
                 <div className="section-header">
@@ -4669,6 +4697,22 @@ function runtimeProjectionLabel(projection?: RuntimeProjectionCandidate | null) 
     return "no projection";
   }
   return [projection.schema_version, projection.summary, projection.id].filter(Boolean).slice(0, 2).join(" · ") || projection.id;
+}
+
+function summarizeRuntimeCheckpoints(items: RuntimeCheckpointReadout[]) {
+  if (items.length === 0) {
+    return "no checkpoint refs";
+  }
+  const snapshots = items.filter((item) => item.snapshot_available).length;
+  const latest = items[0];
+  return `${snapshots}/${items.length} snapshots · ${latest.stage || "checkpoint"} · payload hidden`;
+}
+
+function shortHash(value?: string) {
+  if (!value) {
+    return "";
+  }
+  return value.length > 12 ? `${value.slice(0, 12)}…` : value;
 }
 
 function hasProblemStatus(status?: string) {

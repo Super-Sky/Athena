@@ -92,18 +92,23 @@ def validate_runtime_records(client: RuntimeFoundationClient, run_id: str) -> di
     traces = client.request_json("GET", f"/api/control-plane/runtime/runs/{run_id}/traces").get("items") or []
     usage = client.request_json("GET", f"/api/control-plane/runtime/runs/{run_id}/usage").get("items") or []
     projections = client.request_json("GET", f"/api/control-plane/runtime/runs/{run_id}/projections").get("items") or []
+    checkpoints = client.request_json("GET", f"/api/control-plane/runtime/runs/{run_id}/checkpoints").get("items") or []
     expect(detail.get("id") == run_id, f"runtime run detail id mismatch: {detail}")
     expect(steps, "runtime run has no persisted steps")
     expect(lifecycle, "runtime run has no lifecycle events")
     expect(traces, "runtime run has no traces")
     expect(usage, "runtime run has no usage records")
     expect(projections, "runtime run has no projection candidates")
+    for checkpoint in checkpoints:
+        expect("payload" not in checkpoint, f"checkpoint readout leaked raw payload: {checkpoint}")
+        expect("resume_token" not in checkpoint, f"checkpoint readout leaked raw resume token: {checkpoint}")
     return {
         "steps": len(steps),
         "lifecycle": len(lifecycle),
         "traces": len(traces),
         "usage": len(usage),
         "projections": len(projections),
+        "checkpoints": len(checkpoints),
     }
 
 
@@ -123,6 +128,7 @@ def run_api_smoke(base_url: str, token: str, timeout: int) -> dict[str, Any]:
         ("GET", "/api/control-plane/runtime/runs/{runID}/traces"),
         ("GET", "/api/control-plane/runtime/runs/{runID}/usage"),
         ("GET", "/api/control-plane/runtime/runs/{runID}/projections"),
+        ("GET", "/api/control-plane/runtime/runs/{runID}/checkpoints"),
     ]:
         assert_endpoint(spec, method, path)
 
@@ -178,6 +184,7 @@ def run_dom_smoke(web_url: str, token: str) -> dict[str, Any]:
             for test_id in [
                 "system-validation-panel",
                 "runtime-readout",
+                "runtime-checkpoint-readout",
                 "runtime-contract-foundation",
                 "runtime-foundation-capabilities",
                 "runtime-contract-editor",

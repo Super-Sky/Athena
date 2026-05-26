@@ -816,6 +816,35 @@ func (s *PostgresRuntimeStore) Get(ctx context.Context, checkpointID string) ([]
 	return append([]byte(nil), row.Payload...), true, nil
 }
 
+// GetCheckpointSnapshot loads safe checkpoint metadata without reading private payload bytes.
+// GetCheckpointSnapshot 读取不含私有 payload 字节的 checkpoint 安全元数据。
+func (s *PostgresRuntimeStore) GetCheckpointSnapshot(ctx context.Context, checkpointID string) (RuntimeGraphCheckpointSnapshot, bool, error) {
+	if s == nil || s.db == nil {
+		return RuntimeGraphCheckpointSnapshot{}, false, fmt.Errorf("postgres runtime store is not configured")
+	}
+	key := strings.TrimSpace(checkpointID)
+	if key == "" {
+		return RuntimeGraphCheckpointSnapshot{}, false, fmt.Errorf("%w: checkpoint id is required", ErrRuntimeCheckpointRejected)
+	}
+	var row postgresRuntimeGraphCheckpointModel
+	err := s.db.WithContext(ctx).
+		Select("checkpoint_id", "payload_size", "payload_sha256", "created_at", "updated_at").
+		First(&row, "checkpoint_id = ?", key).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return RuntimeGraphCheckpointSnapshot{}, false, nil
+		}
+		return RuntimeGraphCheckpointSnapshot{}, false, err
+	}
+	return RuntimeGraphCheckpointSnapshot{
+		CheckpointID:  row.CheckpointID,
+		PayloadSize:   row.PayloadSize,
+		PayloadSHA256: row.PayloadSHA256,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
+	}, true, nil
+}
+
 // Set stores one private Eino checkpoint payload with safe metadata.
 // Set 保存一份私有 Eino checkpoint payload 及其安全元数据。
 func (s *PostgresRuntimeStore) Set(ctx context.Context, checkpointID string, payload []byte) error {

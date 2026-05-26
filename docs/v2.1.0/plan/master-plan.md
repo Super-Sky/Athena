@@ -25,7 +25,7 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 为 System Validation 页面增加稳定 DOM anchors，支持严格浏览器自动化。
 - [x] 在脚本索引和 feature 文档中记录可重复 smoke 路径。
 - [x] 对运行中的 Web 控制台执行严格 Codex in-app Browser DOM 验收。
-- [ ] 产品化 checkpoint-backed waiting run readout，不暴露 Eino private checkpoint payload。
+- [x] 产品化 checkpoint-backed waiting run readout，不暴露 Eino private checkpoint payload。
 - [ ] 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 定义 registered task type validator contract。
 - [ ] 深化 System Truth `source -> draft -> compile -> active -> rollback` write/edit path 规划。
 - [ ] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
@@ -36,7 +36,7 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
   - `/api/control-plane/runtime/contracts/foundation`
   - `/api/control-plane/runtime/validation-runs`
-  - runtime run detail, steps, lifecycle, traces, usage, projections
+  - runtime run detail, steps, lifecycle, traces, usage, projections, checkpoint safe metadata
 - Web build 通过。
 - runtime read/write 与 validation 的聚焦 Go 测试通过。
 - 关闭 Browser checklist 项前，System Validation tab 的 DOM smoke 必须通过。
@@ -46,7 +46,9 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 
 ```bash
 go test ./internal/controlplane ./internal/server ./internal/app ./internal/runtime
+go test ./internal/runtime ./internal/app ./internal/server
 cd web && npm run build
+PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build
 python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py
 python3 scripts/check_no_absolute_paths.py
 python3 scripts/control_plane_runtime_foundation_smoke.py --base-url http://127.0.0.1:8090
@@ -62,15 +64,18 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-05-26 Web DOM smoke 通过，System Validation 页面新增锚点均可定位。
 - 2026-05-26 Codex in-app Browser 切到 System Validation tab 后确认新增锚点 `missing=[]`。
 - 2026-05-26 self-review 后收紧 DOM smoke：所有新增 `data-testid` 必须唯一且可见，并确保浏览器失败时也会关闭。
+- 2026-05-26 checkpoint-backed waiting readout 已接入 `GET /api/control-plane/runtime/runs/:runID/checkpoints`、OpenAPI、System Validation 与 smoke 脚本；API 只暴露 `payload_size` / `payload_sha256` 等安全摘要，不返回 raw payload 或 resume token。
+- 2026-05-26 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`。
+- 2026-05-26 真实 API + DOM smoke 通过，返回 `run_id=163b71fa-8c18-4a03-bdb8-6de12f168e0e`、`records.steps=1`、`records.lifecycle=9`、`records.traces=5`、`records.usage=5`、`records.projections=3`、`records.checkpoints=0`、`web.dom=ok`。
 
 ## Next Iteration Plan
 
-下一轮优先处理 `checkpoint-backed waiting run readout`，目标是把等待态 runtime run 的读取面产品化，同时避免暴露 Eino private checkpoint payload。
+下一轮优先处理 registered task type validator contract，目标是让 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 具备可读、可测、可演进的注册校验边界。
 
 执行清单：
 
-1. 盘点当前 `runtime_graph_checkpoints`、task run、step timeline 与 projection read model 的可用字段。
-2. 定义 control-plane 只读等待态 readout DTO，明确哪些字段可出现在 API / Web，哪些字段只能留在内部 checkpoint store。
-3. 补 Go 单测覆盖 checkpoint 只读摘要、payload redaction 和空 checkpoint fallback。
-4. 在 System Validation Runtime Persistence Readout 中展示等待态摘要，但不展示 checkpoint 原始 payload。
-5. 更新 `docs/features/feature-runtime-foundation-validation.md` 与真实场景测试用例。
+1. 盘点当前 registered task type schema / validator refs / compatibility 的可用字段。
+2. 定义 validator contract 的最小 API / store / UI readout，不引入业务 evidence ownership。
+3. 补 Go 单测覆盖 active/draft task type 的校验、错误信息和兼容 fallback。
+4. 在 System Validation RuntimeContract foundation readout 中展示 validator refs 与状态。
+5. 更新 feature 文档、真实场景测试用例和 smoke 断言。

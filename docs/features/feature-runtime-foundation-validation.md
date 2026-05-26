@@ -11,7 +11,8 @@ v2.1.0 需要把 RuntimeContract foundation 与 Batch 2 计划冻结成可追踪
 
 - canonical checklist 维护在 `docs/v2.1.0/plan/master-plan.md`。
 - smoke 脚本验证 RuntimeContract、registered task type、hook binding、active System Truth pointer、deterministic validation run 和 runtime persistence readout。
-- 前端仅增加 `data-testid` 自动化锚点，不改变用户可见布局和文案。
+- runtime persistence readout 已包含 checkpoint-backed waiting run 安全摘要，仅展示 checkpoint ID、stage、resume token 是否存在、payload size/hash 与时间戳。
+- 前端提供稳定 `data-testid` 自动化锚点，并在 System Validation 中展示 checkpoint 安全摘要；不展示私有 checkpoint payload。
 
 ## 不做什么
 
@@ -35,14 +36,18 @@ python3 scripts/control_plane_runtime_foundation_smoke.py --base-url http://127.
 ```
 
 DOM 路径会通过稳定 `data-testid` 检查 System Validation tab、Runtime Persistence Readout、Runtime foundation snapshot、capability surface、编辑器和验证触发按钮。
+本轮还会检查 `runtime-checkpoint-readout`，并通过 API smoke 校验 checkpoint readout 不含 raw `payload` 或 `resume_token` 字段。
 
 本轮已完成的验证证据：
 
+- `go test ./internal/runtime ./internal/app ./internal/server`
+- `cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`
 - `go test ./internal/controlplane ./internal/server ./internal/app ./internal/runtime`
 - `cd web && npm run build`
 - `python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`
 - `python3 scripts/check_no_absolute_paths.py`
 - API smoke 返回 `contracts=1`、`task_types=1`、`hook_bindings=3`、`active_system_truths=54`
+- checkpoint readout smoke 返回 `records.checkpoints=0`，确认无等待态 checkpoint 时为安全空列表 fallback
 - Web DOM smoke 返回 `web.dom=ok`
 - Codex in-app Browser 在 System Validation tab 复查新增 DOM anchors，结果为 `missing=[]`
 - self-review 后 DOM smoke 已收紧为所有目标 `data-testid` 必须唯一且可见，并在失败时关闭 Chromium。

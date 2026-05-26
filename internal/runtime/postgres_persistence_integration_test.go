@@ -722,6 +722,13 @@ func TestPostgresRuntimeGraphCheckpointStoreIntegration(t *testing.T) {
 	if !ok || string(got) != string(payload) {
 		t.Fatalf("Get() = %q, %v; want %q", string(got), ok, string(payload))
 	}
+	snapshot, ok, err := store.GetCheckpointSnapshot(ctx, checkpointID)
+	if err != nil {
+		t.Fatalf("GetCheckpointSnapshot() error = %v", err)
+	}
+	if !ok || snapshot.CheckpointID != checkpointID || snapshot.PayloadSize != len(payload) || snapshot.PayloadSHA256 == "" {
+		t.Fatalf("GetCheckpointSnapshot() = %#v, %v; want safe metadata", snapshot, ok)
+	}
 	err = store.Set(ctx, checkpointID, []byte("Authorization: Bearer sk-itest"))
 	if !errors.Is(err, ErrRuntimeCheckpointRejected) {
 		t.Fatalf("credential-like Set() error = %v, want ErrRuntimeCheckpointRejected", err)

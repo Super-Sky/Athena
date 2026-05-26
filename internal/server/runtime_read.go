@@ -108,6 +108,19 @@ type runtimeProjectionCandidateDTO struct {
 	CreatedAt             time.Time      `json:"created_at"`
 }
 
+type runtimeCheckpointReadoutDTO struct {
+	CheckpointID       string     `json:"checkpoint_id"`
+	RunID              string     `json:"run_id"`
+	Stage              string     `json:"stage,omitempty"`
+	ResumeTokenPresent bool       `json:"resume_token_present"`
+	PayloadSize        int        `json:"payload_size,omitempty"`
+	PayloadSHA256      string     `json:"payload_sha256,omitempty"`
+	CreatedAt          *time.Time `json:"created_at,omitempty"`
+	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
+	SnapshotAvailable  bool       `json:"snapshot_available"`
+	Source             string     `json:"source,omitempty"`
+}
+
 type runtimeContractDTO struct {
 	ID                   string         `json:"id"`
 	Name                 string         `json:"name"`
@@ -336,6 +349,15 @@ func handleListControlPlaneRuntimeProjectionCandidates(ctx context.Context, c *h
 		return
 	}
 	c.JSON(consts.StatusOK, map[string]any{"items": runtimeProjectionCandidateDTOs(items)})
+}
+
+func handleListControlPlaneRuntimeCheckpoints(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	items, err := application.ListRuntimeCheckpointReadouts(ctx, strings.TrimSpace(c.Param("runID")))
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": runtimeCheckpointReadoutDTOs(items)})
 }
 
 func handleGetControlPlaneRuntimeContractFoundation(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
@@ -615,6 +637,36 @@ func runtimeProjectionCandidateDTOFromRuntime(item runtime.ProjectionCandidate) 
 		Metadata:              item.Metadata,
 		CreatedAt:             item.CreatedAt,
 	}
+}
+
+func runtimeCheckpointReadoutDTOs(items []appcore.RuntimeCheckpointReadout) []runtimeCheckpointReadoutDTO {
+	out := make([]runtimeCheckpointReadoutDTO, 0, len(items))
+	for _, item := range items {
+		out = append(out, runtimeCheckpointReadoutDTOFromApp(item))
+	}
+	return out
+}
+
+func runtimeCheckpointReadoutDTOFromApp(item appcore.RuntimeCheckpointReadout) runtimeCheckpointReadoutDTO {
+	return runtimeCheckpointReadoutDTO{
+		CheckpointID:       item.CheckpointID,
+		RunID:              item.RunID,
+		Stage:              item.Stage,
+		ResumeTokenPresent: item.ResumeTokenPresent,
+		PayloadSize:        item.PayloadSize,
+		PayloadSHA256:      item.PayloadSHA256,
+		CreatedAt:          runtimeTimePtr(item.CreatedAt),
+		UpdatedAt:          runtimeTimePtr(item.UpdatedAt),
+		SnapshotAvailable:  item.SnapshotAvailable,
+		Source:             item.Source,
+	}
+}
+
+func runtimeTimePtr(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
 }
 
 func runtimeContractFoundationDTOFromApp(item appcore.RuntimeContractFoundationReadout) runtimeContractFoundationDTO {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"moss/internal/runtime"
 )
@@ -45,6 +46,21 @@ type RuntimeContractFoundationReadout struct {
 	ActiveSystemTruths  []runtime.SystemTruthActiveVersion
 	StoreCapabilities   []string
 	UnavailableSurfaces []string
+}
+
+// RuntimeCheckpointReadout is the Control Plane-safe checkpoint metadata view.
+// RuntimeCheckpointReadout 是控制面可见的 checkpoint 安全元数据视图。
+type RuntimeCheckpointReadout struct {
+	CheckpointID       string
+	RunID              string
+	Stage              string
+	ResumeTokenPresent bool
+	PayloadSize        int
+	PayloadSHA256      string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	SnapshotAvailable  bool
+	Source             string
 }
 
 // ListRuntimeRuns returns persisted runtime runs through the app-layer read boundary.
@@ -157,6 +173,44 @@ func (s *Service) ListRuntimeProjectionCandidates(ctx context.Context, query Run
 	})
 }
 
+// ListRuntimeCheckpointReadouts returns safe checkpoint metadata inferred from one run.
+// ListRuntimeCheckpointReadouts 返回从一个 run 推导出的 checkpoint 安全元数据。
+func (s *Service) ListRuntimeCheckpointReadouts(ctx context.Context, runID string) ([]RuntimeCheckpointReadout, error) {
+	store, err := s.runtimePersistenceStore()
+	if err != nil {
+		return nil, err
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil, fmt.Errorf("runtime run id is required")
+	}
+	run, ok, err := store.GetTaskRun(ctx, runID)
+	if err != nil || !ok {
+		return nil, err
+	}
+	items := runtimeCheckpointReadoutsFromRun(run)
+	snapshotStore, hasSnapshots := store.(runtime.RuntimeGraphCheckpointSnapshotStore)
+	for idx := range items {
+		if !hasSnapshots {
+			continue
+		}
+		snapshot, ok, err := snapshotStore.GetCheckpointSnapshot(ctx, items[idx].CheckpointID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		items[idx].PayloadSize = snapshot.PayloadSize
+		items[idx].PayloadSHA256 = snapshot.PayloadSHA256
+		items[idx].CreatedAt = snapshot.CreatedAt
+		items[idx].UpdatedAt = snapshot.UpdatedAt
+		items[idx].SnapshotAvailable = true
+		items[idx].Source = "checkpoint_store"
+	}
+	return items, nil
+}
+
 // GetRuntimeContractFoundation returns v2.1 contract foundation records for Control Plane reads.
 // GetRuntimeContractFoundation 返回供控制面读取的 v2.1 contract foundation 记录。
 func (s *Service) GetRuntimeContractFoundation(ctx context.Context) (RuntimeContractFoundationReadout, error) {
@@ -212,6 +266,125 @@ func (s *Service) GetRuntimeContractFoundation(ctx context.Context) (RuntimeCont
 		readout.UnavailableSurfaces = append(readout.UnavailableSurfaces, "system_truth_lifecycle")
 	}
 	return readout, nil
+}
+
+func runtimeCheckpointReadoutsFromRun(run runtime.TaskRun) []RuntimeCheckpointReadout {
+	var out []RuntimeCheckpointReadout
+	seen := map[string]struct{}{}
+	add := func(item RuntimeCheckpointReadout) {
+		item.CheckpointID = strings.TrimSpace(item.CheckpointID)
+		if item.CheckpointID == "" {
+			return
+		}
+		if _, exists := seen[item.CheckpointID]; exists {
+			return
+		}
+		if strings.TrimSpace(item.RunID) == "" {
+			item.RunID = run.ID
+		}
+		if strings.TrimSpace(item.Source) == "" {
+			item.Source = "task_run_metadata"
+		}
+		seen[item.CheckpointID] = struct{}{}
+		out = append(out, item)
+	}
+	for _, key := range []string{"checkpoint_id", "runtime_checkpoint_id"} {
+		if checkpointID := stringFromMetadata(run.Metadata, key); checkpointID != "" {
+			add(RuntimeCheckpointReadout{
+				CheckpointID:       checkpointID,
+				RunID:              run.ID,
+				Stage:              stringFromMetadata(run.Metadata, "checkpoint_stage"),
+				ResumeTokenPresent: stringFromMetadata(run.Metadata, "resume_token") != "",
+				Source:             key,
+			})
+		}
+	}
+	for _, key := range []string{"checkpoint_ref", "runtime_checkpoint", "runtime_graph_checkpoint"} {
+		if ref, ok := metadataObject(run.Metadata, key); ok {
+			add(runtimeCheckpointReadoutFromObject(run.ID, key, ref))
+		}
+	}
+	if refs, ok := metadataSlice(run.Metadata, "checkpoints"); ok {
+		for _, raw := range refs {
+			switch item := raw.(type) {
+			case string:
+				add(RuntimeCheckpointReadout{CheckpointID: item, RunID: run.ID, Source: "checkpoints"})
+			case map[string]any:
+				add(runtimeCheckpointReadoutFromObject(run.ID, "checkpoints", item))
+			}
+		}
+	}
+	return out
+}
+
+func runtimeCheckpointReadoutFromObject(runID string, source string, values map[string]any) RuntimeCheckpointReadout {
+	return RuntimeCheckpointReadout{
+		CheckpointID:       firstMetadataString(values, "checkpoint_id", "id"),
+		RunID:              defaultRuntimeReadString(firstMetadataString(values, "run_id"), runID),
+		Stage:              firstMetadataString(values, "stage", "checkpoint_stage"),
+		ResumeTokenPresent: metadataBool(values, "resume_token_present") || firstMetadataString(values, "resume_token") != "",
+		Source:             source,
+	}
+}
+
+func stringFromMetadata(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	return stringFromAny(values[key])
+}
+
+func firstMetadataString(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := stringFromMetadata(values, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringFromAny(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return ""
+	}
+}
+
+func metadataObject(values map[string]any, key string) (map[string]any, bool) {
+	raw, ok := values[key]
+	if !ok {
+		return nil, false
+	}
+	typed, ok := raw.(map[string]any)
+	return typed, ok
+}
+
+func metadataSlice(values map[string]any, key string) ([]any, bool) {
+	raw, ok := values[key]
+	if !ok {
+		return nil, false
+	}
+	typed, ok := raw.([]any)
+	return typed, ok
+}
+
+func metadataBool(values map[string]any, key string) bool {
+	raw, ok := values[key]
+	if !ok {
+		return false
+	}
+	typed, ok := raw.(bool)
+	return ok && typed
+}
+
+func defaultRuntimeReadString(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func (s *Service) runtimePersistenceStore() (runtime.RuntimePersistenceStore, error) {

@@ -17,6 +17,7 @@ import type {
   ProviderPatchInput,
   RuntimeContractFoundation,
   RuntimeContractUpsertInput,
+  RuntimeCheckpointReadout,
   RuntimeHookBindingUpsertInput,
   RuntimeLifecycleEvent,
   RuntimeProjectionCandidate,
@@ -248,6 +249,10 @@ export function loadRuntimeUsage(runID: string, limit = 100) {
 export function loadRuntimeProjectionCandidates(runID: string, limit = 100) {
   const query = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : "";
   return request<{ items: RuntimeProjectionCandidate[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/projections${query}`);
+}
+
+export function loadRuntimeCheckpoints(runID: string) {
+  return request<{ items: RuntimeCheckpointReadout[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/checkpoints`);
 }
 
 export function loadRuntimeContractFoundation() {
