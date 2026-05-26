@@ -211,6 +211,10 @@ validation_rules:
 completion_rules:
   - contract_rule.answer_not_empty
 `)
+	writeTruthMarkdown(t, filepath.Join(truthDir, "sources", "scenes", "default", "contract", "README.md"), `# Contracts
+
+- This directory documents contract source files.
+`)
 	writeTruthMarkdown(t, filepath.Join(truthDir, "sources", "scenes", "default", "skills", "user_overview", "SKILL.md"), `---
 id: user_overview
 name: User Overview

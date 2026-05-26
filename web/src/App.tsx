@@ -569,6 +569,7 @@ export default function App() {
               key={tab.key}
               aria-current={tab.key === activeTab ? "page" : undefined}
               className={tab.key === activeTab ? "nav-item active" : "nav-item"}
+              data-testid={`nav-${tab.key}`}
               onClick={() => setActiveTab(tab.key)}
               type="button"
             >
@@ -2916,7 +2917,7 @@ function SystemValidationPanel({
   }
 
   return (
-    <section className="panel editor-pane">
+    <section className="panel editor-pane" data-testid="system-validation-panel">
       <section className="section-card">
         <div className="section-header">
           <div>
@@ -3174,7 +3175,7 @@ function SystemValidationPanel({
         )}
       </section>
 
-      <section className="section-card runtime-readout">
+      <section className="section-card runtime-readout" data-testid="runtime-readout">
         <div className="section-header">
           <div>
             <h2>Runtime Persistence Readout</h2>
@@ -3182,13 +3183,13 @@ function SystemValidationPanel({
           </div>
           <div className="action-row">
             <span className="muted">{runtimeReadLoading ? "读取中…" : runtimeTriggerRunning ? "写入中…" : runtimeFoundationSaveRunning ? "保存中…" : runtimeReadError ? "read unavailable" : `${runtimeRuns.length} runs`}</span>
-            <button className="secondary-button" disabled={runtimeReadLoading || runtimeTriggerRunning || runtimeFoundationSaveRunning} onClick={triggerRuntimeValidationRun} type="button">
+            <button className="secondary-button" data-testid="runtime-validation-trigger" disabled={runtimeReadLoading || runtimeTriggerRunning || runtimeFoundationSaveRunning} onClick={triggerRuntimeValidationRun} type="button">
               生成 Runtime 验证记录
             </button>
-            <button className="secondary-button" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={saveRuntimeFoundationDrafts} type="button">
+            <button className="secondary-button" data-testid="runtime-foundation-save" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={saveRuntimeFoundationDrafts} type="button">
               保存 Foundation 编辑
             </button>
-            <button className="secondary-button" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={() => withValidationAction(async () => refreshRuntimeRecords())} type="button">
+            <button className="secondary-button" data-testid="runtime-foundation-refresh" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={() => withValidationAction(async () => refreshRuntimeRecords())} type="button">
               刷新 Runtime 记录
             </button>
           </div>
@@ -3223,6 +3224,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-contract-foundation"
                   className="debug-textarea compact"
+                  data-testid="runtime-contract-foundation"
                   value={formatMaybeJSON({
                     contracts: runtimeFoundation.contracts,
                     task_types: runtimeFoundation.task_types,
@@ -3238,6 +3240,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-foundation-capabilities"
                   className="debug-textarea compact"
+                  data-testid="runtime-foundation-capabilities"
                   value={formatMaybeJSON({
                     store_capabilities: runtimeFoundation.store_capabilities,
                     unavailable_surfaces: runtimeFoundation.unavailable_surfaces ?? []
@@ -3253,6 +3256,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-contract-editor"
                   className="debug-textarea compact"
+                  data-testid="runtime-contract-editor"
                   onChange={(event) => setRuntimeContractDraft(event.target.value)}
                   rows={12}
                   value={runtimeContractDraft}
@@ -3263,6 +3267,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-task-type-editor"
                   className="debug-textarea compact"
+                  data-testid="runtime-task-type-editor"
                   onChange={(event) => setRuntimeTaskTypeDraft(event.target.value)}
                   rows={5}
                   value={runtimeTaskTypeDraft}
@@ -3270,6 +3275,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-hook-binding-editor"
                   className="debug-textarea compact"
+                  data-testid="runtime-hook-binding-editor"
                   onChange={(event) => setRuntimeHookBindingDraft(event.target.value)}
                   rows={6}
                   value={runtimeHookBindingDraft}

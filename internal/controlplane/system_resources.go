@@ -865,6 +865,9 @@ func (m *Manager) collectSystemSourceFiles(root string) ([]string, error) {
 			if entry.IsDir() {
 				return nil
 			}
+			if isSystemResourceDirectoryReadme(path) {
+				return nil
+			}
 			if strings.EqualFold(filepath.Ext(path), ".md") {
 				result = append(result, path)
 			}
@@ -907,6 +910,9 @@ func (m *Manager) collectSystemSourceFiles(root string) ([]string, error) {
 				if entry.IsDir() {
 					return nil
 				}
+				if isSystemResourceDirectoryReadme(path) {
+					return nil
+				}
 				switch strings.ToLower(filepath.Ext(path)) {
 				case ".md", ".yaml", ".yml":
 					result = append(result, path)
@@ -932,6 +938,12 @@ func (m *Manager) collectSystemSourceFiles(root string) ([]string, error) {
 	}
 	sort.Strings(result)
 	return result, nil
+}
+
+// isSystemResourceDirectoryReadme keeps navigation docs out of source truth ingestion.
+// isSystemResourceDirectoryReadme 避免把目录说明文档当成 system truth 资产导入。
+func isSystemResourceDirectoryReadme(path string) bool {
+	return strings.EqualFold(filepath.Base(path), "README.md")
 }
 
 func (m *Manager) deleteStaleSystemResources(ctx context.Context, active map[string]struct{}) error {

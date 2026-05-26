@@ -21,6 +21,8 @@
   - 用于验证 `/api/chat/respond` 或结构化响应路径的可靠性表现。
 - `check_no_absolute_paths.py`
   - 扫描文档、skill、模板和脚本说明中的个人机器绝对路径，作为 issue-driven 文档治理门禁。
+- `control_plane_runtime_foundation_smoke.py`
+  - 验证 v2.1.0 RuntimeContract foundation、deterministic validation run 和 runtime persistence readout；传入 `--web-url` 时额外执行 System Validation DOM smoke。
 - `test_check_no_absolute_paths.py`
   - 验证绝对路径扫描脚本的命中与放行逻辑。
 - `build_release_bundle.sh`
