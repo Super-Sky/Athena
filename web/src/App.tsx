@@ -548,11 +548,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">跳到主内容</a>
       <aside className="side-nav">
         <div className="brand-block">
           <p className="eyebrow">Athena</p>
           <h1>Control Plane</h1>
-          <p className="muted">场景、skill、tool、模型治理、策略、配置版本与 API 文档统一入口。</p>
+          <p className="muted">场景、skill、tool、模型治理、策略、配置版本与 API 文档。</p>
         </div>
         <div className="status-card">
           <span className="status-label">认证</span>
@@ -587,7 +588,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="content-pane">
+      <main className="content-pane" id="main-content">
         <header className="content-header">
           <div>
             <p className="eyebrow">Control Surface</p>
@@ -599,7 +600,7 @@ export default function App() {
             <strong>{authPhase === "ready" ? "online" : authPhase}</strong>
           </div>
         </header>
-        {authPhase === "loading" ? <section className="panel">正在检查控制面认证状态…</section> : null}
+        {authPhase === "loading" ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-line" /><span className="skeleton-line short" /></section> : null}
         {authPhase === "unauthenticated" ? (
           <LoginPanel
             error={error}
@@ -612,7 +613,7 @@ export default function App() {
         ) : null}
         {authPhase !== "ready" ? null : (
           <>
-        {data === null ? <section className="panel">正在初始化控制面…</section> : null}
+        {data === null ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-grid"><span /><span /><span /></span></section> : null}
         {data && activeTab === "overview" ? <OverviewPanel data={data} providers={providers} truthDir={authStatus?.truth_dir} systemResources={systemResources} /> : null}
         {data && activeTab === "release-readiness" ? (
           <ReleaseReadinessPanel
@@ -744,7 +745,7 @@ function OverviewPanel({
       </div>
       <div className="metric-card">
         <span>Truth Dir</span>
-        <strong>{truthDir?.version || "unknown"}</strong>
+        <strong className="metric-value-compact">{truthDir?.version || "unknown"}</strong>
         <span className="muted">{truthDir?.path || "未暴露路径"}</span>
       </div>
     </section>
