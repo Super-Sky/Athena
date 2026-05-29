@@ -53,6 +53,8 @@ func TestUpdateRuntimeTaskTypeRegistrationUsesPathKey(t *testing.T) {
 	item, err := service.UpdateRuntimeTaskTypeRegistration(context.Background(), "runtime_validation", runtime.TaskTypeRegistration{
 		DisplayName:       "Runtime Validation",
 		Status:            runtime.TaskTypeStatusActive,
+		InputSchema:       map[string]any{"type": "object"},
+		ValidatorRefs:     map[string]any{"validators": []any{"runtime_contract_input"}, "status": "ready"},
 		DefaultContractID: "contract-1",
 	})
 	if err != nil {

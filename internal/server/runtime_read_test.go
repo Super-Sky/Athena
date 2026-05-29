@@ -232,7 +232,7 @@ func TestControlPlaneRuntimeFoundationWriteEndpointsUpdateRecords(t *testing.T) 
 		t.Fatalf("contract body = %s", contractResp.Body.String())
 	}
 
-	taskTypeBody := bytes.NewBufferString(`{"display_name":"Runtime Validation After","status":"active","default_contract_id":"contract-edit-1","metadata":{"editor":"system_validation"}}`)
+	taskTypeBody := bytes.NewBufferString(`{"display_name":"Runtime Validation After","status":"active","input_schema":{"type":"object"},"validator_refs":{"validators":["runtime_contract_input"],"status":"ready"},"default_contract_id":"contract-edit-1","metadata":{"editor":"system_validation"}}`)
 	taskTypeResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPut, "/api/control-plane/runtime/task-types/runtime_validation", &ut.Body{Body: taskTypeBody, Len: taskTypeBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
 	if taskTypeResp.Code != consts.StatusOK {
 		t.Fatalf("task type status = %d, want %d; body=%s", taskTypeResp.Code, consts.StatusOK, taskTypeResp.Body.String())
@@ -448,7 +448,7 @@ func TestControlPlaneRuntimeFoundationWriteEndpointPostgresIntegration(t *testin
 		t.Fatalf("contract status = %d, want %d; body=%s", contractResp.Code, consts.StatusOK, contractResp.Body.String())
 	}
 
-	taskTypeBody := bytes.NewBufferString(`{"display_name":"Integration Runtime Task Type","status":"active","default_contract_id":"` + contractID + `","metadata":{"integration":"postgres_write"}}`)
+	taskTypeBody := bytes.NewBufferString(`{"display_name":"Integration Runtime Task Type","status":"active","input_schema":{"type":"object"},"validator_refs":{"validators":["runtime_contract_input"],"status":"ready"},"default_contract_id":"` + contractID + `","metadata":{"integration":"postgres_write"}}`)
 	taskTypeResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPut, "/api/control-plane/runtime/task-types/"+taskTypeKey, &ut.Body{Body: taskTypeBody, Len: taskTypeBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
 	if taskTypeResp.Code != consts.StatusOK {
 		t.Fatalf("task type status = %d, want %d; body=%s", taskTypeResp.Code, consts.StatusOK, taskTypeResp.Body.String())

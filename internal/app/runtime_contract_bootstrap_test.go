@@ -20,8 +20,8 @@ func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 	if err := syncRuntimeContractFoundationSnapshot(context.Background(), manager, store); err != nil {
 		t.Fatalf("syncRuntimeContractFoundationSnapshot() error = %v", err)
 	}
-	if len(store.contracts) != 1 {
-		t.Fatalf("contracts len = %d, want 1", len(store.contracts))
+	if len(store.contracts) != 1+len(registeredTaskTypeValidatorSeeds) {
+		t.Fatalf("contracts len = %d, want %d", len(store.contracts), 1+len(registeredTaskTypeValidatorSeeds))
 	}
 	contract, ok := store.contracts[runtimeValidationContractID]
 	if !ok || contract.TaskType != runtimeValidationTaskTypeKey {
@@ -33,6 +33,26 @@ func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 	}
 	if len(store.hooks) != len(runtimeValidationHookSeeds) {
 		t.Fatalf("hooks len = %d, want %d", len(store.hooks), len(runtimeValidationHookSeeds))
+	}
+	for _, hook := range store.hooks {
+		if hook.ContractID != runtimeValidationContractID {
+			t.Fatalf("hook %s contract = %q, want runtime validation contract", hook.ID, hook.ContractID)
+		}
+	}
+	for _, seed := range registeredTaskTypeValidatorSeeds {
+		taskType, ok := store.taskTypesByKey[seed.typeKey]
+		if !ok {
+			t.Fatalf("task type registry missing %s", seed.typeKey)
+		}
+		if taskType.DefaultContractID != registeredTaskTypeValidatorContractID(seed.typeKey) {
+			t.Fatalf("%s default contract = %q, want %q", seed.typeKey, taskType.DefaultContractID, registeredTaskTypeValidatorContractID(seed.typeKey))
+		}
+		if status, _ := taskType.ValidatorRefs["status"].(string); status != "ready" {
+			t.Fatalf("%s validator status = %q, want ready", seed.typeKey, status)
+		}
+		if taskType.Compatibility["core_materialization_scope"] != "projection_candidate_only" {
+			t.Fatalf("%s compatibility = %#v, want projection-only scope", seed.typeKey, taskType.Compatibility)
+		}
 	}
 	if len(store.activeTruthsByAsset) == 0 {
 		t.Fatalf("activeTruthsByAsset is empty, want at least one active truth")
@@ -55,7 +75,7 @@ func TestSyncRuntimeContractFoundationSnapshotIsIdempotent(t *testing.T) {
 	if err := syncRuntimeContractFoundationSnapshot(context.Background(), manager, store); err != nil {
 		t.Fatalf("second sync error = %v", err)
 	}
-	if len(store.contracts) != 1 || len(store.taskTypesByKey) != 1 {
+	if len(store.contracts) != 1+len(registeredTaskTypeValidatorSeeds) || len(store.taskTypesByKey) != 1+len(registeredTaskTypeValidatorSeeds) {
 		t.Fatalf("foundation counts changed after second sync: contracts=%d taskTypes=%d", len(store.contracts), len(store.taskTypesByKey))
 	}
 	if len(store.hooks) != len(runtimeValidationHookSeeds) {

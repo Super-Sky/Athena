@@ -83,6 +83,28 @@ def validate_foundation(foundation: dict[str, Any]) -> None:
     expect(any(item.get("task_type") == "runtime_validation" for item in contracts), "runtime_validation contract missing")
     expect(any(item.get("type_key") == "runtime_validation" for item in task_types), "runtime_validation task type missing")
     expect(any(item.get("binding_ref") == "runtime_contract_guard" for item in hooks), "runtime_contract_guard hook missing")
+    validate_registered_task_type_validators(task_types)
+
+
+def validate_registered_task_type_validators(task_types: list[dict[str, Any]]) -> None:
+    expected = {"inspection_task", "integration_event", "scheduled_job", "workflow_step_request"}
+    by_key = {item.get("type_key"): item for item in task_types}
+    missing = sorted(key for key in expected if key not in by_key)
+    expect(not missing, f"registered task type validators missing: {missing}")
+    for key in sorted(expected):
+        item = by_key[key]
+        refs = item.get("validator_refs") or {}
+        validators = refs.get("validators") or []
+        compatibility = item.get("compatibility") or {}
+        expect(item.get("status") == "active", f"{key} task type is not active: {item}")
+        expect(bool(item.get("default_contract_id")), f"{key} missing default contract")
+        expect(bool(item.get("input_schema")), f"{key} missing input schema")
+        expect(refs.get("status") == "ready", f"{key} validator status is not ready: {refs}")
+        expect(any(isinstance(value, str) and value for value in validators), f"{key} validators are empty: {refs}")
+        expect(
+            compatibility.get("core_materialization_scope") == "projection_candidate_only",
+            f"{key} compatibility crosses projection boundary: {compatibility}",
+        )
 
 
 def validate_runtime_records(client: RuntimeFoundationClient, run_id: str) -> dict[str, int]:
@@ -187,6 +209,7 @@ def run_dom_smoke(web_url: str, token: str) -> dict[str, Any]:
                 "runtime-checkpoint-readout",
                 "runtime-contract-foundation",
                 "runtime-foundation-capabilities",
+                "runtime-task-type-validator-contracts",
                 "runtime-contract-editor",
                 "runtime-task-type-editor",
                 "runtime-hook-binding-editor",

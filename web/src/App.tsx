@@ -95,6 +95,7 @@ import type {
   RuntimeProjectionCandidate,
   RuntimeRun,
   RuntimeStep,
+  RuntimeTaskTypeRegistration,
   RuntimeTaskTypeUpsertInput,
   RuntimeTrace,
   RuntimeValidationRunResponse,
@@ -2605,6 +2606,7 @@ function SystemValidationPanel({
   const selectableSkills = sceneSkills.length > 0 ? sceneSkills : data.skills;
   const checks = buildSystemValidationChecks(data, items);
   const comparison = buildTextComparison(baselineText, candidateText);
+  const validatorSummary = summarizeTaskTypeValidators(runtimeFoundation?.task_types ?? []);
 
   useEffect(() => {
     if (items.length === 0) {
@@ -3226,6 +3228,11 @@ function SystemValidationPanel({
                 <strong>{runtimeFoundation.active_system_truths.length}</strong>
                 <span>{runtimeFoundation.active_system_truths[0]?.asset_id || "no active pointer"}</span>
               </div>
+              <div className={validatorSummary.ready === validatorSummary.expected ? "info-card success" : "info-card warning"} data-testid="runtime-task-type-validator-contracts">
+                <span className="status-label">Validator Contracts</span>
+                <strong>{validatorSummary.ready} / {validatorSummary.expected}</strong>
+                <span>{validatorSummary.missing.length ? `missing: ${validatorSummary.missing.join(", ")}` : validatorSummary.readyKeys.join(", ")}</span>
+              </div>
             </div>
             <div className="split-panel embedded-split">
               <label>
@@ -3237,6 +3244,7 @@ function SystemValidationPanel({
                   value={formatMaybeJSON({
                     contracts: runtimeFoundation.contracts,
                     task_types: runtimeFoundation.task_types,
+                    task_type_validator_contracts: validatorSummary,
                     hook_bindings: runtimeFoundation.hook_bindings,
                     active_system_truths: runtimeFoundation.active_system_truths
                   })}
@@ -4823,10 +4831,38 @@ function defaultRuntimeTaskTypeDraft(): RuntimeTaskTypeUpsertInput {
   return {
     display_name: "Runtime Validation",
     status: "active",
+    input_schema: {
+      type: "object"
+    },
+    validator_refs: {
+      validators: ["runtime_contract_input"],
+      status: "ready"
+    },
     default_contract_id: "runtime_validation_contract",
     metadata: {
       editor_surface: "system_validation"
     }
+  };
+}
+
+function summarizeTaskTypeValidators(taskTypes: RuntimeTaskTypeRegistration[]) {
+  const expectedKeys = ["inspection_task", "integration_event", "scheduled_job", "workflow_step_request"];
+  const readyKeys = expectedKeys.filter((key) => {
+    const item = taskTypes.find((taskType) => taskType.type_key === key);
+    if (!item || item.status !== "active" || !item.default_contract_id) {
+      return false;
+    }
+    const refs = item.validator_refs ?? {};
+    const validators = refs.validators;
+    const hasValidators = Array.isArray(validators) && validators.some((value) => typeof value === "string" && value.trim() !== "");
+    const status = typeof refs.status === "string" ? refs.status.trim() : "";
+    return hasValidators && (!status || status === "ready");
+  });
+  return {
+    expected: expectedKeys.length,
+    ready: readyKeys.length,
+    readyKeys,
+    missing: expectedKeys.filter((key) => !readyKeys.includes(key))
   };
 }
 

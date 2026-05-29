@@ -206,8 +206,20 @@ func validateTaskTypeRegistration(input TaskTypeRegistration) error {
 	if strings.TrimSpace(input.TypeKey) == "" {
 		return invalidRuntimePersistenceInput("task type type_key is required")
 	}
-	if !validTaskTypeStatus(defaultString(input.Status, TaskTypeStatusDraft)) {
+	status := defaultString(input.Status, TaskTypeStatusDraft)
+	if !validTaskTypeStatus(status) {
 		return invalidRuntimePersistenceInput("unsupported task type status %q", input.Status)
+	}
+	if status == TaskTypeStatusActive {
+		if strings.TrimSpace(input.DefaultContractID) == "" {
+			return invalidRuntimePersistenceInput("active task type default_contract_id is required")
+		}
+		if len(input.InputSchema) == 0 {
+			return invalidRuntimePersistenceInput("active task type input_schema is required")
+		}
+		if !hasTaskTypeValidators(input.ValidatorRefs) {
+			return invalidRuntimePersistenceInput("active task type validator_refs.validators is required")
+		}
 	}
 	for name, value := range map[string]any{
 		"input_schema":   input.InputSchema,
@@ -220,6 +232,32 @@ func validateTaskTypeRegistration(input TaskTypeRegistration) error {
 		}
 	}
 	return nil
+}
+
+func hasTaskTypeValidators(values map[string]any) bool {
+	if values == nil {
+		return false
+	}
+	raw, ok := values["validators"]
+	if !ok {
+		return false
+	}
+	switch typed := raw.(type) {
+	case []any:
+		for _, item := range typed {
+			text, ok := item.(string)
+			if ok && strings.TrimSpace(text) != "" {
+				return true
+			}
+		}
+	case []string:
+		for _, item := range typed {
+			if strings.TrimSpace(item) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ValidateHookBinding verifies one hook binding payload before persistence.

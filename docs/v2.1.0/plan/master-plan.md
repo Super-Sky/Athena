@@ -26,7 +26,7 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 在脚本索引和 feature 文档中记录可重复 smoke 路径。
 - [x] 对运行中的 Web 控制台执行严格 Codex in-app Browser DOM 验收。
 - [x] 产品化 checkpoint-backed waiting run readout，不暴露 Eino private checkpoint payload。
-- [ ] 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 定义 registered task type validator contract。
+- [x] 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 定义 registered task type validator contract。
 - [ ] 深化 System Truth `source -> draft -> compile -> active -> rollback` write/edit path 规划。
 - [ ] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
 - [ ] 将剩余 direct respond rich delivery 兼容拼装从 transport 收敛到 app/runtime graph node 或 Batch 2 read model。
@@ -67,15 +67,18 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-05-26 checkpoint-backed waiting readout 已接入 `GET /api/control-plane/runtime/runs/:runID/checkpoints`、OpenAPI、System Validation 与 smoke 脚本；API 只暴露 `payload_size` / `payload_sha256` 等安全摘要，不返回 raw payload 或 resume token。
 - 2026-05-26 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`。
 - 2026-05-26 真实 API + DOM smoke 通过，返回 `run_id=163b71fa-8c18-4a03-bdb8-6de12f168e0e`、`records.steps=1`、`records.lifecycle=9`、`records.traces=5`、`records.usage=5`、`records.projections=3`、`records.checkpoints=0`、`web.dom=ok`。
+- 2026-05-29 registered task type validator contract 已接入四个 legacy task type，active task type 写入校验要求 `default_contract_id`、`input_schema` 和 `validator_refs.validators`；draft 仍可暂存。
+- 2026-05-29 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
+- 2026-05-29 真实 API + DOM smoke 通过，返回 `run_id=f09ad491-9df4-47c4-b92c-97adf7098c24`、`contracts=5`、`task_types=5`、`hook_bindings=3`、`active_system_truths=54`、`web.dom=ok`。
 
 ## Next Iteration Plan
 
-下一轮优先处理 registered task type validator contract，目标是让 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 具备可读、可测、可演进的注册校验边界。
+下一轮优先处理 System Truth `source -> draft -> compile -> active -> rollback` write/edit path，继续保持 core 只承载通用生命周期与校验面，不引入业务 truth ownership。
 
 执行清单：
 
-1. 盘点当前 registered task type schema / validator refs / compatibility 的可用字段。
-2. 定义 validator contract 的最小 API / store / UI readout，不引入业务 evidence ownership。
-3. 补 Go 单测覆盖 active/draft task type 的校验、错误信息和兼容 fallback。
-4. 在 System Validation RuntimeContract foundation readout 中展示 validator refs 与状态。
+1. 盘点现有 System Truth source、draft、compiled、active pointer 与 rollback 相关 store/API 能力。
+2. 定义最小 write/edit/readout 路径，确保 source ingest、draft edit、compile 和 active pointer 切换可追踪。
+3. 补 Go 单测覆盖状态转换、非法回退、active pointer 冲突和 compiled artifact 引用。
+4. 在 System Validation 中展示 lifecycle readout 与失败原因摘要。
 5. 更新 feature 文档、真实场景测试用例和 smoke 断言。

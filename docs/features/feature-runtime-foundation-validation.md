@@ -11,6 +11,7 @@ v2.1.0 需要把 RuntimeContract foundation 与 Batch 2 计划冻结成可追踪
 
 - canonical checklist 维护在 `docs/v2.1.0/plan/master-plan.md`。
 - smoke 脚本验证 RuntimeContract、registered task type、hook binding、active System Truth pointer、deterministic validation run 和 runtime persistence readout。
+- Runtime bootstrap 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 写入最小 registered task type validator contract，并在 UI readout 中展示 readiness。
 - runtime persistence readout 已包含 checkpoint-backed waiting run 安全摘要，仅展示 checkpoint ID、stage、resume token 是否存在、payload size/hash 与时间戳。
 - 前端提供稳定 `data-testid` 自动化锚点，并在 System Validation 中展示 checkpoint 安全摘要；不展示私有 checkpoint payload。
 
@@ -18,7 +19,7 @@ v2.1.0 需要把 RuntimeContract foundation 与 Batch 2 计划冻结成可追踪
 
 - 不接管业务 evidence ownership。
 - 不暴露 Eino checkpoint private payload。
-- 不在本轮实现完整 registered task validator。
+- 不在本轮实现业务级 registered task validator；本轮只定义四个 legacy task type 的最小注册校验契约、schema/readiness readout 和 record-only failure policy。
 - 不在本轮实现完整 System Truth write/edit lifecycle。
 
 ## 验证
@@ -35,7 +36,7 @@ python3 scripts/control_plane_runtime_foundation_smoke.py --base-url http://127.
 python3 scripts/control_plane_runtime_foundation_smoke.py --base-url http://127.0.0.1:8090 --web-url http://127.0.0.1:5173
 ```
 
-DOM 路径会通过稳定 `data-testid` 检查 System Validation tab、Runtime Persistence Readout、Runtime foundation snapshot、capability surface、编辑器和验证触发按钮。
+DOM 路径会通过稳定 `data-testid` 检查 System Validation tab、Runtime Persistence Readout、Runtime foundation snapshot、registered task type validator contracts、capability surface、编辑器和验证触发按钮。
 本轮还会检查 `runtime-checkpoint-readout`，并通过 API smoke 校验 checkpoint readout 不含 raw `payload` 或 `resume_token` 字段。
 
 本轮已完成的验证证据：
@@ -51,6 +52,8 @@ DOM 路径会通过稳定 `data-testid` 检查 System Validation tab、Runtime P
 - Web DOM smoke 返回 `web.dom=ok`
 - Codex in-app Browser 在 System Validation tab 复查新增 DOM anchors，结果为 `missing=[]`
 - self-review 后 DOM smoke 已收紧为所有目标 `data-testid` 必须唯一且可见，并在失败时关闭 Chromium。
+- 2026-05-29 registered task type validator contract smoke 返回 `contracts=5`、`task_types=5`，四个 legacy task type 的 validator status 均为 `ready`，UI `runtime-task-type-validator-contracts` 显示 `4 / 4`。
+- 2026-05-29 Codex in-app Browser DOM 复查 `runtime-task-type-validator-contracts`，显示 `inspection_task, integration_event, scheduled_job, workflow_step_request`。
 
 ## 维护结论
 
