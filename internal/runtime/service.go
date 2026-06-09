@@ -356,6 +356,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		},
 	}
 	spec.Metadata.PreservedContext = buildPreservedContext(in, nil)
+	ApplyResolvedRuntimeContract(spec, in.ResolvedContract, in.ResolvedTaskType)
 	if personaContext := taskPersonaContext(task); personaContext != nil {
 		if personaContext.ID != "" {
 			spec.Metadata.Constraints["persona_id"] = personaContext.ID

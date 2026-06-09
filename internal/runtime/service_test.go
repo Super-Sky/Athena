@@ -373,6 +373,104 @@ func TestEinoTurnExecutorPrepareFallsBackAndPreservesRequestedModel(t *testing.T
 	}
 }
 
+func TestEinoTurnExecutorPrepareRetriesPrimaryBeforeFailover(t *testing.T) {
+	provider := &recordingModelProvider{
+		fail: map[string]error{"model-primary": context.DeadlineExceeded},
+	}
+	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())
+	spec := &ExecutionSpec{
+		Skill: SkillSpec{PrimarySkill: "user_overview", Guidance: "helpful"},
+		Model: buildModelSpec(&model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+			Fallback: &model.ChatConfig{
+				ProviderID:       "provider-fallback",
+				ProviderName:     "Fallback Provider",
+				ProviderProtocol: "anthropic",
+				ModelRecordID:    "model-fallback",
+				ProviderModelID:  "claude-fallback",
+				ModelDisplayName: "Fallback Model",
+			},
+		}),
+		Metadata: ExecutionMetadata{
+			Constraints: map[string]any{
+				"runtime_model_retry_max_attempts": 2,
+				"runtime_model_failover_enabled":   true,
+			},
+		},
+	}
+
+	prepared, err := executor.Prepare(context.Background(), RuntimeState{RequestID: "req-model-retry", SessionID: "sess-model-retry", Turn: 1}, spec, nil)
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if prepared == nil || prepared.Runner == nil {
+		t.Fatalf("expected runner to be prepared")
+	}
+	if len(provider.calls) != 4 {
+		t.Fatalf("provider calls = %d, want 4 (3 primary retries + 1 fallback)", len(provider.calls))
+	}
+	if provider.calls[0].ModelRecordID != "model-primary" || provider.calls[1].ModelRecordID != "model-primary" || provider.calls[2].ModelRecordID != "model-primary" {
+		t.Fatalf("provider calls first 3 = %#v, want primary retries", provider.calls[:3])
+	}
+	if provider.calls[3].ModelRecordID != "model-fallback" {
+		t.Fatalf("provider fallback call = %#v, want model-fallback", provider.calls[3])
+	}
+	if spec.Model.FallbackReason != "primary_model_unavailable_after_retry" {
+		t.Fatalf("fallback reason = %q, want primary_model_unavailable_after_retry", spec.Model.FallbackReason)
+	}
+	if got := spec.Metadata.Constraints["runtime_model_prepare_primary_attempts"]; got != 3 {
+		t.Fatalf("runtime_model_prepare_primary_attempts = %#v, want 3", got)
+	}
+}
+
+func TestEinoTurnExecutorPrepareRespectsFailoverDisabled(t *testing.T) {
+	provider := &recordingModelProvider{
+		fail: map[string]error{"model-primary": context.DeadlineExceeded},
+	}
+	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())
+	spec := &ExecutionSpec{
+		Skill: SkillSpec{PrimarySkill: "user_overview", Guidance: "helpful"},
+		Model: buildModelSpec(&model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+			Fallback: &model.ChatConfig{
+				ProviderID:       "provider-fallback",
+				ProviderName:     "Fallback Provider",
+				ProviderProtocol: "anthropic",
+				ModelRecordID:    "model-fallback",
+				ProviderModelID:  "claude-fallback",
+				ModelDisplayName: "Fallback Model",
+			},
+		}),
+		Metadata: ExecutionMetadata{
+			Constraints: map[string]any{
+				"runtime_model_failover_enabled": false,
+			},
+		},
+	}
+
+	_, err := executor.Prepare(context.Background(), RuntimeState{RequestID: "req-model-no-failover", SessionID: "sess-model-no-failover", Turn: 1}, spec, nil)
+	if err == nil {
+		t.Fatalf("Prepare() expected error when failover is disabled and primary fails")
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1 primary call only", len(provider.calls))
+	}
+}
+
 func TestEinoTurnExecutorPrepareFailsClosedWhenRequiredToolHasNoAllowedTools(t *testing.T) {
 	provider := &recordingModelProvider{}
 	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())
