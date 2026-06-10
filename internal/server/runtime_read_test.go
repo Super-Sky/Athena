@@ -101,19 +101,23 @@ func TestControlPlaneRuntimeReadEndpointsReturnPersistedRecords(t *testing.T) {
 			CreatedAt:    now,
 		}},
 		projections: []runtime.ProjectionCandidate{{
-			ID:                    "projection-read-1",
-			RunID:                 "run-read-1",
-			StepID:                "step-read-1",
-			CandidateKind:         "assistant_message",
-			Status:                "completed",
-			Summary:               "candidate summary",
-			SchemaVersion:         "runtime_projection.v1",
-			RedactedPayload:       map[string]any{"text_summary": "hello"},
-			SemanticPayload:       map[string]any{"kind": "assistant_message"},
-			ArtifactRefs:          map[string]any{"primary": "artifact://runtime/read"},
-			UIHints:               map[string]any{"surface": "system_validation"},
-			MaterializationTarget: map[string]any{"target": "control_plane"},
-			CreatedAt:             now,
+			ID:              "projection-read-1",
+			RunID:           "run-read-1",
+			StepID:          "step-read-1",
+			CandidateKind:   "assistant_message",
+			Status:          "completed",
+			Summary:         "candidate summary",
+			SchemaVersion:   runtime.ProjectionSchemaVersionAssistantMessage,
+			RedactedPayload: map[string]any{"text_summary": "hello"},
+			SemanticPayload: map[string]any{"kind": "assistant_message"},
+			ArtifactRefs:    map[string]any{"primary": "artifact://runtime/read"},
+			UIHints:         map[string]any{"surface": "system_validation"},
+			MaterializationTarget: map[string]any{
+				"target_type":                runtime.ProjectionMaterializationTargetReadModel,
+				"core_materialization_scope": runtime.ProjectionMaterializationScopeCandidateOnly,
+				"ownership":                  runtime.ProjectionMaterializationOwnershipRuntime,
+			},
+			CreatedAt: now,
 		}},
 		contracts: []runtime.RuntimeContract{{
 			ID:        "contract-read-1",
@@ -166,7 +170,7 @@ func TestControlPlaneRuntimeReadEndpointsReturnPersistedRecords(t *testing.T) {
 		{path: "/api/control-plane/runtime/runs/run-read-1/lifecycle", want: `"event_type":"step_status_changed"`},
 		{path: "/api/control-plane/runtime/runs/run-read-1/traces?step_id=step-read-1", want: `"summary":"model callback summary"`},
 		{path: "/api/control-plane/runtime/runs/run-read-1/usage?step_id=step-read-1", want: `"resource_type":"model_tokens"`},
-		{path: "/api/control-plane/runtime/runs/run-read-1/projections?step_id=step-read-1", want: `"schema_version":"runtime_projection.v1"`},
+		{path: "/api/control-plane/runtime/runs/run-read-1/projections?step_id=step-read-1", want: `"core_materialization_scope":"projection_candidate_only"`},
 		{path: "/api/control-plane/runtime/runs/run-read-1/checkpoints", want: `"payload_sha256":"93f86c65b3442f5fd41e8ce8ce42e9ba151c3f3f4e8841879f566f07ded57bf9"`},
 		{path: "/api/control-plane/runtime/contracts/foundation", want: `"binding_ref":"runtime_contract_guard"`},
 	}
@@ -423,6 +427,9 @@ func TestControlPlaneRuntimeValidationRunEndpointPersistsGraphRecordSet(t *testi
 	}
 	if !strings.Contains(resp.Body.String(), `"validation_mcp"`) || !strings.Contains(resp.Body.String(), `"external_sandbox_ref"`) {
 		t.Fatalf("body = %s, want deterministic MCP and sandbox validation output", resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"schema_version":"runtime_projection.minimal_output.v1"`) || !strings.Contains(resp.Body.String(), `"core_materialization_scope":"projection_candidate_only"`) {
+		t.Fatalf("body = %s, want runtime projection schema and candidate-only materialization boundary", resp.Body.String())
 	}
 	if len(store.runs) != 1 || len(store.steps) != 1 || len(store.events) < 4 || len(store.traces) < 3 || len(store.usages) < 3 || len(store.projections) < 3 {
 		t.Fatalf("persisted counts runs=%d steps=%d events=%d traces=%d usage=%d projections=%d", len(store.runs), len(store.steps), len(store.events), len(store.traces), len(store.usages), len(store.projections))
@@ -854,8 +861,45 @@ func (s *testRuntimeReadStore) ListUsage(_ context.Context, filter runtime.Usage
 }
 
 func (s *testRuntimeReadStore) CreateProjectionCandidate(_ context.Context, projection runtime.ProjectionCandidate) (runtime.ProjectionCandidate, error) {
+	projection = normalizeTestRuntimeProjectionCandidate(projection)
+	if err := runtime.ValidateProjectionCandidate(projection); err != nil {
+		return runtime.ProjectionCandidate{}, err
+	}
 	s.projections = append(s.projections, projection)
 	return projection, nil
+}
+
+func normalizeTestRuntimeProjectionCandidate(projection runtime.ProjectionCandidate) runtime.ProjectionCandidate {
+	projection.CandidateKind = strings.TrimSpace(projection.CandidateKind)
+	projection.SchemaVersion = strings.TrimSpace(projection.SchemaVersion)
+	if projection.SchemaVersion == "" {
+		switch projection.CandidateKind {
+		case "minimal_output":
+			projection.SchemaVersion = runtime.ProjectionSchemaVersionMinimalOutput
+		case "prepared_execution":
+			projection.SchemaVersion = runtime.ProjectionSchemaVersionPreparedExecution
+		case "terminal_output":
+			projection.SchemaVersion = runtime.ProjectionSchemaVersionTerminalOutput
+		case "validation_mcp_result":
+			projection.SchemaVersion = runtime.ProjectionSchemaVersionValidationMCP
+		case "external_sandbox_ref":
+			projection.SchemaVersion = runtime.ProjectionSchemaVersionExternalSandboxRef
+		case "assistant_message":
+			projection.SchemaVersion = runtime.ProjectionSchemaVersionAssistantMessage
+		}
+	}
+	target := map[string]any{
+		"target_type":                runtime.ProjectionMaterializationTargetReadModel,
+		"core_materialization_scope": runtime.ProjectionMaterializationScopeCandidateOnly,
+		"ownership":                  runtime.ProjectionMaterializationOwnershipRuntime,
+	}
+	for key, value := range projection.MaterializationTarget {
+		if strings.TrimSpace(key) != "" {
+			target[strings.TrimSpace(key)] = value
+		}
+	}
+	projection.MaterializationTarget = target
+	return projection
 }
 
 func (s *testRuntimeReadStore) GetProjectionCandidate(_ context.Context, id string) (runtime.ProjectionCandidate, bool, error) {

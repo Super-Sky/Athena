@@ -232,6 +232,8 @@ Graph callbacks 和 node outputs 不直接替代 Athena persistence，而是投�
 - model token、tool invocation、retriever hit、sandbox execution -> generic `Usage`
 - final answer、structured result、candidate update -> `ProjectionCandidate`
 
+`ProjectionCandidate` 是 runtime candidate/read-model，不是业务 truth。写入边界要求 projection schema 留在 `runtime_projection.*` namespace，materialization scope 留在 `projection_candidate_only`，并拒绝将 candidate、target 或 typed semantic payload 声明为业务 `EvidenceRecord`。
+
 Eino checkpoint payload 是 runtime-private opaque state，不进入 HTTP / SSE / Control Plane public contract。当前 runtime 已有 private checkpoint byte-store boundary，Postgres-backed runtime store 会通过 `runtime_graph_checkpoints` 表保存 checkpoint payload 与 safe metadata；外部可见恢复语义仍由 Athena `WaitState` / resume token / deferred queue contract 承接，Batch 2 再提供 read API / UI 级展示和恢复入口。
 
 除非某个能力必须位于 Athena core contract，否则后续不再优先手写一套并行 orchestration framework。需要新增编排能力时，先评估能否通过 Eino Graph / Workflow / callback / option / checkpoint 组合表达；只有 Eino 表达不了的平台契约，才在 Athena core 中新增自有抽象。

@@ -37,6 +37,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
 - runtime core persistence foundation：
   - Postgres migration/store 已覆盖 `TaskRun`、`TaskStep`、`RuntimeTrace`、generic `Usage`、`TaskRunLifecycleEvent` 和 minimal projection candidate
   - `PersistenceWriter` 提供事务化 deterministic minimal record set 写入
+  - projection candidate 写入前会校验 `runtime_projection.*` schema、`projection_candidate_only` materialization scope，避免升级成业务 EvidenceRecord
 - 严格场景命中、场景切换建议和 `guide questions` 的第一阶段运行时接线
 - inspection / alert / automation / knowledge candidates / score delta 在 structured respond 路径上的最小结果壳接线
 - 自动化计划草案与用户可读计划说明已开始接入 structured respond 路径

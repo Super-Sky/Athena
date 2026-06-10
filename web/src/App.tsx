@@ -2613,6 +2613,7 @@ function SystemValidationPanel({
   const checks = buildSystemValidationChecks(data, items);
   const comparison = buildTextComparison(baselineText, candidateText);
   const validatorSummary = summarizeTaskTypeValidators(runtimeFoundation?.task_types ?? []);
+  const projectionBoundarySummary = summarizeRuntimeProjectionBoundary(runtimeProjections);
   const systemTruthSources = runtimeFoundation?.system_truth_sources ?? [];
   const systemTruthDrafts = runtimeFoundation?.system_truth_drafts ?? [];
   const systemTruthCompileResults = runtimeFoundation?.system_truth_compile_results ?? [];
@@ -3254,6 +3255,11 @@ function SystemValidationPanel({
                 <strong>{validatorSummary.ready} / {validatorSummary.expected}</strong>
                 <span>{validatorSummary.missing.length ? `missing: ${validatorSummary.missing.join(", ")}` : validatorSummary.readyKeys.join(", ")}</span>
               </div>
+              <div className={projectionBoundarySummary.crosses === 0 && projectionBoundarySummary.missingSchema === 0 ? "info-card success" : "info-card warning"} data-testid="runtime-projection-boundary">
+                <span className="status-label">Projection Boundary</span>
+                <strong>{projectionBoundarySummary.safe} / {projectionBoundarySummary.total}</strong>
+                <span>{projectionBoundarySummary.crosses > 0 ? `${projectionBoundarySummary.crosses} boundary conflicts` : projectionBoundarySummary.missingSchema > 0 ? `${projectionBoundarySummary.missingSchema} schema gaps` : "candidate-only runtime read model"}</span>
+              </div>
             </div>
             <div className="split-panel embedded-split">
               <label>
@@ -3266,6 +3272,7 @@ function SystemValidationPanel({
                     contracts: runtimeFoundation.contracts,
                     task_types: runtimeFoundation.task_types,
                     task_type_validator_contracts: validatorSummary,
+                    projection_boundary: projectionBoundarySummary,
                     hook_bindings: runtimeFoundation.hook_bindings,
                     active_system_truths: runtimeFoundation.active_system_truths,
                     system_truth_lifecycle: {
@@ -4891,6 +4898,68 @@ function summarizeTaskTypeValidators(taskTypes: RuntimeTaskTypeRegistration[]) {
     readyKeys,
     missing: expectedKeys.filter((key) => !readyKeys.includes(key))
   };
+}
+
+function summarizeRuntimeProjectionBoundary(projections: RuntimeProjectionCandidate[]) {
+  const safe = projections.filter((projection) => projectionRespectsRuntimeBoundary(projection)).length;
+  const missingSchema = projections.filter((projection) => !projection.schema_version || !projection.schema_version.startsWith("runtime_projection.")).length;
+  return {
+    total: projections.length,
+    safe,
+    missingSchema,
+    crosses: projections.length - safe
+  };
+}
+
+function projectionRespectsRuntimeBoundary(projection: RuntimeProjectionCandidate) {
+  const schemaVersion = projection.schema_version || "";
+  if (!schemaVersion.startsWith("runtime_projection.")) {
+    return false;
+  }
+  if (containsBusinessEvidenceIdentity(projection.candidate_kind) || containsBusinessEvidenceIdentity(schemaVersion)) {
+    return false;
+  }
+  const target = projection.materialization_target ?? {};
+  if (target.core_materialization_scope !== "projection_candidate_only") {
+    return false;
+  }
+  if (containsBusinessEvidenceIdentity(target)) {
+    return false;
+  }
+  return !semanticPayloadClaimsBusinessEvidence(projection.semantic_payload ?? {});
+}
+
+function semanticPayloadClaimsBusinessEvidence(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => semanticPayloadClaimsBusinessEvidence(item));
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    if (containsBusinessEvidenceIdentity(key)) {
+      return true;
+    }
+    const normalizedKey = key.trim().toLowerCase();
+    if (["kind", "type", "target_type", "object_type", "entity_type", "record_type", "schema", "schema_version"].includes(normalizedKey) && containsBusinessEvidenceIdentity(child)) {
+      return true;
+    }
+    return semanticPayloadClaimsBusinessEvidence(child);
+  });
+}
+
+function containsBusinessEvidenceIdentity(value: unknown): boolean {
+  if (typeof value === "string") {
+    const compact = value.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+    return ["evidencerecord", "businessevidence", "businesstruth", "formalbusinessobject"].some((marker) => compact.includes(marker));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => containsBusinessEvidenceIdentity(item));
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => containsBusinessEvidenceIdentity(key) || containsBusinessEvidenceIdentity(child));
 }
 
 function defaultRuntimeHookBindingDraft(contractID?: string): RuntimeHookBindingUpsertInput {
