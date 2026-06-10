@@ -21,6 +21,10 @@
   - 验证 `Service` 主编排路径的基础行为。
 - `control_plane.go`
   - 封装控制面 scene、skill、tool、governance、system resources、版本快照和认证相关用例。
+- `direct_respond_rich_delivery.go`
+  - 拼装 direct respond 富交付 read model，包括 summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果。
+- `direct_respond_rich_delivery_test.go`
+  - 验证 direct respond 富交付 read model 的上下文资产附加行为。
 - `errors.go`
   - 定义 app 层对外暴露的稳定错误类型。
 - `fast_path.go`
@@ -61,6 +65,8 @@
 ## 对外入口
 
 - `Service`
+- `DirectRespondRichResult`
+- `EnrichDirectRespondRichResult`
 - `NewService`
 - `NewServiceWithRuntimeStore`
 - `AnalyzeRuntimeScenario`
@@ -81,5 +87,5 @@
 ## 维护提示
 
 - 新接口通常先落 `server/`，但核心业务编排应收口在这里。
-- 当前 chat/direct respond 主链通过 `runtime.NewEinoGraphTurnExecutor` 进入 Eino Graph foundation；server 只保留协议映射和兼容响应拼装。
+- 当前 chat/direct respond 主链通过 `runtime.NewEinoGraphTurnExecutor` 进入 Eino Graph foundation；direct respond 富交付兼容 read model 在 app 层拼装，server 只保留协议解析、schema 修复、HTTP/SSE 映射。
 - `runtime_scenarios.go` 体量较大，后续应优先继续拆分。

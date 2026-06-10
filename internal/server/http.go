@@ -2490,7 +2490,7 @@ func emitStructuredCompletionEvents(ctx context.Context, stream *sse.Stream, req
 		}
 	}
 
-	if effectiveTaskType(converted) == "inspection_task" {
+	if effectiveRespondTaskType(converted) == "inspection_task" {
 		if err := sendSSEEvent(stream, StreamEvent{
 			Type:      "inspection_progress",
 			RequestID: requestID,
@@ -2559,6 +2559,13 @@ func emitStructuredCompletionEvents(ctx context.Context, stream *sse.Stream, req
 			"structured_result": result.StructuredResult,
 		},
 	})
+}
+
+func effectiveRespondTaskType(req ChatRespondRequest) string {
+	if strings.TrimSpace(req.TaskType) == "" {
+		return "chat"
+	}
+	return strings.TrimSpace(req.TaskType)
 }
 
 func emitInteractionProgressEvents(stream *sse.Stream, requestID, sessionID string, result *structuredChatResult) error {
