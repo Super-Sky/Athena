@@ -54,3 +54,31 @@ func TestValidateTaskTypeRegistrationAcceptsActiveValidatorContract(t *testing.T
 		t.Fatalf("ValidateTaskTypeRegistration() error = %v", err)
 	}
 }
+
+// TestValidateSystemTruthSourceRejectsUnsupportedStatus verifies source status stays narrow.
+// TestValidateSystemTruthSourceRejectsUnsupportedStatus 验证 source 状态不会被任意扩展。
+func TestValidateSystemTruthSourceRejectsUnsupportedStatus(t *testing.T) {
+	err := ValidateSystemTruthSource(SystemTruthSource{
+		AssetID:    "persona.default",
+		SourceKind: "operator_input",
+		Status:     "active",
+	})
+	if !errors.Is(err, ErrInvalidRuntimePersistenceInput) || !strings.Contains(err.Error(), "unsupported system truth source status") {
+		t.Fatalf("ValidateSystemTruthSource() error = %v, want unsupported status error", err)
+	}
+}
+
+// TestValidateSystemTruthCompileRejectsCredentialLikeDiagnostics verifies diagnostics are safe to expose.
+// TestValidateSystemTruthCompileRejectsCredentialLikeDiagnostics 验证 diagnostics 不会保存 credential-like 明文。
+func TestValidateSystemTruthCompileRejectsCredentialLikeDiagnostics(t *testing.T) {
+	err := ValidateSystemTruthCompileResult(SystemTruthCompileResult{
+		DraftID:         "draft-1",
+		AssetID:         "persona.default",
+		Status:          SystemTruthCompileStatusFailed,
+		Diagnostics:     map[string]any{"api_key": "secret-token"},
+		CompiledPayload: map[string]any{},
+	})
+	if !errors.Is(err, ErrInvalidRuntimePersistenceInput) || !strings.Contains(err.Error(), "diagnostics contains credential-like plaintext") {
+		t.Fatalf("ValidateSystemTruthCompileResult() error = %v, want diagnostics credential error", err)
+	}
+}

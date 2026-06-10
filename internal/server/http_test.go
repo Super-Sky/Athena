@@ -1246,6 +1246,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if !strings.Contains(body, `"/api/control-plane/runtime/contracts/foundation"`) {
 		t.Fatalf("expected runtime contract foundation path in body: %s", body)
 	}
+	if !strings.Contains(body, `"/api/control-plane/runtime/system-truth/lifecycle"`) {
+		t.Fatalf("expected system truth lifecycle path in body: %s", body)
+	}
 
 	var spec map[string]any
 	if err := json.Unmarshal(resp.Body(), &spec); err != nil {
@@ -1331,6 +1334,24 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/control-plane/runtime/hook-bindings/{bindingID}"]; !ok {
 		t.Fatalf("openapi spec missing runtime hook binding write path: %#v", paths)
 	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/lifecycle"]; !ok {
+		t.Fatalf("openapi spec missing system truth lifecycle path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/sources"]; !ok {
+		t.Fatalf("openapi spec missing system truth source write path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/drafts"]; !ok {
+		t.Fatalf("openapi spec missing system truth draft write path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/drafts/{draftID}/compile"]; !ok {
+		t.Fatalf("openapi spec missing system truth compile path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/compile-results/{compileID}/activate"]; !ok {
+		t.Fatalf("openapi spec missing system truth activate path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/active-versions/{activeID}/rollback"]; !ok {
+		t.Fatalf("openapi spec missing system truth rollback path: %#v", paths)
+	}
 	if _, ok := schemas["RuntimeContractFoundationResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeContractFoundationResponse: %#v", schemas)
 	}
@@ -1345,6 +1366,21 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	}
 	if _, ok := schemas["RuntimeHookBindingUpsertRequest"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeHookBindingUpsertRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthLifecycleReadoutResponse"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthLifecycleReadoutResponse: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthSourceCreateRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthSourceCreateRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthDraftCreateRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthDraftCreateRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthCompileRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthCompileRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthActivateRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthActivateRequest: %#v", schemas)
 	}
 	if _, ok := paths["/api/system-resources/{id}/audit"]; !ok {
 		t.Fatalf("openapi spec missing system resource audit path: %#v", paths)

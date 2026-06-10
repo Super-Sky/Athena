@@ -27,7 +27,7 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 对运行中的 Web 控制台执行严格 Codex in-app Browser DOM 验收。
 - [x] 产品化 checkpoint-backed waiting run readout，不暴露 Eino private checkpoint payload。
 - [x] 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 定义 registered task type validator contract。
-- [ ] 深化 System Truth `source -> draft -> compile -> active -> rollback` write/edit path 规划。
+- [x] 深化 System Truth `source -> draft -> compile -> active -> rollback` write/edit path 规划。
 - [ ] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
 - [ ] 将剩余 direct respond rich delivery 兼容拼装从 transport 收敛到 app/runtime graph node 或 Batch 2 read model。
 
@@ -70,15 +70,17 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-05-29 registered task type validator contract 已接入四个 legacy task type，active task type 写入校验要求 `default_contract_id`、`input_schema` 和 `validator_refs.validators`；draft 仍可暂存。
 - 2026-05-29 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
 - 2026-05-29 真实 API + DOM smoke 通过，返回 `run_id=f09ad491-9df4-47c4-b92c-97adf7098c24`、`contracts=5`、`task_types=5`、`hook_bindings=3`、`active_system_truths=54`、`web.dom=ok`。
+- 2026-06-10 System Truth lifecycle write/edit path 已接入 Control Plane API、OpenAPI、Postgres read/list、app 编排、System Validation readout 与 smoke 断言；rollback 通过追加 active pointer 并记录 `rollback_from_id` 实现，不改写历史。
+- 2026-06-10 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
 
 ## Next Iteration Plan
 
-下一轮优先处理 System Truth `source -> draft -> compile -> active -> rollback` write/edit path，继续保持 core 只承载通用生命周期与校验面，不引入业务 truth ownership。
+下一轮优先处理 semantic projection boundary，继续保持 core 只承载通用生命周期、候选输出和校验面，不引入业务 truth ownership。
 
 执行清单：
 
-1. 盘点现有 System Truth source、draft、compiled、active pointer 与 rollback 相关 store/API 能力。
-2. 定义最小 write/edit/readout 路径，确保 source ingest、draft edit、compile 和 active pointer 切换可追踪。
-3. 补 Go 单测覆盖状态转换、非法回退、active pointer 冲突和 compiled artifact 引用。
-4. 在 System Validation 中展示 lifecycle readout 与失败原因摘要。
+1. 盘点 `ProjectionCandidate` 当前字段、materialization target 和任何 EvidenceRecord-like 命名。
+2. 明确 projection candidate 只能作为 runtime candidate / read model，不能升级为业务 evidence truth。
+3. 补 Go 单测和 API smoke 断言，覆盖 projection safe payload、schema version 和 materialization boundary。
+4. 在 System Validation 中保留 semantic boundary readout，但避免展示为正式业务证据。
 5. 更新 feature 文档、真实场景测试用例和 smoke 断言。

@@ -35,6 +35,8 @@
   - 验证编排状态和主链 orchestration 行为。
 - `runtime_read.go`
   - 提供 Control Plane 读取 Phase 1 runtime persistence objects 的 app-layer read boundary。
+- `runtime_system_truth.go`
+  - 编排 System Truth source、draft、compile、activate 和 rollback 的 append-only lifecycle 写入路径。
 - `runtime_contract_resolution.go`
   - 解析 active task type registration 与默认 RuntimeContract，并把 contract 元数据写入 runtime task constraints。
 - `runtime_contract_resolution_test.go`
@@ -63,6 +65,11 @@
 - `NewServiceWithRuntimeStore`
 - `AnalyzeRuntimeScenario`
 - `CreateRuntimeValidationRun`
+- `CreateSystemTruthSource`
+- `CreateSystemTruthDraft`
+- `CompileSystemTruthDraft`
+- `ActivateSystemTruthCompileResult`
+- `RollbackSystemTruthActiveVersion`
 - `ListRuntimeRuns`
 - `OpenChatSession`
 

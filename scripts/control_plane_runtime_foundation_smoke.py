@@ -73,11 +73,17 @@ def validate_foundation(foundation: dict[str, Any]) -> None:
     task_types = foundation.get("task_types") or []
     hooks = foundation.get("hook_bindings") or []
     active_truths = foundation.get("active_system_truths") or []
+    truth_sources = foundation.get("system_truth_sources") or []
+    truth_drafts = foundation.get("system_truth_drafts") or []
+    truth_compiles = foundation.get("system_truth_compile_results") or []
     capabilities = set(foundation.get("store_capabilities") or [])
     expect(contracts, "foundation has no runtime contracts")
     expect(task_types, "foundation has no task type registrations")
     expect(hooks, "foundation has no hook bindings")
     expect(active_truths, "foundation has no active System Truth pointers")
+    expect(truth_sources, "foundation has no System Truth source records")
+    expect(truth_drafts, "foundation has no System Truth draft records")
+    expect(truth_compiles, "foundation has no System Truth compile result records")
     for capability in {"runtime_contracts", "task_type_registry", "hook_bindings", "system_truth_lifecycle"}:
         expect(capability in capabilities, f"foundation missing store capability {capability}")
     expect(any(item.get("task_type") == "runtime_validation" for item in contracts), "runtime_validation contract missing")
@@ -151,11 +157,22 @@ def run_api_smoke(base_url: str, token: str, timeout: int) -> dict[str, Any]:
         ("GET", "/api/control-plane/runtime/runs/{runID}/usage"),
         ("GET", "/api/control-plane/runtime/runs/{runID}/projections"),
         ("GET", "/api/control-plane/runtime/runs/{runID}/checkpoints"),
+        ("GET", "/api/control-plane/runtime/system-truth/lifecycle"),
+        ("POST", "/api/control-plane/runtime/system-truth/sources"),
+        ("POST", "/api/control-plane/runtime/system-truth/drafts"),
+        ("POST", "/api/control-plane/runtime/system-truth/drafts/{draftID}/compile"),
+        ("POST", "/api/control-plane/runtime/system-truth/compile-results/{compileID}/activate"),
+        ("POST", "/api/control-plane/runtime/system-truth/active-versions/{activeID}/rollback"),
     ]:
         assert_endpoint(spec, method, path)
 
     foundation = client.request_json("GET", "/api/control-plane/runtime/contracts/foundation")
     validate_foundation(foundation)
+    lifecycle = client.request_json("GET", "/api/control-plane/runtime/system-truth/lifecycle")
+    expect(lifecycle.get("sources"), f"system truth lifecycle has no sources: {lifecycle}")
+    expect(lifecycle.get("drafts"), f"system truth lifecycle has no drafts: {lifecycle}")
+    expect(lifecycle.get("compile_results"), f"system truth lifecycle has no compile results: {lifecycle}")
+    expect(lifecycle.get("active_versions"), f"system truth lifecycle has no active versions: {lifecycle}")
     validation = client.request_json(
         "POST",
         "/api/control-plane/runtime/validation-runs",
@@ -181,6 +198,9 @@ def run_api_smoke(base_url: str, token: str, timeout: int) -> dict[str, Any]:
             "task_types": len(foundation.get("task_types") or []),
             "hook_bindings": len(foundation.get("hook_bindings") or []),
             "active_system_truths": len(foundation.get("active_system_truths") or []),
+            "system_truth_sources": len(foundation.get("system_truth_sources") or []),
+            "system_truth_drafts": len(foundation.get("system_truth_drafts") or []),
+            "system_truth_compile_results": len(foundation.get("system_truth_compile_results") or []),
         },
         "records": counts,
     }
@@ -210,6 +230,7 @@ def run_dom_smoke(web_url: str, token: str) -> dict[str, Any]:
                 "runtime-contract-foundation",
                 "runtime-foundation-capabilities",
                 "runtime-task-type-validator-contracts",
+                "runtime-system-truth-lifecycle",
                 "runtime-contract-editor",
                 "runtime-task-type-editor",
                 "runtime-hook-binding-editor",

@@ -173,9 +173,16 @@ type HookBindingStore interface {
 type SystemTruthLifecycleStore interface {
 	AutoMigrate(context.Context) error
 	CreateSystemTruthSource(context.Context, SystemTruthSource) (SystemTruthSource, error)
+	GetSystemTruthSource(context.Context, string) (SystemTruthSource, bool, error)
+	ListSystemTruthSources(context.Context, SystemTruthSourceListFilter) ([]SystemTruthSource, error)
 	CreateSystemTruthDraft(context.Context, SystemTruthDraft) (SystemTruthDraft, error)
+	GetSystemTruthDraft(context.Context, string) (SystemTruthDraft, bool, error)
+	ListSystemTruthDrafts(context.Context, SystemTruthDraftListFilter) ([]SystemTruthDraft, error)
 	CreateSystemTruthCompileResult(context.Context, SystemTruthCompileResult) (SystemTruthCompileResult, error)
+	GetSystemTruthCompileResult(context.Context, string) (SystemTruthCompileResult, bool, error)
+	ListSystemTruthCompileResults(context.Context, SystemTruthCompileResultListFilter) ([]SystemTruthCompileResult, error)
 	ActivateSystemTruthVersion(context.Context, SystemTruthActiveVersion) (SystemTruthActiveVersion, error)
+	GetSystemTruthActiveVersion(context.Context, string) (SystemTruthActiveVersion, bool, error)
 	GetActiveSystemTruthVersion(context.Context, string) (SystemTruthActiveVersion, bool, error)
 	ListSystemTruthActiveVersions(context.Context, string) ([]SystemTruthActiveVersion, error)
 }
@@ -194,6 +201,32 @@ type HookBindingListFilter struct {
 	HookPoint  string
 	Enabled    *bool
 	Limit      int
+}
+
+// SystemTruthSourceListFilter narrows system truth source listing.
+// SystemTruthSourceListFilter 筛选 system truth source 列表。
+type SystemTruthSourceListFilter struct {
+	AssetID string
+	Status  string
+	Limit   int
+}
+
+// SystemTruthDraftListFilter narrows system truth draft listing.
+// SystemTruthDraftListFilter 筛选 system truth draft 列表。
+type SystemTruthDraftListFilter struct {
+	SourceID string
+	AssetID  string
+	Status   string
+	Limit    int
+}
+
+// SystemTruthCompileResultListFilter narrows system truth compile result listing.
+// SystemTruthCompileResultListFilter 筛选 system truth compile result 列表。
+type SystemTruthCompileResultListFilter struct {
+	DraftID string
+	AssetID string
+	Status  string
+	Limit   int
 }
 
 // ValidateTaskTypeRegistration verifies one task type registration payload before persistence.
@@ -293,6 +326,12 @@ func validateHookBinding(input HookBinding) error {
 	return nil
 }
 
+// ValidateSystemTruthSource verifies one system truth source before persistence.
+// ValidateSystemTruthSource 在持久化前校验 system truth source。
+func ValidateSystemTruthSource(input SystemTruthSource) error {
+	return validateSystemTruthSource(input)
+}
+
 func validateSystemTruthSource(input SystemTruthSource) error {
 	if strings.TrimSpace(input.AssetID) == "" {
 		return invalidRuntimePersistenceInput("system truth source asset_id is required")
@@ -300,7 +339,16 @@ func validateSystemTruthSource(input SystemTruthSource) error {
 	if strings.TrimSpace(input.SourceKind) == "" {
 		return invalidRuntimePersistenceInput("system truth source source_kind is required")
 	}
+	if !validSystemTruthSourceStatus(defaultString(input.Status, SystemTruthSourceStatusImported)) {
+		return invalidRuntimePersistenceInput("unsupported system truth source status %q", input.Status)
+	}
 	return validateSystemTruthSafePayload("system truth source", input.Content, input.Metadata)
+}
+
+// ValidateSystemTruthDraft verifies one editable system truth draft before persistence.
+// ValidateSystemTruthDraft 在持久化前校验可编辑的 system truth draft。
+func ValidateSystemTruthDraft(input SystemTruthDraft) error {
+	return validateSystemTruthDraft(input)
 }
 
 func validateSystemTruthDraft(input SystemTruthDraft) error {
@@ -313,6 +361,12 @@ func validateSystemTruthDraft(input SystemTruthDraft) error {
 	return validateSystemTruthSafePayload("system truth draft", input.Content, input.Metadata)
 }
 
+// ValidateSystemTruthCompileResult verifies one system truth compile result before persistence.
+// ValidateSystemTruthCompileResult 在持久化前校验 system truth compile result。
+func ValidateSystemTruthCompileResult(input SystemTruthCompileResult) error {
+	return validateSystemTruthCompileResult(input)
+}
+
 func validateSystemTruthCompileResult(input SystemTruthCompileResult) error {
 	if strings.TrimSpace(input.DraftID) == "" || strings.TrimSpace(input.AssetID) == "" {
 		return invalidRuntimePersistenceInput("system truth compile draft_id and asset_id are required")
@@ -320,7 +374,18 @@ func validateSystemTruthCompileResult(input SystemTruthCompileResult) error {
 	if !validSystemTruthCompileStatus(input.Status) {
 		return invalidRuntimePersistenceInput("unsupported system truth compile status %q", input.Status)
 	}
-	return validateSystemTruthSafePayload("system truth compile", input.CompiledPayload, input.Metadata)
+	for name, value := range map[string]any{"compiled_payload": input.CompiledPayload, "diagnostics": input.Diagnostics, "metadata": input.Metadata} {
+		if containsCredentialLikeRuntimeContractValue(value) {
+			return invalidRuntimePersistenceInput("system truth compile %s contains credential-like plaintext", name)
+		}
+	}
+	return nil
+}
+
+// ValidateSystemTruthActiveVersion verifies one system truth active pointer change.
+// ValidateSystemTruthActiveVersion 校验一次 system truth active pointer 变更。
+func ValidateSystemTruthActiveVersion(input SystemTruthActiveVersion) error {
+	return validateSystemTruthActiveVersion(input)
 }
 
 func validateSystemTruthActiveVersion(input SystemTruthActiveVersion) error {
@@ -369,6 +434,15 @@ func validHookBindingKind(value string) bool {
 func validHookFailurePolicy(value string) bool {
 	switch strings.TrimSpace(value) {
 	case HookFailurePolicyFailClosed, HookFailurePolicyRecordOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSystemTruthSourceStatus(value string) bool {
+	switch strings.TrimSpace(value) {
+	case SystemTruthSourceStatusImported:
 		return true
 	default:
 		return false

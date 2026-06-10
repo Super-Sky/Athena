@@ -458,6 +458,24 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.PUT("/api/control-plane/runtime/hook-bindings/:bindingID", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handlePutControlPlaneRuntimeHookBinding)(ctx, c, cfg, application)
 	})
+	h.GET("/api/control-plane/runtime/system-truth/lifecycle", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeSystemTruthLifecycle)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/sources", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleCreateControlPlaneRuntimeSystemTruthSource)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/drafts", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleCreateControlPlaneRuntimeSystemTruthDraft)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/drafts/:draftID/compile", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleCompileControlPlaneRuntimeSystemTruthDraft)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/compile-results/:compileID/activate", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleActivateControlPlaneRuntimeSystemTruthCompileResult)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/active-versions/:activeID/rollback", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleRollbackControlPlaneRuntimeSystemTruthActiveVersion)(ctx, c, cfg, application)
+	})
 	h.GET("/api/control-plane/governance", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleGetControlPlaneGovernance)(ctx, c, cfg, application)
 	})

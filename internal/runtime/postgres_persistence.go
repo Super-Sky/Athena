@@ -262,6 +262,47 @@ func (s *PostgresRuntimeStore) CreateSystemTruthSource(ctx context.Context, inpu
 	return systemTruthSourceFromRow(row)
 }
 
+// GetSystemTruthSource loads one system truth source by ID.
+// GetSystemTruthSource 按 ID 读取一条 system truth source。
+func (s *PostgresRuntimeStore) GetSystemTruthSource(ctx context.Context, id string) (SystemTruthSource, bool, error) {
+	if s == nil || s.db == nil {
+		return SystemTruthSource{}, false, fmt.Errorf("postgres runtime store is not configured")
+	}
+	var row postgresSystemTruthSourceModel
+	err := s.db.WithContext(ctx).First(&row, "id = ?", strings.TrimSpace(id)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SystemTruthSource{}, false, nil
+		}
+		return SystemTruthSource{}, false, err
+	}
+	output, err := systemTruthSourceFromRow(row)
+	return output, err == nil, err
+}
+
+// ListSystemTruthSources lists system truth sources by optional asset and status filters.
+// ListSystemTruthSources 按可选 asset 与 status 条件列出 system truth source。
+func (s *PostgresRuntimeStore) ListSystemTruthSources(ctx context.Context, filter SystemTruthSourceListFilter) ([]SystemTruthSource, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres runtime store is not configured")
+	}
+	query := s.db.WithContext(ctx).Model(&postgresSystemTruthSourceModel{})
+	if strings.TrimSpace(filter.AssetID) != "" {
+		query = query.Where("asset_id = ?", strings.TrimSpace(filter.AssetID))
+	}
+	if strings.TrimSpace(filter.Status) != "" {
+		query = query.Where("status = ?", strings.TrimSpace(filter.Status))
+	}
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
+	}
+	var rows []postgresSystemTruthSourceModel
+	if err := query.Order("created_at desc, id desc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return systemTruthSourcesFromRows(rows)
+}
+
 // CreateSystemTruthDraft inserts one editable system truth draft record.
 // CreateSystemTruthDraft 插入一条可编辑 system truth draft 记录。
 func (s *PostgresRuntimeStore) CreateSystemTruthDraft(ctx context.Context, input SystemTruthDraft) (SystemTruthDraft, error) {
@@ -281,6 +322,50 @@ func (s *PostgresRuntimeStore) CreateSystemTruthDraft(ctx context.Context, input
 	return systemTruthDraftFromRow(row)
 }
 
+// GetSystemTruthDraft loads one system truth draft by ID.
+// GetSystemTruthDraft 按 ID 读取一条 system truth draft。
+func (s *PostgresRuntimeStore) GetSystemTruthDraft(ctx context.Context, id string) (SystemTruthDraft, bool, error) {
+	if s == nil || s.db == nil {
+		return SystemTruthDraft{}, false, fmt.Errorf("postgres runtime store is not configured")
+	}
+	var row postgresSystemTruthDraftModel
+	err := s.db.WithContext(ctx).First(&row, "id = ?", strings.TrimSpace(id)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SystemTruthDraft{}, false, nil
+		}
+		return SystemTruthDraft{}, false, err
+	}
+	output, err := systemTruthDraftFromRow(row)
+	return output, err == nil, err
+}
+
+// ListSystemTruthDrafts lists system truth drafts by optional source, asset, and status filters.
+// ListSystemTruthDrafts 按可选 source、asset 与 status 条件列出 system truth draft。
+func (s *PostgresRuntimeStore) ListSystemTruthDrafts(ctx context.Context, filter SystemTruthDraftListFilter) ([]SystemTruthDraft, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres runtime store is not configured")
+	}
+	query := s.db.WithContext(ctx).Model(&postgresSystemTruthDraftModel{})
+	if strings.TrimSpace(filter.SourceID) != "" {
+		query = query.Where("source_id = ?", strings.TrimSpace(filter.SourceID))
+	}
+	if strings.TrimSpace(filter.AssetID) != "" {
+		query = query.Where("asset_id = ?", strings.TrimSpace(filter.AssetID))
+	}
+	if strings.TrimSpace(filter.Status) != "" {
+		query = query.Where("status = ?", strings.TrimSpace(filter.Status))
+	}
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
+	}
+	var rows []postgresSystemTruthDraftModel
+	if err := query.Order("updated_at desc, created_at desc, id desc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return systemTruthDraftsFromRows(rows)
+}
+
 // CreateSystemTruthCompileResult inserts one compile result and diagnostics record.
 // CreateSystemTruthCompileResult 插入一条 compile result 与 diagnostics 记录。
 func (s *PostgresRuntimeStore) CreateSystemTruthCompileResult(ctx context.Context, input SystemTruthCompileResult) (SystemTruthCompileResult, error) {
@@ -298,6 +383,50 @@ func (s *PostgresRuntimeStore) CreateSystemTruthCompileResult(ctx context.Contex
 		return SystemTruthCompileResult{}, err
 	}
 	return systemTruthCompileResultFromRow(row)
+}
+
+// GetSystemTruthCompileResult loads one system truth compile result by ID.
+// GetSystemTruthCompileResult 按 ID 读取一条 system truth compile result。
+func (s *PostgresRuntimeStore) GetSystemTruthCompileResult(ctx context.Context, id string) (SystemTruthCompileResult, bool, error) {
+	if s == nil || s.db == nil {
+		return SystemTruthCompileResult{}, false, fmt.Errorf("postgres runtime store is not configured")
+	}
+	var row postgresSystemTruthCompileResultModel
+	err := s.db.WithContext(ctx).First(&row, "id = ?", strings.TrimSpace(id)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SystemTruthCompileResult{}, false, nil
+		}
+		return SystemTruthCompileResult{}, false, err
+	}
+	output, err := systemTruthCompileResultFromRow(row)
+	return output, err == nil, err
+}
+
+// ListSystemTruthCompileResults lists compile results by optional draft, asset, and status filters.
+// ListSystemTruthCompileResults 按可选 draft、asset 与 status 条件列出 compile result。
+func (s *PostgresRuntimeStore) ListSystemTruthCompileResults(ctx context.Context, filter SystemTruthCompileResultListFilter) ([]SystemTruthCompileResult, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres runtime store is not configured")
+	}
+	query := s.db.WithContext(ctx).Model(&postgresSystemTruthCompileResultModel{})
+	if strings.TrimSpace(filter.DraftID) != "" {
+		query = query.Where("draft_id = ?", strings.TrimSpace(filter.DraftID))
+	}
+	if strings.TrimSpace(filter.AssetID) != "" {
+		query = query.Where("asset_id = ?", strings.TrimSpace(filter.AssetID))
+	}
+	if strings.TrimSpace(filter.Status) != "" {
+		query = query.Where("status = ?", strings.TrimSpace(filter.Status))
+	}
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
+	}
+	var rows []postgresSystemTruthCompileResultModel
+	if err := query.Order("created_at desc, id desc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return systemTruthCompileResultsFromRows(rows)
 }
 
 // ActivateSystemTruthVersion inserts one audited active system truth pointer.
@@ -328,6 +457,24 @@ func (s *PostgresRuntimeStore) ActivateSystemTruthVersion(ctx context.Context, i
 		return SystemTruthActiveVersion{}, err
 	}
 	return systemTruthActiveVersionFromRow(row)
+}
+
+// GetSystemTruthActiveVersion loads one active pointer change by ID.
+// GetSystemTruthActiveVersion 按 ID 读取一次 active pointer 变更。
+func (s *PostgresRuntimeStore) GetSystemTruthActiveVersion(ctx context.Context, id string) (SystemTruthActiveVersion, bool, error) {
+	if s == nil || s.db == nil {
+		return SystemTruthActiveVersion{}, false, fmt.Errorf("postgres runtime store is not configured")
+	}
+	var row postgresSystemTruthActiveVersionModel
+	err := s.db.WithContext(ctx).First(&row, "id = ?", strings.TrimSpace(id)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SystemTruthActiveVersion{}, false, nil
+		}
+		return SystemTruthActiveVersion{}, false, err
+	}
+	output, err := systemTruthActiveVersionFromRow(row)
+	return output, err == nil, err
 }
 
 // GetActiveSystemTruthVersion loads the latest active pointer for one asset.
@@ -1247,6 +1394,18 @@ func systemTruthSourceFromRow(row postgresSystemTruthSourceModel) (SystemTruthSo
 	return SystemTruthSource{ID: row.ID, AssetID: row.AssetID, SourceKind: row.SourceKind, SourceRef: row.SourceRef, Status: row.Status, Content: content, ContentHash: row.ContentHash, Metadata: metadata, CreatedAt: row.CreatedAt}, nil
 }
 
+func systemTruthSourcesFromRows(rows []postgresSystemTruthSourceModel) ([]SystemTruthSource, error) {
+	output := make([]SystemTruthSource, 0, len(rows))
+	for _, row := range rows {
+		item, err := systemTruthSourceFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, item)
+	}
+	return output, nil
+}
+
 func systemTruthDraftToRow(input SystemTruthDraft) (postgresSystemTruthDraftModel, error) {
 	content, err := marshalObject(input.Content)
 	if err != nil {
@@ -1269,6 +1428,18 @@ func systemTruthDraftFromRow(row postgresSystemTruthDraftModel) (SystemTruthDraf
 		return SystemTruthDraft{}, err
 	}
 	return SystemTruthDraft{ID: row.ID, SourceID: row.SourceID, AssetID: row.AssetID, Status: row.Status, Author: row.Author, Reason: row.Reason, BaseActiveID: row.BaseActiveID, Content: content, DiffSummary: row.DiffSummary, Metadata: metadata, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
+}
+
+func systemTruthDraftsFromRows(rows []postgresSystemTruthDraftModel) ([]SystemTruthDraft, error) {
+	output := make([]SystemTruthDraft, 0, len(rows))
+	for _, row := range rows {
+		item, err := systemTruthDraftFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, item)
+	}
+	return output, nil
 }
 
 func systemTruthCompileResultToRow(input SystemTruthCompileResult) (postgresSystemTruthCompileResultModel, error) {
@@ -1301,6 +1472,18 @@ func systemTruthCompileResultFromRow(row postgresSystemTruthCompileResultModel) 
 		return SystemTruthCompileResult{}, err
 	}
 	return SystemTruthCompileResult{ID: row.ID, DraftID: row.DraftID, AssetID: row.AssetID, Status: row.Status, Summary: row.Summary, Diagnostics: diagnostics, CompiledPayload: payload, ContentHash: row.ContentHash, Metadata: metadata, CreatedAt: row.CreatedAt}, nil
+}
+
+func systemTruthCompileResultsFromRows(rows []postgresSystemTruthCompileResultModel) ([]SystemTruthCompileResult, error) {
+	output := make([]SystemTruthCompileResult, 0, len(rows))
+	for _, row := range rows {
+		item, err := systemTruthCompileResultFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, item)
+	}
+	return output, nil
 }
 
 func systemTruthActiveVersionToRow(input SystemTruthActiveVersion) (postgresSystemTruthActiveVersionModel, error) {

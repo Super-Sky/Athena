@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -272,6 +273,109 @@ func TestControlPlaneRuntimeHookBindingWriteRejectsNonAllowlistedBinding(t *test
 	}
 	if !strings.Contains(resp.Body.String(), "not allowlisted") {
 		t.Fatalf("body = %s, want allowlist error", resp.Body.String())
+	}
+}
+
+// TestControlPlaneRuntimeSystemTruthLifecycleEndpointsAppendRecords verifies System Truth write/read lifecycle APIs.
+// TestControlPlaneRuntimeSystemTruthLifecycleEndpointsAppendRecords 验证 System Truth 写入与读取生命周期 API。
+func TestControlPlaneRuntimeSystemTruthLifecycleEndpointsAppendRecords(t *testing.T) {
+	store := &testRuntimeReadStore{}
+	httpServer := newRuntimeReadHTTPServer(t, store, "")
+
+	sourceBody := bytes.NewBufferString(`{"asset_id":"persona.default","source_kind":"operator_input","source_ref":"system-validation","content":{"summary":"source v1"},"metadata":{"editor":"system_validation"}}`)
+	sourceResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/sources", &ut.Body{Body: sourceBody, Len: sourceBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if sourceResp.Code != consts.StatusCreated {
+		t.Fatalf("source status = %d, want %d; body=%s", sourceResp.Code, consts.StatusCreated, sourceResp.Body.String())
+	}
+	var source systemTruthSourceDTO
+	if err := json.Unmarshal(sourceResp.Body.Bytes(), &source); err != nil {
+		t.Fatalf("decode source response: %v", err)
+	}
+	if source.ContentHash == "" {
+		t.Fatalf("source response missing content_hash: %#v", source)
+	}
+
+	firstDraftBody := bytes.NewBufferString(`{"source_id":"` + source.ID + `","author":"operator","reason":"initial draft","content":{"summary":"draft v1"},"diff_summary":"initial"}`)
+	firstDraftResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/drafts", &ut.Body{Body: firstDraftBody, Len: firstDraftBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if firstDraftResp.Code != consts.StatusCreated {
+		t.Fatalf("first draft status = %d, want %d; body=%s", firstDraftResp.Code, consts.StatusCreated, firstDraftResp.Body.String())
+	}
+	var firstDraft systemTruthDraftDTO
+	if err := json.Unmarshal(firstDraftResp.Body.Bytes(), &firstDraft); err != nil {
+		t.Fatalf("decode first draft response: %v", err)
+	}
+
+	firstCompileBody := bytes.NewBufferString(`{"summary":"compiled v1","compiled_payload":{"summary":"compiled v1"}}`)
+	firstCompileResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/drafts/"+firstDraft.ID+"/compile", &ut.Body{Body: firstCompileBody, Len: firstCompileBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if firstCompileResp.Code != consts.StatusCreated {
+		t.Fatalf("first compile status = %d, want %d; body=%s", firstCompileResp.Code, consts.StatusCreated, firstCompileResp.Body.String())
+	}
+	var firstCompile systemTruthCompileResultDTO
+	if err := json.Unmarshal(firstCompileResp.Body.Bytes(), &firstCompile); err != nil {
+		t.Fatalf("decode first compile response: %v", err)
+	}
+
+	firstActiveBody := bytes.NewBufferString(`{"activated_by":"operator","reason":"activate v1"}`)
+	firstActiveResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/compile-results/"+firstCompile.ID+"/activate", &ut.Body{Body: firstActiveBody, Len: firstActiveBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if firstActiveResp.Code != consts.StatusCreated {
+		t.Fatalf("first active status = %d, want %d; body=%s", firstActiveResp.Code, consts.StatusCreated, firstActiveResp.Body.String())
+	}
+	var firstActive systemTruthActiveVersionDTO
+	if err := json.Unmarshal(firstActiveResp.Body.Bytes(), &firstActive); err != nil {
+		t.Fatalf("decode first active response: %v", err)
+	}
+
+	secondDraftBody := bytes.NewBufferString(`{"source_id":"` + source.ID + `","base_active_id":"` + firstActive.ID + `","author":"operator","reason":"edit","content":{"summary":"draft v2"},"diff_summary":"update"}`)
+	secondDraftResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/drafts", &ut.Body{Body: secondDraftBody, Len: secondDraftBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if secondDraftResp.Code != consts.StatusCreated {
+		t.Fatalf("second draft status = %d, want %d; body=%s", secondDraftResp.Code, consts.StatusCreated, secondDraftResp.Body.String())
+	}
+	var secondDraft systemTruthDraftDTO
+	if err := json.Unmarshal(secondDraftResp.Body.Bytes(), &secondDraft); err != nil {
+		t.Fatalf("decode second draft response: %v", err)
+	}
+	secondCompileBody := bytes.NewBufferString(`{"summary":"compiled v2","compiled_payload":{"summary":"compiled v2"}}`)
+	secondCompileResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/drafts/"+secondDraft.ID+"/compile", &ut.Body{Body: secondCompileBody, Len: secondCompileBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if secondCompileResp.Code != consts.StatusCreated {
+		t.Fatalf("second compile status = %d, want %d; body=%s", secondCompileResp.Code, consts.StatusCreated, secondCompileResp.Body.String())
+	}
+	var secondCompile systemTruthCompileResultDTO
+	if err := json.Unmarshal(secondCompileResp.Body.Bytes(), &secondCompile); err != nil {
+		t.Fatalf("decode second compile response: %v", err)
+	}
+	secondActiveBody := bytes.NewBufferString(`{"activated_by":"operator","reason":"activate v2"}`)
+	secondActiveResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/compile-results/"+secondCompile.ID+"/activate", &ut.Body{Body: secondActiveBody, Len: secondActiveBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if secondActiveResp.Code != consts.StatusCreated {
+		t.Fatalf("second active status = %d, want %d; body=%s", secondActiveResp.Code, consts.StatusCreated, secondActiveResp.Body.String())
+	}
+
+	rollbackBody := bytes.NewBufferString(`{"activated_by":"operator","reason":"rollback to v1"}`)
+	rollbackResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodPost, "/api/control-plane/runtime/system-truth/active-versions/"+firstActive.ID+"/rollback", &ut.Body{Body: rollbackBody, Len: rollbackBody.Len()}, ut.Header{Key: "Content-Type", Value: "application/json"})
+	if rollbackResp.Code != consts.StatusCreated {
+		t.Fatalf("rollback status = %d, want %d; body=%s", rollbackResp.Code, consts.StatusCreated, rollbackResp.Body.String())
+	}
+	if !strings.Contains(rollbackResp.Body.String(), `"rollback_from_id"`) {
+		t.Fatalf("rollback body = %s, want rollback_from_id", rollbackResp.Body.String())
+	}
+
+	lifecycleResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodGet, "/api/control-plane/runtime/system-truth/lifecycle?asset_id=persona.default", nil)
+	if lifecycleResp.Code != consts.StatusOK {
+		t.Fatalf("lifecycle status = %d, want %d; body=%s", lifecycleResp.Code, consts.StatusOK, lifecycleResp.Body.String())
+	}
+	for _, want := range []string{`"sources"`, `"drafts"`, `"compile_results"`, `"active_versions"`, `"rollback_from_id"`} {
+		if !strings.Contains(lifecycleResp.Body.String(), want) {
+			t.Fatalf("lifecycle body = %s, want %s", lifecycleResp.Body.String(), want)
+		}
+	}
+
+	foundationResp := ut.PerformRequest(httpServer.engine.Engine, http.MethodGet, "/api/control-plane/runtime/contracts/foundation", nil)
+	if foundationResp.Code != consts.StatusOK {
+		t.Fatalf("foundation status = %d, want %d; body=%s", foundationResp.Code, consts.StatusOK, foundationResp.Body.String())
+	}
+	for _, want := range []string{`"system_truth_sources"`, `"system_truth_drafts"`, `"system_truth_compile_results"`} {
+		if !strings.Contains(foundationResp.Body.String(), want) {
+			t.Fatalf("foundation body = %s, want %s", foundationResp.Body.String(), want)
+		}
 	}
 }
 
@@ -580,17 +684,20 @@ func cleanupPostgresRuntimeFoundationWriteArtifacts(t *testing.T, db *gorm.DB, c
 }
 
 type testRuntimeReadStore struct {
-	runs         []runtime.TaskRun
-	steps        []runtime.TaskStep
-	events       []runtime.TaskRunLifecycleEvent
-	traces       []runtime.RuntimeTrace
-	usages       []runtime.Usage
-	projections  []runtime.ProjectionCandidate
-	snapshots    map[string]runtime.RuntimeGraphCheckpointSnapshot
-	contracts    []runtime.RuntimeContract
-	taskTypes    []runtime.TaskTypeRegistration
-	hooks        []runtime.HookBinding
-	activeTruths []runtime.SystemTruthActiveVersion
+	runs          []runtime.TaskRun
+	steps         []runtime.TaskStep
+	events        []runtime.TaskRunLifecycleEvent
+	traces        []runtime.RuntimeTrace
+	usages        []runtime.Usage
+	projections   []runtime.ProjectionCandidate
+	snapshots     map[string]runtime.RuntimeGraphCheckpointSnapshot
+	contracts     []runtime.RuntimeContract
+	taskTypes     []runtime.TaskTypeRegistration
+	hooks         []runtime.HookBinding
+	truthSources  []runtime.SystemTruthSource
+	truthDrafts   []runtime.SystemTruthDraft
+	truthCompiles []runtime.SystemTruthCompileResult
+	activeTruths  []runtime.SystemTruthActiveVersion
 }
 
 func (s *testRuntimeReadStore) AutoMigrate(context.Context) error { return nil }
@@ -921,24 +1028,133 @@ func (s *testRuntimeReadStore) ListHookBindings(_ context.Context, filter runtim
 }
 
 func (s *testRuntimeReadStore) CreateSystemTruthSource(_ context.Context, item runtime.SystemTruthSource) (runtime.SystemTruthSource, error) {
+	if item.ID == "" {
+		item.ID = "source-" + strings.ReplaceAll(item.AssetID, ".", "-")
+	}
+	s.truthSources = append(s.truthSources, item)
 	return item, nil
+}
+
+func (s *testRuntimeReadStore) GetSystemTruthSource(_ context.Context, id string) (runtime.SystemTruthSource, bool, error) {
+	for _, item := range s.truthSources {
+		if item.ID == strings.TrimSpace(id) {
+			return item, true, nil
+		}
+	}
+	return runtime.SystemTruthSource{}, false, nil
+}
+
+func (s *testRuntimeReadStore) ListSystemTruthSources(_ context.Context, filter runtime.SystemTruthSourceListFilter) ([]runtime.SystemTruthSource, error) {
+	var out []runtime.SystemTruthSource
+	for _, item := range s.truthSources {
+		if strings.TrimSpace(filter.AssetID) != "" && item.AssetID != strings.TrimSpace(filter.AssetID) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && item.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
+		out = append(out, item)
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *testRuntimeReadStore) CreateSystemTruthDraft(_ context.Context, item runtime.SystemTruthDraft) (runtime.SystemTruthDraft, error) {
+	if item.ID == "" {
+		item.ID = "draft-" + strings.ReplaceAll(item.AssetID, ".", "-") + "-" + strconv.Itoa(len(s.truthDrafts)+1)
+	}
+	s.truthDrafts = append(s.truthDrafts, item)
 	return item, nil
+}
+
+func (s *testRuntimeReadStore) GetSystemTruthDraft(_ context.Context, id string) (runtime.SystemTruthDraft, bool, error) {
+	for _, item := range s.truthDrafts {
+		if item.ID == strings.TrimSpace(id) {
+			return item, true, nil
+		}
+	}
+	return runtime.SystemTruthDraft{}, false, nil
+}
+
+func (s *testRuntimeReadStore) ListSystemTruthDrafts(_ context.Context, filter runtime.SystemTruthDraftListFilter) ([]runtime.SystemTruthDraft, error) {
+	var out []runtime.SystemTruthDraft
+	for _, item := range s.truthDrafts {
+		if strings.TrimSpace(filter.SourceID) != "" && item.SourceID != strings.TrimSpace(filter.SourceID) {
+			continue
+		}
+		if strings.TrimSpace(filter.AssetID) != "" && item.AssetID != strings.TrimSpace(filter.AssetID) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && item.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
+		out = append(out, item)
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *testRuntimeReadStore) CreateSystemTruthCompileResult(_ context.Context, item runtime.SystemTruthCompileResult) (runtime.SystemTruthCompileResult, error) {
+	if item.ID == "" {
+		item.ID = "compile-" + strings.ReplaceAll(item.AssetID, ".", "-") + "-" + strconv.Itoa(len(s.truthCompiles)+1)
+	}
+	s.truthCompiles = append(s.truthCompiles, item)
 	return item, nil
 }
 
+func (s *testRuntimeReadStore) GetSystemTruthCompileResult(_ context.Context, id string) (runtime.SystemTruthCompileResult, bool, error) {
+	for _, item := range s.truthCompiles {
+		if item.ID == strings.TrimSpace(id) {
+			return item, true, nil
+		}
+	}
+	return runtime.SystemTruthCompileResult{}, false, nil
+}
+
+func (s *testRuntimeReadStore) ListSystemTruthCompileResults(_ context.Context, filter runtime.SystemTruthCompileResultListFilter) ([]runtime.SystemTruthCompileResult, error) {
+	var out []runtime.SystemTruthCompileResult
+	for _, item := range s.truthCompiles {
+		if strings.TrimSpace(filter.DraftID) != "" && item.DraftID != strings.TrimSpace(filter.DraftID) {
+			continue
+		}
+		if strings.TrimSpace(filter.AssetID) != "" && item.AssetID != strings.TrimSpace(filter.AssetID) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && item.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
+		out = append(out, item)
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (s *testRuntimeReadStore) ActivateSystemTruthVersion(_ context.Context, item runtime.SystemTruthActiveVersion) (runtime.SystemTruthActiveVersion, error) {
+	if item.ID == "" {
+		item.ID = "active-" + strings.ReplaceAll(item.AssetID, ".", "-") + "-" + strconv.Itoa(len(s.activeTruths)+1)
+	}
 	s.activeTruths = append(s.activeTruths, item)
 	return item, nil
 }
 
-func (s *testRuntimeReadStore) GetActiveSystemTruthVersion(_ context.Context, assetID string) (runtime.SystemTruthActiveVersion, bool, error) {
+func (s *testRuntimeReadStore) GetSystemTruthActiveVersion(_ context.Context, id string) (runtime.SystemTruthActiveVersion, bool, error) {
 	for _, item := range s.activeTruths {
+		if item.ID == strings.TrimSpace(id) {
+			return item, true, nil
+		}
+	}
+	return runtime.SystemTruthActiveVersion{}, false, nil
+}
+
+func (s *testRuntimeReadStore) GetActiveSystemTruthVersion(_ context.Context, assetID string) (runtime.SystemTruthActiveVersion, bool, error) {
+	for idx := len(s.activeTruths) - 1; idx >= 0; idx-- {
+		item := s.activeTruths[idx]
 		if item.AssetID == strings.TrimSpace(assetID) {
 			return item, true, nil
 		}

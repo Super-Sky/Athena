@@ -78,17 +78,27 @@
 
 ### 4. System Truth Lifecycle
 
-当前 lifecycle 已具备 append-only foundation：
+当前 lifecycle 已具备 append-only write/edit/readout 闭环：
 
 - `SystemTruthSource`
 - `SystemTruthDraft`
 - `SystemTruthCompileResult`
 - `SystemTruthActiveVersion`
 
+控制面 API：
+
+- `GET /api/control-plane/runtime/system-truth/lifecycle`
+- `POST /api/control-plane/runtime/system-truth/sources`
+- `POST /api/control-plane/runtime/system-truth/drafts`
+- `POST /api/control-plane/runtime/system-truth/drafts/:draftID/compile`
+- `POST /api/control-plane/runtime/system-truth/compile-results/:compileID/activate`
+- `POST /api/control-plane/runtime/system-truth/active-versions/:activeID/rollback`
+
 关键约束：
 
 - compile failure 不能 activate
 - active pointer 切换追加新记录，不改写历史 source / draft 内容
+- rollback 只追加新的 active pointer，并把当前 active 记录为 `rollback_from_id`
 - lifecycle payload / metadata 不保存 raw credentials
 
 ### 5. Projection Boundary
@@ -155,12 +165,15 @@ foundation 写入前会拒绝 credential-like plaintext：
 - `task_types`
 - `hook_bindings`
 - `active_system_truths`
+- `system_truth_sources`
+- `system_truth_drafts`
+- `system_truth_compile_results`
 - `store_capabilities`
 - `unavailable_surfaces`
 
 System Validation `Runtime Persistence Readout` 当前会：
 
-- 显示 RuntimeContract / TaskType / HookBinding / active System Truth 摘要卡片
+- 显示 RuntimeContract / TaskType / HookBinding / active System Truth / lifecycle 摘要卡片
 - 显示 foundation snapshot 和 capability surface
 - 继续显示 runtime runs、steps、trace、usage、projection
 - 对 projection 展示 schema version / semantic boundary 标签
@@ -174,6 +187,8 @@ System Validation `Runtime Persistence Readout` 当前会：
   - 定义 TaskTypeRegistry / HookBinding / System Truth lifecycle contracts
 - `internal/runtime/postgres_persistence.go`
   - 定义 core tables 和 Postgres create/read/list implementation
+- `internal/app/runtime_system_truth.go`
+  - 编排 System Truth source、draft、compile、activate 和 rollback 的 append-only 写入路径
 - `internal/runtime/hook_bridge.go`
   - 定义 internal hook read/project bridge
 - `internal/runtime/eino_graph.go`
@@ -194,6 +209,11 @@ System Validation `Runtime Persistence Readout` 当前会：
 本轮已通过：
 
 ```sh
+go test ./internal/runtime ./internal/app ./internal/server
+cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build
+python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py
+python3 scripts/check_no_absolute_paths.py
+git diff --check
 go test -count=1 ./internal/app ./internal/runtime ./internal/server ./internal/entry
 go test ./...
 npm --prefix web run build
@@ -220,4 +240,4 @@ Codex in-app Browser 页面级验收已完成：在 `http://127.0.0.1:5173/` 的
 
 暂不新增独立 skill。
 
-原因是当前虽然第一批 contract foundation 已完成，但后续还会继续围绕 runtime contract resolution、system truth activation workflow 和 operator write path 做稳定化。等 v2.1.0 下一批实现明确后，再判断是否需要单独的 `runtime-contract-foundation` 维护 skill。
+原因是 System Truth lifecycle 写入闭环已经稳定到 feature 文档和测试，但 Batch 2 仍剩 semantic projection boundary 与 direct respond rich delivery 收口。等 v2.1.0 Batch 2 完整收口后，再判断是否需要单独的 `runtime-contract-foundation` 维护 skill。

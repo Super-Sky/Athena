@@ -972,7 +972,13 @@ function buildReleaseReadinessChecks(
     "GET /api/control-plane/runtime/runs/{runID}/traces",
     "GET /api/control-plane/runtime/runs/{runID}/usage",
     "GET /api/control-plane/runtime/runs/{runID}/projections",
-    "GET /api/control-plane/runtime/runs/{runID}/checkpoints"
+    "GET /api/control-plane/runtime/runs/{runID}/checkpoints",
+    "GET /api/control-plane/runtime/system-truth/lifecycle",
+    "POST /api/control-plane/runtime/system-truth/sources",
+    "POST /api/control-plane/runtime/system-truth/drafts",
+    "POST /api/control-plane/runtime/system-truth/drafts/{draftID}/compile",
+    "POST /api/control-plane/runtime/system-truth/compile-results/{compileID}/activate",
+    "POST /api/control-plane/runtime/system-truth/active-versions/{activeID}/rollback"
   ];
   const governanceEndpoints = [
     "GET /api/control-plane/tool-governance/policy",
@@ -2607,6 +2613,16 @@ function SystemValidationPanel({
   const checks = buildSystemValidationChecks(data, items);
   const comparison = buildTextComparison(baselineText, candidateText);
   const validatorSummary = summarizeTaskTypeValidators(runtimeFoundation?.task_types ?? []);
+  const systemTruthSources = runtimeFoundation?.system_truth_sources ?? [];
+  const systemTruthDrafts = runtimeFoundation?.system_truth_drafts ?? [];
+  const systemTruthCompileResults = runtimeFoundation?.system_truth_compile_results ?? [];
+  const systemTruthLifecycleSummary = runtimeFoundation ? {
+    sources: systemTruthSources.length,
+    drafts: systemTruthDrafts.length,
+    compile_results: systemTruthCompileResults.length,
+    active_versions: runtimeFoundation.active_system_truths.length,
+    rollback_versions: runtimeFoundation.active_system_truths.filter((item) => Boolean(item.rollback_from_id)).length
+  } : null;
 
   useEffect(() => {
     if (items.length === 0) {
@@ -3228,6 +3244,11 @@ function SystemValidationPanel({
                 <strong>{runtimeFoundation.active_system_truths.length}</strong>
                 <span>{runtimeFoundation.active_system_truths[0]?.asset_id || "no active pointer"}</span>
               </div>
+              <div className={(systemTruthLifecycleSummary?.sources ?? 0) > 0 && (systemTruthLifecycleSummary?.compile_results ?? 0) > 0 ? "info-card success" : "info-card"} data-testid="runtime-system-truth-lifecycle">
+                <span className="status-label">Truth Lifecycle</span>
+                <strong>{systemTruthLifecycleSummary ? `${systemTruthLifecycleSummary.sources}/${systemTruthLifecycleSummary.drafts}/${systemTruthLifecycleSummary.compile_results}` : "0/0/0"}</strong>
+                <span>{systemTruthLifecycleSummary?.rollback_versions ? `${systemTruthLifecycleSummary.rollback_versions} rollback records` : "source / draft / compile"}</span>
+              </div>
               <div className={validatorSummary.ready === validatorSummary.expected ? "info-card success" : "info-card warning"} data-testid="runtime-task-type-validator-contracts">
                 <span className="status-label">Validator Contracts</span>
                 <strong>{validatorSummary.ready} / {validatorSummary.expected}</strong>
@@ -3246,7 +3267,13 @@ function SystemValidationPanel({
                     task_types: runtimeFoundation.task_types,
                     task_type_validator_contracts: validatorSummary,
                     hook_bindings: runtimeFoundation.hook_bindings,
-                    active_system_truths: runtimeFoundation.active_system_truths
+                    active_system_truths: runtimeFoundation.active_system_truths,
+                    system_truth_lifecycle: {
+                      summary: systemTruthLifecycleSummary,
+                      sources: systemTruthSources,
+                      drafts: systemTruthDrafts,
+                      compile_results: systemTruthCompileResults
+                    }
                   })}
                   readOnly
                   rows={10}
