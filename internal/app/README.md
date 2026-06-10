@@ -35,6 +35,10 @@
   - 验证编排状态和主链 orchestration 行为。
 - `runtime_read.go`
   - 提供 Control Plane 读取 Phase 1 runtime persistence objects 的 app-layer read boundary。
+- `runtime_contract_resolution.go`
+  - 解析 active task type registration 与默认 RuntimeContract，并把 contract 元数据写入 runtime task constraints。
+- `runtime_contract_resolution_test.go`
+  - 验证 active contract resolution 和 unknown task type fail-closed 行为。
 - `runtime_scenarios.go`
   - 实现 runtime judgment 路径和首批场景化 runtime 响应编排。
 - `runtime_scenarios_test.go`

@@ -6,3 +6,5 @@
 
 - `feature-runtime-foundation-validation.md`
   - 说明 v2.1.0 RuntimeContract foundation smoke、System Validation DOM anchors 和对应验证路径。
+- `feature-runtime-contract-persistence.md`
+  - 说明 v2.1.0 RuntimeContract persistence、task type registry、hook binding、System Truth lifecycle 和 runtime contract write/read path。
