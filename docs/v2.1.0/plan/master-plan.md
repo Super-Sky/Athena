@@ -29,7 +29,7 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 定义 registered task type validator contract。
 - [x] 深化 System Truth `source -> draft -> compile -> active -> rollback` write/edit path 规划。
 - [x] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
-- [ ] 将剩余 direct respond rich delivery 兼容拼装从 transport 收敛到 app/runtime graph node 或 Batch 2 read model。
+- [x] 将剩余 direct respond rich delivery 兼容拼装从 transport 收敛到 app/runtime graph node 或 Batch 2 read model。
 
 ## Acceptance Gates
 
@@ -74,15 +74,16 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-06-10 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
 - 2026-06-10 semantic projection boundary 已收口：`ProjectionCandidate` 写入前强制 `runtime_projection.*` schema、默认 `projection_candidate_only` materialization target，并拒绝 EvidenceRecord-like candidate/schema/target/typed semantic payload；System Validation 与 smoke 已新增 boundary readout / 断言。
 - 2026-06-10 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
+- 2026-06-10 direct respond rich delivery 已收口到 app 层 Batch 2 read model：transport 保留解析、schema 修复、HTTP/SSE 映射，`internal/app/direct_respond_rich_delivery.go` 负责 result summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果拼装。
+- 2026-06-10 聚焦验证通过：`go test ./internal/app ./internal/server`。
 
 ## Next Iteration Plan
 
-下一轮优先处理 direct respond rich delivery 收口，把剩余兼容拼装从 transport 层迁移到 app/runtime graph node 或 Batch 2 read model，继续避免引入场景专属 core contract。
+Batch 2 checklist 已完成。下一轮优先执行最终交付门禁、PR review 与 merge gate，继续避免引入场景专属 core contract。
 
 执行清单：
 
-1. 盘点 direct respond 当前 transport 兼容拼装、rich delivery 字段和 app/runtime 已有结果模型。
-2. 明确哪些字段属于 app/runtime graph node 或 read model，哪些仍只是 legacy transport adapter 映射。
-3. 迁移剩余拼装逻辑并补 focused Go tests，确保 direct respond 输出仍兼容现有 API。
-4. 更新 System Validation 或 API smoke 中的 readout 断言，覆盖迁移后的 rich delivery 结果。
-5. 更新 feature 文档、真实场景测试用例和 master plan，准备 Batch 2 最终 PR gate。
+1. 执行 `repo-task-delivery`，确认文档、测试和 issue 回链满足交付门禁。
+2. 跑 Batch 2 聚焦验证：Go tests、Web build、smoke 脚本编译和必要的 API smoke。
+3. 发起最终 PR review；若目标是合入 `master`，先执行 `master-merge-gate`。
+4. 合并 PR 后同步 `Super-Sky/Athena#1` 进度并关闭已完成 checklist。

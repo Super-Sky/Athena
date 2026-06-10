@@ -203,6 +203,8 @@ System Validation `Runtime Persistence Readout` 当前会：
   - 在 graph-backed validation path 中接入 contract-aware hook bridge
 - `internal/app/runtime_read.go`
   - 提供 foundation readout app-layer boundary
+- `internal/app/direct_respond_rich_delivery.go`
+  - 提供 direct respond rich delivery app-layer read model，承接 transport 解析后的 summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果拼装
 - `internal/app/runtime_contract_write.go`
   - 提供 RuntimeContract / TaskType / HookBinding 的 app-layer write boundary 与统一前置校验
 - `internal/app/runtime_contract_bootstrap.go`
@@ -248,4 +250,4 @@ Codex in-app Browser 页面级验收已完成：在 `http://127.0.0.1:5173/` 的
 
 暂不新增独立 skill。
 
-原因是 System Truth lifecycle 与 semantic projection boundary 已经稳定到 feature 文档和测试，但 Batch 2 仍剩 direct respond rich delivery 收口。等 v2.1.0 Batch 2 完整收口后，再判断是否需要单独的 `runtime-contract-foundation` 维护 skill。
+原因是 Batch 2 已经收口到功能文档、master plan、模块 README 与测试；当前后续维护入口仍是 `feature-runtime-contract-persistence.md`、`docs/v2.1.0/plan/master-plan.md`、`internal/app/README.md` 和现有 repo delivery gates。direct respond rich delivery 本轮只是把兼容 read model 从 transport 下沉到 app 层，还没有形成需要独立 skill 承接的稳定人工流程。

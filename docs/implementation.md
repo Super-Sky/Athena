@@ -28,6 +28,10 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - 单点 resolver
   - `internal/model/parameters/` 独立目录
 - 完整结果输出所需的 `CompleteResult / ResultSummary / ContentCard / RightPanelView / ScoreDelta` 基础类型
+- direct respond 富交付兼容 read model 已收口在 `internal/app/direct_respond_rich_delivery.go`：
+  - transport 层保留 JSON 解析、schema 修复、HTTP/SSE 映射
+  - app 层负责 `result_summary / content_cards / right_panel_view / score_delta / delivery_profile`
+  - app 层负责 workflow、automation、context assets、execution governance 和 base capability 兼容结果拼装
 - Eino Graph runtime foundation：
   - 默认 chat/direct respond runtime 主链通过 `runtime.NewEinoGraphTurnExecutor` 包装现有 Eino ADK turn executor
   - 默认 turn agent 内部已使用 graph-native ChatModel / ToolsNode loop，并通过 Eino local state 保存 ReAct 消息历史
@@ -235,7 +239,7 @@ detail 读取当前会在进入 runtime 前尝试同轮预取，并把结果回�
 - Athena 执行治理 contract 与外部执行沙盒 contract 的正式分层
 - 外部执行宿主侧沙盒模块与结果回传闭环
 - 模型参数策略中心的更广接线
-- 将剩余 direct respond rich delivery 兼容拼装继续从 transport 层收敛到 app/runtime graph node 或 Batch 2 read model
+- 将 direct respond rich delivery read model 继续从 app 层 Batch 2 read model 演进为更细粒度的 runtime graph node
 - Batch 2 read API / UI 已提供 checkpoint-backed waiting run 安全摘要展示；后续恢复入口仍需在独立 issue 中收口
 - 控制面当前只开放白名单内配置项；更细粒度的权限分层和审批流仍可继续深化
 - system object 的 Git baseline 回收仍是显式 workflow，不提供 control-plane 一键写 Git
