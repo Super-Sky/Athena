@@ -40,12 +40,15 @@ type RuntimeRecordReadQuery struct {
 // RuntimeContractFoundationReadout groups the v2.1 contract foundation read surface.
 // RuntimeContractFoundationReadout 汇总 v2.1 contract foundation 的只读视图。
 type RuntimeContractFoundationReadout struct {
-	Contracts           []runtime.RuntimeContract
-	TaskTypes           []runtime.TaskTypeRegistration
-	HookBindings        []runtime.HookBinding
-	ActiveSystemTruths  []runtime.SystemTruthActiveVersion
-	StoreCapabilities   []string
-	UnavailableSurfaces []string
+	Contracts                 []runtime.RuntimeContract
+	TaskTypes                 []runtime.TaskTypeRegistration
+	HookBindings              []runtime.HookBinding
+	ActiveSystemTruths        []runtime.SystemTruthActiveVersion
+	SystemTruthSources        []runtime.SystemTruthSource
+	SystemTruthDrafts         []runtime.SystemTruthDraft
+	SystemTruthCompileResults []runtime.SystemTruthCompileResult
+	StoreCapabilities         []string
+	UnavailableSurfaces       []string
 }
 
 // RuntimeCheckpointReadout is the Control Plane-safe checkpoint metadata view.
@@ -262,6 +265,27 @@ func (s *Service) GetRuntimeContractFoundation(ctx context.Context) (RuntimeCont
 			return RuntimeContractFoundationReadout{}, err
 		}
 		readout.ActiveSystemTruths = active
+		sources, err := truthStore.ListSystemTruthSources(ctx, runtime.SystemTruthSourceListFilter{
+			Limit: normalizeRuntimeReadLimit(50),
+		})
+		if err != nil {
+			return RuntimeContractFoundationReadout{}, err
+		}
+		readout.SystemTruthSources = sources
+		drafts, err := truthStore.ListSystemTruthDrafts(ctx, runtime.SystemTruthDraftListFilter{
+			Limit: normalizeRuntimeReadLimit(50),
+		})
+		if err != nil {
+			return RuntimeContractFoundationReadout{}, err
+		}
+		readout.SystemTruthDrafts = drafts
+		compileResults, err := truthStore.ListSystemTruthCompileResults(ctx, runtime.SystemTruthCompileResultListFilter{
+			Limit: normalizeRuntimeReadLimit(50),
+		})
+		if err != nil {
+			return RuntimeContractFoundationReadout{}, err
+		}
+		readout.SystemTruthCompileResults = compileResults
 	} else {
 		readout.UnavailableSurfaces = append(readout.UnavailableSurfaces, "system_truth_lifecycle")
 	}

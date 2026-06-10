@@ -338,7 +338,7 @@ Athena 当前会优先消费 summary，再决定是否返回：
   - 通过 Eino runtime graph foundation 触发一次内部验证写入，返回本次生成的 `TaskRun`、`TaskStep`、lifecycle events、安全 `RuntimeTrace`、generic `Usage` 和 minimal `ProjectionCandidate`
   - 当前 trigger 会显式绑定默认 `runtime_contract_id`，因此新的 validation run 会额外写入 contract-aware `runtime_hook_binding` traces 与 `runtime_hook` usage
 - `GET /api/control-plane/runtime/contracts/foundation`
-  - 返回 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer 和 store capability surface
+  - 返回 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer、System Truth source / draft / compile 摘要和 store capability surface
   - foundation records 会在服务启动和 `POST /api/system-resources/sync` 后按 active truth 自动补齐
 - `PUT /api/control-plane/runtime/contracts/:contractID`
   - 按稳定 `contractID` 创建或更新一条 `RuntimeContract`
@@ -349,6 +349,18 @@ Athena 当前会优先消费 summary，再决定是否返回：
 - `PUT /api/control-plane/runtime/hook-bindings/:bindingID`
   - 按稳定 `bindingID` 创建或更新一条 `HookBinding`
   - `binding_ref` 必须命中 internal allowlist（例如 `runtime_contract_guard`、`system_truth_guard`、`projection_boundary_guard`）
+- `GET /api/control-plane/runtime/system-truth/lifecycle`
+  - 读取 System Truth source、draft、compile result 和 active pointer history，支持 `asset_id`、`source_id`、`draft_id`、`status`、`limit`
+- `POST /api/control-plane/runtime/system-truth/sources`
+  - 追加一条 `SystemTruthSource`；若未传 `content_hash`，后端按 `content` 生成 `sha256:` 摘要
+- `POST /api/control-plane/runtime/system-truth/drafts`
+  - 基于 source 追加一条 `SystemTruthDraft`；`asset_id` 省略时继承 source，且显式传入时必须与 source 一致
+- `POST /api/control-plane/runtime/system-truth/drafts/:draftID/compile`
+  - 基于 draft 追加一条 `SystemTruthCompileResult`；成功 compile 未传 `compiled_payload` 时默认使用 draft content
+- `POST /api/control-plane/runtime/system-truth/compile-results/:compileID/activate`
+  - 激活成功 compile result，追加一条 audited active pointer；失败 compile 不能 activate
+- `POST /api/control-plane/runtime/system-truth/active-versions/:activeID/rollback`
+  - 回滚到历史 active version；实现方式是追加新的 active pointer，并记录 `rollback_from_id`，不改写历史 source / draft / compile
 - `GET /api/control-plane/runtime/runs`
   - 读取 Phase 1 持久化的 `TaskRun` 列表，支持 `workspace_id`、`status`、`limit`
 - `GET /api/control-plane/runtime/runs/:runID`
@@ -395,7 +407,7 @@ Athena 当前会优先消费 summary，再决定是否返回：
 控制面当前不开放：
 
 - Runtime read API 当前只读 persisted core runtime objects；不会暴露 Eino checkpoint opaque payload，也不会把 business EvidenceRecord 当作 core truth 返回
-- Runtime contract foundation read API 只暴露 Athena-owned contract / registry / hook / system truth active pointer，不暴露 Eino private callback payload 或任意可执行用户代码
+- Runtime contract foundation read API 只暴露 Athena-owned contract / registry / hook / system truth lifecycle 摘要，不暴露 Eino private callback payload 或任意可执行用户代码
 - 原始模型参数
 - execution governance 底线
 - fact quality / evidence gate 底线
