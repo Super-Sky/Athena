@@ -28,7 +28,7 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 产品化 checkpoint-backed waiting run readout，不暴露 Eino private checkpoint payload。
 - [x] 为 `inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 定义 registered task type validator contract。
 - [x] 深化 System Truth `source -> draft -> compile -> active -> rollback` write/edit path 规划。
-- [ ] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
+- [x] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
 - [ ] 将剩余 direct respond rich delivery 兼容拼装从 transport 收敛到 app/runtime graph node 或 Batch 2 read model。
 
 ## Acceptance Gates
@@ -72,15 +72,17 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-05-29 真实 API + DOM smoke 通过，返回 `run_id=f09ad491-9df4-47c4-b92c-97adf7098c24`、`contracts=5`、`task_types=5`、`hook_bindings=3`、`active_system_truths=54`、`web.dom=ok`。
 - 2026-06-10 System Truth lifecycle write/edit path 已接入 Control Plane API、OpenAPI、Postgres read/list、app 编排、System Validation readout 与 smoke 断言；rollback 通过追加 active pointer 并记录 `rollback_from_id` 实现，不改写历史。
 - 2026-06-10 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
+- 2026-06-10 semantic projection boundary 已收口：`ProjectionCandidate` 写入前强制 `runtime_projection.*` schema、默认 `projection_candidate_only` materialization target，并拒绝 EvidenceRecord-like candidate/schema/target/typed semantic payload；System Validation 与 smoke 已新增 boundary readout / 断言。
+- 2026-06-10 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
 
 ## Next Iteration Plan
 
-下一轮优先处理 semantic projection boundary，继续保持 core 只承载通用生命周期、候选输出和校验面，不引入业务 truth ownership。
+下一轮优先处理 direct respond rich delivery 收口，把剩余兼容拼装从 transport 层迁移到 app/runtime graph node 或 Batch 2 read model，继续避免引入场景专属 core contract。
 
 执行清单：
 
-1. 盘点 `ProjectionCandidate` 当前字段、materialization target 和任何 EvidenceRecord-like 命名。
-2. 明确 projection candidate 只能作为 runtime candidate / read model，不能升级为业务 evidence truth。
-3. 补 Go 单测和 API smoke 断言，覆盖 projection safe payload、schema version 和 materialization boundary。
-4. 在 System Validation 中保留 semantic boundary readout，但避免展示为正式业务证据。
-5. 更新 feature 文档、真实场景测试用例和 smoke 断言。
+1. 盘点 direct respond 当前 transport 兼容拼装、rich delivery 字段和 app/runtime 已有结果模型。
+2. 明确哪些字段属于 app/runtime graph node 或 read model，哪些仍只是 legacy transport adapter 映射。
+3. 迁移剩余拼装逻辑并补 focused Go tests，确保 direct respond 输出仍兼容现有 API。
+4. 更新 System Validation 或 API smoke 中的 readout 断言，覆盖迁移后的 rich delivery 结果。
+5. 更新 feature 文档、真实场景测试用例和 master plan，准备 Batch 2 最终 PR gate。

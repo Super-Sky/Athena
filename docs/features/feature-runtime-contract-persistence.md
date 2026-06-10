@@ -120,6 +120,14 @@
 - `external_sandbox_ref` -> `runtime_projection.external_sandbox_ref.v1`
 - `assistant_message` -> `runtime_projection.assistant_message.v1`
 
+写入前硬边界：
+
+- `schema_version` 必须使用 `runtime_projection.*` namespace。
+- `materialization_target.core_materialization_scope` 必须保持 `projection_candidate_only`。
+- 默认 `materialization_target` 为 `target_type=runtime_read_model`、`ownership=athena_runtime_candidate`。
+- `candidate_kind`、`schema_version`、`materialization_target` 和 typed semantic payload 不能声明 `EvidenceRecord`、business evidence、business truth 或 formal business object。
+- `internal/runtime.ValidateProjectionCandidate` 提供可复用的写入前校验入口。
+
 这些字段仍然只是 core candidate / ref / hint，不升级成业务最终真相。
 
 ## Eino 接线
@@ -176,7 +184,7 @@ System Validation `Runtime Persistence Readout` 当前会：
 - 显示 RuntimeContract / TaskType / HookBinding / active System Truth / lifecycle 摘要卡片
 - 显示 foundation snapshot 和 capability surface
 - 继续显示 runtime runs、steps、trace、usage、projection
-- 对 projection 展示 schema version / semantic boundary 标签
+- 对 projection 展示 schema version / candidate-only semantic boundary 标签
 - 在 foundation active 后，新生成的 validation run 会额外出现 `runtime_hook_binding` traces 和 `runtime_hook` usage
 
 ## 关键代码
@@ -240,4 +248,4 @@ Codex in-app Browser 页面级验收已完成：在 `http://127.0.0.1:5173/` 的
 
 暂不新增独立 skill。
 
-原因是 System Truth lifecycle 写入闭环已经稳定到 feature 文档和测试，但 Batch 2 仍剩 semantic projection boundary 与 direct respond rich delivery 收口。等 v2.1.0 Batch 2 完整收口后，再判断是否需要单独的 `runtime-contract-foundation` 维护 skill。
+原因是 System Truth lifecycle 与 semantic projection boundary 已经稳定到 feature 文档和测试，但 Batch 2 仍剩 direct respond rich delivery 收口。等 v2.1.0 Batch 2 完整收口后，再判断是否需要单独的 `runtime-contract-foundation` 维护 skill。

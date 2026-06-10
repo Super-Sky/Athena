@@ -127,6 +127,8 @@ def validate_runtime_records(client: RuntimeFoundationClient, run_id: str) -> di
     expect(traces, "runtime run has no traces")
     expect(usage, "runtime run has no usage records")
     expect(projections, "runtime run has no projection candidates")
+    for projection in projections:
+        validate_projection_boundary(projection)
     for checkpoint in checkpoints:
         expect("payload" not in checkpoint, f"checkpoint readout leaked raw payload: {checkpoint}")
         expect("resume_token" not in checkpoint, f"checkpoint readout leaked raw resume token: {checkpoint}")
@@ -138,6 +140,49 @@ def validate_runtime_records(client: RuntimeFoundationClient, run_id: str) -> di
         "projections": len(projections),
         "checkpoints": len(checkpoints),
     }
+
+
+def validate_projection_boundary(projection: dict[str, Any]) -> None:
+    schema_version = projection.get("schema_version") or ""
+    expect(schema_version.startswith("runtime_projection."), f"projection schema crosses runtime namespace: {projection}")
+    candidate_kind = projection.get("candidate_kind") or ""
+    expect(not contains_business_evidence_identity(candidate_kind), f"projection kind claims business evidence: {projection}")
+    expect(not contains_business_evidence_identity(schema_version), f"projection schema claims business evidence: {projection}")
+    target = projection.get("materialization_target") or {}
+    expect(isinstance(target, dict), f"projection materialization target is not object: {projection}")
+    expect(
+        target.get("core_materialization_scope") == "projection_candidate_only",
+        f"projection crosses candidate-only materialization boundary: {projection}",
+    )
+    expect(not contains_business_evidence_identity(target), f"projection target claims business evidence: {projection}")
+    semantic_payload = projection.get("semantic_payload") or {}
+    expect(not semantic_payload_claims_business_evidence(semantic_payload), f"projection semantic payload claims business evidence: {projection}")
+
+
+def semantic_payload_claims_business_evidence(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if contains_business_evidence_identity(key):
+                return True
+            if str(key).strip().lower() in {"kind", "type", "target_type", "object_type", "entity_type", "record_type", "schema", "schema_version"}:
+                if contains_business_evidence_identity(child):
+                    return True
+            if semantic_payload_claims_business_evidence(child):
+                return True
+    if isinstance(value, list):
+        return any(semantic_payload_claims_business_evidence(item) for item in value)
+    return False
+
+
+def contains_business_evidence_identity(value: Any) -> bool:
+    if isinstance(value, str):
+        compact = "".join(ch for ch in value.lower().strip() if ch.isalnum())
+        return any(marker in compact for marker in ("evidencerecord", "businessevidence", "businesstruth", "formalbusinessobject"))
+    if isinstance(value, dict):
+        return any(contains_business_evidence_identity(key) or contains_business_evidence_identity(child) for key, child in value.items())
+    if isinstance(value, list):
+        return any(contains_business_evidence_identity(item) for item in value)
+    return False
 
 
 def run_api_smoke(base_url: str, token: str, timeout: int) -> dict[str, Any]:
@@ -230,6 +275,7 @@ def run_dom_smoke(web_url: str, token: str) -> dict[str, Any]:
                 "runtime-contract-foundation",
                 "runtime-foundation-capabilities",
                 "runtime-task-type-validator-contracts",
+                "runtime-projection-boundary",
                 "runtime-system-truth-lifecycle",
                 "runtime-contract-editor",
                 "runtime-task-type-editor",

@@ -374,7 +374,9 @@ Athena 当前会优先消费 summary，再决定是否返回：
 - `GET /api/control-plane/runtime/runs/:runID/usage`
   - 读取该 run 下的 generic `Usage` 记录，支持 `step_id`、`limit`
 - `GET /api/control-plane/runtime/runs/:runID/projections`
-  - 读取该 run 下的 `ProjectionCandidate` 记录，支持 `step_id`、`limit`；当前读模型会额外暴露 `schema_version`、`semantic_payload`、`artifact_refs`、`ui_hints` 和 `materialization_target`
+  - 读取该 run 下的 `ProjectionCandidate` 记录，支持 `step_id`、`limit`。
+  - 当前读模型会额外暴露 `schema_version`、`semantic_payload`、`artifact_refs`、`ui_hints` 和 `materialization_target`。
+  - projection 写入前要求 `schema_version` 使用 `runtime_projection.*`，`materialization_target.core_materialization_scope` 保持 `projection_candidate_only`；candidate/read model 不得声明为业务 `EvidenceRecord`、business evidence、business truth 或 formal business object。
 - `GET /api/control-plane/runtime/runs/:runID/checkpoints`
   - 读取该 run 推导出的 checkpoint-backed waiting readout 安全摘要
   - 只返回 `checkpoint_id`、`run_id`、`stage`、`resume_token_present`、`payload_size`、`payload_sha256`、`created_at`、`updated_at`、`snapshot_available` 和 `source`
@@ -406,7 +408,7 @@ Athena 当前会优先消费 summary，再决定是否返回：
 
 控制面当前不开放：
 
-- Runtime read API 当前只读 persisted core runtime objects；不会暴露 Eino checkpoint opaque payload，也不会把 business EvidenceRecord 当作 core truth 返回
+- Runtime read API 当前只读 persisted core runtime objects；不会暴露 Eino checkpoint opaque payload，也不会把 business EvidenceRecord 当作 core truth 返回；projection candidate 只代表 runtime candidate/read model 边界
 - Runtime contract foundation read API 只暴露 Athena-owned contract / registry / hook / system truth lifecycle 摘要，不暴露 Eino private callback payload 或任意可执行用户代码
 - 原始模型参数
 - execution governance 底线

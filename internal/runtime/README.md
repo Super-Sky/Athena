@@ -59,7 +59,7 @@
 - `interfaces.go`
   - 定义 runtime 关键抽象接口。
 - `persistence.go`
-  - 定义 TaskRun、TaskStep、RuntimeTrace、Usage、LifecycleEvent、ProjectionCandidate 和 RuntimeContract 的核心持久化契约。
+  - 定义 TaskRun、TaskStep、RuntimeTrace、Usage、LifecycleEvent、ProjectionCandidate 和 RuntimeContract 的核心持久化契约，并校验 projection candidate-only boundary。
 - `postgres_persistence.go`
   - 实现 PostgreSQL 版 runtime persistence store、RuntimeContract store、checkpoint store 与 migration model。
 - `persistence_writer.go`
