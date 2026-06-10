@@ -176,6 +176,19 @@ export type RuntimeProjectionCandidate = {
   created_at: string;
 };
 
+export type RuntimeCheckpointReadout = {
+  checkpoint_id: string;
+  run_id: string;
+  stage?: string;
+  resume_token_present: boolean;
+  payload_size?: number;
+  payload_sha256?: string;
+  created_at?: string;
+  updated_at?: string;
+  snapshot_available: boolean;
+  source?: string;
+};
+
 export type RuntimeContract = {
   id: string;
   name: string;
@@ -239,11 +252,54 @@ export type SystemTruthActiveVersion = {
   activated_at: string;
 };
 
+export type SystemTruthSource = {
+  id: string;
+  asset_id: string;
+  source_kind: string;
+  source_ref?: string;
+  status: string;
+  content?: Record<string, unknown>;
+  content_hash?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type SystemTruthDraft = {
+  id: string;
+  source_id: string;
+  asset_id: string;
+  status: string;
+  author?: string;
+  reason?: string;
+  base_active_id?: string;
+  content?: Record<string, unknown>;
+  diff_summary?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SystemTruthCompileResult = {
+  id: string;
+  draft_id: string;
+  asset_id: string;
+  status: string;
+  summary?: string;
+  diagnostics?: Record<string, unknown>;
+  compiled_payload?: Record<string, unknown>;
+  content_hash?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
 export type RuntimeContractFoundation = {
   contracts: RuntimeContract[];
   task_types: RuntimeTaskTypeRegistration[];
   hook_bindings: RuntimeHookBinding[];
   active_system_truths: SystemTruthActiveVersion[];
+  system_truth_sources?: SystemTruthSource[];
+  system_truth_drafts?: SystemTruthDraft[];
+  system_truth_compile_results?: SystemTruthCompileResult[];
   store_capabilities: string[];
   unavailable_surfaces?: string[];
 };

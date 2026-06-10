@@ -44,6 +44,14 @@
   - 定义交付物写入、只读资源读取、结构化解析和 runtime 状态查询 contract。
 - `base_capabilities_test.go`
   - 验证路径安全、UTF-8 文本写入、结构化解析和 runtime 状态查询行为。
+- `contract_foundation.go`
+  - 定义 RuntimeContract foundation、registered task type、hook binding、System Truth lifecycle 等 v2 runtime contract 记录与校验规则。
+- `contract_foundation_test.go`
+  - 验证 active registered task type 必须具备 default contract、input schema 和 validator refs，draft 记录仍可暂存。
+- `runtime_contract_controls.go`
+  - 将 resolved RuntimeContract 的 execution profile、exit policy 和 agent runtime controls 投影到 ExecutionSpec constraints。
+- `runtime_contract_controls_test.go`
+  - 验证 RuntimeContract control constraints、model retry、failover 和 after-agent 设置解析。
 - `execution.go`
   - 定义执行治理 contract、风险分类和显式执行意图解析逻辑。
 - `execution_test.go`
@@ -51,7 +59,7 @@
 - `interfaces.go`
   - 定义 runtime 关键抽象接口。
 - `persistence.go`
-  - 定义 TaskRun、TaskStep、RuntimeTrace、Usage、LifecycleEvent、ProjectionCandidate 和 RuntimeContract 的核心持久化契约。
+  - 定义 TaskRun、TaskStep、RuntimeTrace、Usage、LifecycleEvent、ProjectionCandidate 和 RuntimeContract 的核心持久化契约，并校验 projection candidate-only boundary。
 - `postgres_persistence.go`
   - 实现 PostgreSQL 版 runtime persistence store、RuntimeContract store、checkpoint store 与 migration model。
 - `persistence_writer.go`

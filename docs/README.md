@@ -16,5 +16,7 @@ Recommended reading order:
 
 Notes:
 
-- Historical internal planning snapshots are not included in this public mirror.
+- Current feature notes live in `features/`.
+- Active version plans live in `vX.Y.Z/plan/` when a versionized task is in progress.
+- Historical internal planning snapshots are not included in this public mirror unless they are restored as current active plans.
 - The docs here describe the current runtime, control-plane, and integration boundaries.

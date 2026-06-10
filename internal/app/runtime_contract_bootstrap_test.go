@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,8 +21,8 @@ func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 	if err := syncRuntimeContractFoundationSnapshot(context.Background(), manager, store); err != nil {
 		t.Fatalf("syncRuntimeContractFoundationSnapshot() error = %v", err)
 	}
-	if len(store.contracts) != 1 {
-		t.Fatalf("contracts len = %d, want 1", len(store.contracts))
+	if len(store.contracts) != 1+len(registeredTaskTypeValidatorSeeds) {
+		t.Fatalf("contracts len = %d, want %d", len(store.contracts), 1+len(registeredTaskTypeValidatorSeeds))
 	}
 	contract, ok := store.contracts[runtimeValidationContractID]
 	if !ok || contract.TaskType != runtimeValidationTaskTypeKey {
@@ -33,6 +34,26 @@ func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 	}
 	if len(store.hooks) != len(runtimeValidationHookSeeds) {
 		t.Fatalf("hooks len = %d, want %d", len(store.hooks), len(runtimeValidationHookSeeds))
+	}
+	for _, hook := range store.hooks {
+		if hook.ContractID != runtimeValidationContractID {
+			t.Fatalf("hook %s contract = %q, want runtime validation contract", hook.ID, hook.ContractID)
+		}
+	}
+	for _, seed := range registeredTaskTypeValidatorSeeds {
+		taskType, ok := store.taskTypesByKey[seed.typeKey]
+		if !ok {
+			t.Fatalf("task type registry missing %s", seed.typeKey)
+		}
+		if taskType.DefaultContractID != registeredTaskTypeValidatorContractID(seed.typeKey) {
+			t.Fatalf("%s default contract = %q, want %q", seed.typeKey, taskType.DefaultContractID, registeredTaskTypeValidatorContractID(seed.typeKey))
+		}
+		if status, _ := taskType.ValidatorRefs["status"].(string); status != "ready" {
+			t.Fatalf("%s validator status = %q, want ready", seed.typeKey, status)
+		}
+		if taskType.Compatibility["core_materialization_scope"] != "projection_candidate_only" {
+			t.Fatalf("%s compatibility = %#v, want projection-only scope", seed.typeKey, taskType.Compatibility)
+		}
 	}
 	if len(store.activeTruthsByAsset) == 0 {
 		t.Fatalf("activeTruthsByAsset is empty, want at least one active truth")
@@ -55,7 +76,7 @@ func TestSyncRuntimeContractFoundationSnapshotIsIdempotent(t *testing.T) {
 	if err := syncRuntimeContractFoundationSnapshot(context.Background(), manager, store); err != nil {
 		t.Fatalf("second sync error = %v", err)
 	}
-	if len(store.contracts) != 1 || len(store.taskTypesByKey) != 1 {
+	if len(store.contracts) != 1+len(registeredTaskTypeValidatorSeeds) || len(store.taskTypesByKey) != 1+len(registeredTaskTypeValidatorSeeds) {
 		t.Fatalf("foundation counts changed after second sync: contracts=%d taskTypes=%d", len(store.contracts), len(store.taskTypesByKey))
 	}
 	if len(store.hooks) != len(runtimeValidationHookSeeds) {
@@ -115,7 +136,12 @@ type runtimeFoundationMemoryStore struct {
 	taskTypesByID       map[string]runtime.TaskTypeRegistration
 	taskTypesByKey      map[string]runtime.TaskTypeRegistration
 	hooks               map[string]runtime.HookBinding
+	truthSources        map[string]runtime.SystemTruthSource
+	truthDrafts         map[string]runtime.SystemTruthDraft
+	truthCompiles       map[string]runtime.SystemTruthCompileResult
 	activeTruthsByAsset map[string]runtime.SystemTruthActiveVersion
+	activeTruthsByID    map[string]runtime.SystemTruthActiveVersion
+	activeTruthHistory  []runtime.SystemTruthActiveVersion
 }
 
 func newRuntimeFoundationMemoryStore() *runtimeFoundationMemoryStore {
@@ -124,7 +150,11 @@ func newRuntimeFoundationMemoryStore() *runtimeFoundationMemoryStore {
 		taskTypesByID:       map[string]runtime.TaskTypeRegistration{},
 		taskTypesByKey:      map[string]runtime.TaskTypeRegistration{},
 		hooks:               map[string]runtime.HookBinding{},
+		truthSources:        map[string]runtime.SystemTruthSource{},
+		truthDrafts:         map[string]runtime.SystemTruthDraft{},
+		truthCompiles:       map[string]runtime.SystemTruthCompileResult{},
 		activeTruthsByAsset: map[string]runtime.SystemTruthActiveVersion{},
+		activeTruthsByID:    map[string]runtime.SystemTruthActiveVersion{},
 	}
 }
 
@@ -225,20 +255,114 @@ func (s *runtimeFoundationMemoryStore) ListHookBindings(_ context.Context, _ run
 }
 
 func (s *runtimeFoundationMemoryStore) CreateSystemTruthSource(_ context.Context, item runtime.SystemTruthSource) (runtime.SystemTruthSource, error) {
+	if item.ID == "" {
+		item.ID = "source-" + strings.ReplaceAll(item.AssetID, ".", "-")
+	}
+	s.truthSources[item.ID] = item
 	return item, nil
+}
+
+func (s *runtimeFoundationMemoryStore) GetSystemTruthSource(_ context.Context, id string) (runtime.SystemTruthSource, bool, error) {
+	item, ok := s.truthSources[strings.TrimSpace(id)]
+	return item, ok, nil
+}
+
+func (s *runtimeFoundationMemoryStore) ListSystemTruthSources(_ context.Context, filter runtime.SystemTruthSourceListFilter) ([]runtime.SystemTruthSource, error) {
+	out := make([]runtime.SystemTruthSource, 0, len(s.truthSources))
+	for _, item := range s.truthSources {
+		if strings.TrimSpace(filter.AssetID) != "" && item.AssetID != strings.TrimSpace(filter.AssetID) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && item.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
+		out = append(out, item)
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *runtimeFoundationMemoryStore) CreateSystemTruthDraft(_ context.Context, item runtime.SystemTruthDraft) (runtime.SystemTruthDraft, error) {
+	if item.ID == "" {
+		item.ID = "draft-" + strings.ReplaceAll(item.AssetID, ".", "-") + "-" + strconv.Itoa(len(s.truthDrafts)+1)
+	}
+	s.truthDrafts[item.ID] = item
 	return item, nil
+}
+
+func (s *runtimeFoundationMemoryStore) GetSystemTruthDraft(_ context.Context, id string) (runtime.SystemTruthDraft, bool, error) {
+	item, ok := s.truthDrafts[strings.TrimSpace(id)]
+	return item, ok, nil
+}
+
+func (s *runtimeFoundationMemoryStore) ListSystemTruthDrafts(_ context.Context, filter runtime.SystemTruthDraftListFilter) ([]runtime.SystemTruthDraft, error) {
+	out := make([]runtime.SystemTruthDraft, 0, len(s.truthDrafts))
+	for _, item := range s.truthDrafts {
+		if strings.TrimSpace(filter.SourceID) != "" && item.SourceID != strings.TrimSpace(filter.SourceID) {
+			continue
+		}
+		if strings.TrimSpace(filter.AssetID) != "" && item.AssetID != strings.TrimSpace(filter.AssetID) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && item.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
+		out = append(out, item)
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *runtimeFoundationMemoryStore) CreateSystemTruthCompileResult(_ context.Context, item runtime.SystemTruthCompileResult) (runtime.SystemTruthCompileResult, error) {
+	if item.ID == "" {
+		item.ID = "compile-" + strings.ReplaceAll(item.AssetID, ".", "-") + "-" + strconv.Itoa(len(s.truthCompiles)+1)
+	}
+	s.truthCompiles[item.ID] = item
 	return item, nil
 }
 
+func (s *runtimeFoundationMemoryStore) GetSystemTruthCompileResult(_ context.Context, id string) (runtime.SystemTruthCompileResult, bool, error) {
+	item, ok := s.truthCompiles[strings.TrimSpace(id)]
+	return item, ok, nil
+}
+
+func (s *runtimeFoundationMemoryStore) ListSystemTruthCompileResults(_ context.Context, filter runtime.SystemTruthCompileResultListFilter) ([]runtime.SystemTruthCompileResult, error) {
+	out := make([]runtime.SystemTruthCompileResult, 0, len(s.truthCompiles))
+	for _, item := range s.truthCompiles {
+		if strings.TrimSpace(filter.DraftID) != "" && item.DraftID != strings.TrimSpace(filter.DraftID) {
+			continue
+		}
+		if strings.TrimSpace(filter.AssetID) != "" && item.AssetID != strings.TrimSpace(filter.AssetID) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && item.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
+		out = append(out, item)
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (s *runtimeFoundationMemoryStore) ActivateSystemTruthVersion(_ context.Context, item runtime.SystemTruthActiveVersion) (runtime.SystemTruthActiveVersion, error) {
+	if item.ID == "" {
+		item.ID = "active-" + strings.ReplaceAll(item.AssetID, ".", "-") + "-" + strconv.Itoa(len(s.activeTruthHistory)+1)
+	}
 	s.activeTruthsByAsset[item.AssetID] = item
+	s.activeTruthsByID[item.ID] = item
+	s.activeTruthHistory = append(s.activeTruthHistory, item)
 	return item, nil
+}
+
+func (s *runtimeFoundationMemoryStore) GetSystemTruthActiveVersion(_ context.Context, id string) (runtime.SystemTruthActiveVersion, bool, error) {
+	item, ok := s.activeTruthsByID[strings.TrimSpace(id)]
+	return item, ok, nil
 }
 
 func (s *runtimeFoundationMemoryStore) GetActiveSystemTruthVersion(_ context.Context, assetID string) (runtime.SystemTruthActiveVersion, bool, error) {
@@ -248,15 +372,13 @@ func (s *runtimeFoundationMemoryStore) GetActiveSystemTruthVersion(_ context.Con
 
 func (s *runtimeFoundationMemoryStore) ListSystemTruthActiveVersions(_ context.Context, assetID string) ([]runtime.SystemTruthActiveVersion, error) {
 	if strings.TrimSpace(assetID) != "" {
-		item, ok := s.activeTruthsByAsset[assetID]
-		if !ok {
-			return nil, nil
+		var filtered []runtime.SystemTruthActiveVersion
+		for _, item := range s.activeTruthHistory {
+			if item.AssetID == strings.TrimSpace(assetID) {
+				filtered = append(filtered, item)
+			}
 		}
-		return []runtime.SystemTruthActiveVersion{item}, nil
+		return filtered, nil
 	}
-	out := make([]runtime.SystemTruthActiveVersion, 0, len(s.activeTruthsByAsset))
-	for _, item := range s.activeTruthsByAsset {
-		out = append(out, item)
-	}
-	return out, nil
+	return append([]runtime.SystemTruthActiveVersion(nil), s.activeTruthHistory...), nil
 }

@@ -443,6 +443,9 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.GET("/api/control-plane/runtime/runs/:runID/projections", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeProjectionCandidates)(ctx, c, cfg, application)
 	})
+	h.GET("/api/control-plane/runtime/runs/:runID/checkpoints", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeCheckpoints)(ctx, c, cfg, application)
+	})
 	h.GET("/api/control-plane/runtime/contracts/foundation", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleGetControlPlaneRuntimeContractFoundation)(ctx, c, cfg, application)
 	})
@@ -454,6 +457,24 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	})
 	h.PUT("/api/control-plane/runtime/hook-bindings/:bindingID", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handlePutControlPlaneRuntimeHookBinding)(ctx, c, cfg, application)
+	})
+	h.GET("/api/control-plane/runtime/system-truth/lifecycle", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeSystemTruthLifecycle)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/sources", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleCreateControlPlaneRuntimeSystemTruthSource)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/drafts", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleCreateControlPlaneRuntimeSystemTruthDraft)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/drafts/:draftID/compile", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleCompileControlPlaneRuntimeSystemTruthDraft)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/compile-results/:compileID/activate", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleActivateControlPlaneRuntimeSystemTruthCompileResult)(ctx, c, cfg, application)
+	})
+	h.POST("/api/control-plane/runtime/system-truth/active-versions/:activeID/rollback", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleRollbackControlPlaneRuntimeSystemTruthActiveVersion)(ctx, c, cfg, application)
 	})
 	h.GET("/api/control-plane/governance", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleGetControlPlaneGovernance)(ctx, c, cfg, application)
@@ -2469,7 +2490,7 @@ func emitStructuredCompletionEvents(ctx context.Context, stream *sse.Stream, req
 		}
 	}
 
-	if effectiveTaskType(converted) == "inspection_task" {
+	if effectiveRespondTaskType(converted) == "inspection_task" {
 		if err := sendSSEEvent(stream, StreamEvent{
 			Type:      "inspection_progress",
 			RequestID: requestID,
@@ -2538,6 +2559,13 @@ func emitStructuredCompletionEvents(ctx context.Context, stream *sse.Stream, req
 			"structured_result": result.StructuredResult,
 		},
 	})
+}
+
+func effectiveRespondTaskType(req ChatRespondRequest) string {
+	if strings.TrimSpace(req.TaskType) == "" {
+		return "chat"
+	}
+	return strings.TrimSpace(req.TaskType)
 }
 
 func emitInteractionProgressEvents(stream *sse.Stream, requestID, sessionID string, result *structuredChatResult) error {

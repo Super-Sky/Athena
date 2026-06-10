@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"moss/internal/controlplane"
 	"moss/internal/runtime"
+	runtimetask "moss/internal/runtime/task"
 )
 
 const (
@@ -46,6 +47,16 @@ type runtimeFoundationHookSeed struct {
 	config        map[string]any
 }
 
+type registeredTaskTypeValidatorSeed struct {
+	id          string
+	typeKey     string
+	displayName string
+	description string
+	scene       string
+	aliases     []any
+	properties  map[string]any
+}
+
 var runtimeValidationHookSeeds = []runtimeFoundationHookSeed{
 	{
 		id:            "athena.hook.runtime_validation.before_run.runtime_contract_guard.v1",
@@ -76,6 +87,74 @@ var runtimeValidationHookSeeds = []runtimeFoundationHookSeed{
 	},
 }
 
+var registeredTaskTypeValidatorSeeds = []registeredTaskTypeValidatorSeed{
+	{
+		id:          "athena.task_type.inspection_task.v1",
+		typeKey:     runtimetask.InputKindInspectionTask,
+		displayName: "Inspection Task",
+		description: "Register the generic inspection task boundary without owning business evidence.",
+		scene:       "inspection",
+		aliases:     []any{"legacy_inspection_task"},
+		properties: map[string]any{
+			"workspace_id":            map[string]any{"type": "string"},
+			"main_session_id":         map[string]any{"type": "string"},
+			"integration_instance_id": map[string]any{"type": "string"},
+			"trigger_type":            map[string]any{"type": "string"},
+			"query":                   map[string]any{"type": "string"},
+			"input_payload":           map[string]any{"type": "object"},
+			"global_context":          map[string]any{"type": "object"},
+			"app_context":             map[string]any{"type": "object"},
+		},
+	},
+	{
+		id:          "athena.task_type.integration_event.v1",
+		typeKey:     runtimetask.InputKindIntegrationEvent,
+		displayName: "Integration Event",
+		description: "Register the generic integration event boundary while keeping connector semantics outside core.",
+		scene:       "default",
+		aliases:     []any{"legacy_integration_event"},
+		properties: map[string]any{
+			"workspace_id":            map[string]any{"type": "string"},
+			"integration_instance_id": map[string]any{"type": "string"},
+			"trigger_type":            map[string]any{"type": "string"},
+			"input_payload":           map[string]any{"type": "object"},
+			"global_context":          map[string]any{"type": "object"},
+			"app_context":             map[string]any{"type": "object"},
+		},
+	},
+	{
+		id:          "athena.task_type.scheduled_job.v1",
+		typeKey:     runtimetask.InputKindScheduledJob,
+		displayName: "Scheduled Job",
+		description: "Register the generic scheduled job boundary without taking ownership of scheduler policy.",
+		scene:       "workflow",
+		aliases:     []any{"legacy_scheduled_job"},
+		properties: map[string]any{
+			"workspace_id":       map[string]any{"type": "string"},
+			"automation_task_id": map[string]any{"type": "string"},
+			"trigger_type":       map[string]any{"type": "string"},
+			"input_payload":      map[string]any{"type": "object"},
+			"global_context":     map[string]any{"type": "object"},
+		},
+	},
+	{
+		id:          "athena.task_type.workflow_step_request.v1",
+		typeKey:     runtimetask.InputKindWorkflowStepRequest,
+		displayName: "Workflow Step Request",
+		description: "Register the generic workflow step request boundary without materializing business state.",
+		scene:       "workflow",
+		aliases:     []any{"legacy_workflow_step_request"},
+		properties: map[string]any{
+			"workspace_id":    map[string]any{"type": "string"},
+			"workflow_run_id": map[string]any{"type": "string"},
+			"step_id":         map[string]any{"type": "string"},
+			"input_payload":   map[string]any{"type": "object"},
+			"global_context":  map[string]any{"type": "object"},
+			"app_context":     map[string]any{"type": "object"},
+		},
+	},
+}
+
 // syncRuntimeContractFoundation keeps Athena-owned runtime foundation records present for the current control-plane truth state.
 // syncRuntimeContractFoundation 保证当前 control-plane truth 状态对应的 Athena-owned runtime foundation 记录已存在。
 func (s *Service) syncRuntimeContractFoundation(ctx context.Context) error {
@@ -97,14 +176,23 @@ func syncRuntimeContractFoundationSnapshot(ctx context.Context, controlPlane run
 	if err != nil {
 		return err
 	}
-	contract, err := ensureRuntimeValidationContract(ctx, store, truthInfo)
+	validationContract, err := ensureRuntimeValidationContract(ctx, store, truthInfo)
 	if err != nil {
 		return err
 	}
-	if err := ensureRuntimeValidationTaskType(ctx, store, contract.ID); err != nil {
+	if err := ensureRuntimeValidationTaskType(ctx, store, validationContract.ID); err != nil {
 		return err
 	}
-	if err := ensureRuntimeValidationHooks(ctx, store, contract.ID); err != nil {
+	for _, seed := range registeredTaskTypeValidatorSeeds {
+		validatorContract, err := ensureRegisteredTaskTypeValidatorContract(ctx, store, seed, truthInfo)
+		if err != nil {
+			return err
+		}
+		if err := ensureRegisteredTaskTypeValidator(ctx, store, seed, validatorContract.ID); err != nil {
+			return err
+		}
+	}
+	if err := ensureRuntimeValidationHooks(ctx, store, validationContract.ID); err != nil {
 		return err
 	}
 	items, err := controlPlane.ListSystemResourceDetails(ctx)
@@ -187,7 +275,7 @@ func ensureRuntimeValidationTaskType(ctx context.Context, store runtime.TaskType
 		return nil
 	}
 	now := time.Now().UTC()
-	_, err := store.CreateTaskTypeRegistration(ctx, runtime.TaskTypeRegistration{
+	_, err := store.PutTaskTypeRegistration(ctx, runtime.TaskTypeRegistration{
 		ID:                runtimeValidationTaskTypeID,
 		TypeKey:           runtimeValidationTaskTypeKey,
 		DisplayName:       "Runtime Validation",
@@ -202,6 +290,149 @@ func ensureRuntimeValidationTaskType(ctx context.Context, store runtime.TaskType
 		UpdatedAt:         now,
 	})
 	return err
+}
+
+func ensureRegisteredTaskTypeValidatorContract(ctx context.Context, store runtime.RuntimeContractStore, seed registeredTaskTypeValidatorSeed, truthInfo controlplane.TruthDirInfo) (runtime.RuntimeContract, error) {
+	contractID := registeredTaskTypeValidatorContractID(seed.typeKey)
+	if existing, ok, err := store.GetRuntimeContract(ctx, contractID); err != nil {
+		return runtime.RuntimeContract{}, err
+	} else if ok && strings.TrimSpace(existing.ID) != "" {
+		return existing, nil
+	}
+	now := time.Now().UTC()
+	return store.PutRuntimeContract(ctx, runtime.RuntimeContract{
+		ID:       contractID,
+		Name:     seed.displayName + " Validator Contract",
+		Version:  "v1",
+		Status:   runtime.RuntimeContractStatusActive,
+		TaskType: seed.typeKey,
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": true,
+			"properties":           cloneAnyMap(seed.properties),
+			"required":             []any{},
+		},
+		ExecutionProfile: map[string]any{
+			"framework": "athena_runtime",
+			"surface":   "registered_task_type_validator",
+			"mode":      "advisory_contract",
+		},
+		ExitPolicy: map[string]any{
+			"failure_policy":       "record_only",
+			"business_truth_scope": "out_of_core",
+		},
+		CapabilityProfile: map[string]any{
+			"validator_contract": true,
+			"scene":              seed.scene,
+			"evidence_ownership": "application_or_connector",
+		},
+		ProjectionPolicy: map[string]any{
+			"semantic_boundary":         "runtime_task_input.v1",
+			"forbid_business_record":    true,
+			"projection_candidate_only": true,
+		},
+		SystemTruthRefs: map[string]any{
+			"truth_dir":         strings.TrimSpace(truthInfo.Path),
+			"truth_dir_version": strings.TrimSpace(truthInfo.Version),
+			"source":            runtimeFoundationBootstrapNote,
+		},
+		IdempotencyScope: "runtime_task_type_validator:" + seed.typeKey,
+		IdempotencyKey:   seed.typeKey + ":validator:v1",
+		Metadata: map[string]any{
+			"source":                  runtimeFoundationBootstrapNote,
+			"validator_contract_type": "registered_task_type",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+}
+
+func ensureRegisteredTaskTypeValidator(ctx context.Context, store runtime.TaskTypeRegistryStore, seed registeredTaskTypeValidatorSeed, contractID string) error {
+	existing, ok, err := store.GetTaskTypeRegistrationByKey(ctx, seed.typeKey)
+	if err != nil {
+		return err
+	}
+	if ok && registeredTaskTypeValidatorReady(existing, contractID) {
+		return nil
+	}
+	now := time.Now().UTC()
+	item := runtime.TaskTypeRegistration{
+		ID:                seed.id,
+		TypeKey:           seed.typeKey,
+		DisplayName:       seed.displayName,
+		Description:       seed.description,
+		Status:            runtime.TaskTypeStatusActive,
+		InputSchema:       registeredTaskTypeInputSchema(seed),
+		ValidatorRefs:     registeredTaskTypeValidatorRefs(seed),
+		DefaultContractID: contractID,
+		Compatibility:     registeredTaskTypeCompatibility(seed),
+		Metadata:          map[string]any{"source": runtimeFoundationBootstrapNote},
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if ok {
+		item.ID = defaultString(strings.TrimSpace(existing.ID), item.ID)
+		item.CreatedAt = existing.CreatedAt
+	}
+	_, err = store.PutTaskTypeRegistration(ctx, item)
+	return err
+}
+
+func registeredTaskTypeValidatorReady(item runtime.TaskTypeRegistration, contractID string) bool {
+	if strings.TrimSpace(item.DefaultContractID) != strings.TrimSpace(contractID) {
+		return false
+	}
+	if len(item.InputSchema) == 0 || len(item.ValidatorRefs) == 0 {
+		return false
+	}
+	if status, _ := item.ValidatorRefs["status"].(string); strings.TrimSpace(status) != "" && !strings.EqualFold(strings.TrimSpace(status), "ready") {
+		return false
+	}
+	raw, ok := item.ValidatorRefs["validators"]
+	if !ok {
+		return false
+	}
+	switch typed := raw.(type) {
+	case []any:
+		return len(typed) > 0
+	case []string:
+		return len(typed) > 0
+	default:
+		return false
+	}
+}
+
+func registeredTaskTypeInputSchema(seed registeredTaskTypeValidatorSeed) map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": true,
+		"properties":           cloneAnyMap(seed.properties),
+		"required":             []any{},
+	}
+}
+
+func registeredTaskTypeValidatorRefs(seed registeredTaskTypeValidatorSeed) map[string]any {
+	return map[string]any{
+		"contract_version": "task_type_validator.v1",
+		"schema_ref":       "runtime.task_type." + seed.typeKey + ".input_schema.v1",
+		"validators":       []any{"registered_task_type_input_schema", "runtime_context_boundary"},
+		"failure_policy":   "record_only",
+		"status":           "ready",
+	}
+}
+
+func registeredTaskTypeCompatibility(seed registeredTaskTypeValidatorSeed) map[string]any {
+	return map[string]any{
+		"legacy_aliases":             seed.aliases,
+		"normalization_entry":        "internal/runtime/task.NormalizeRequest",
+		"required_fields_mode":       "advisory",
+		"business_evidence_owner":    "application_or_connector",
+		"core_materialization_scope": "projection_candidate_only",
+	}
+}
+
+func registeredTaskTypeValidatorContractID(typeKey string) string {
+	return "athena.runtime_contract." + strings.ReplaceAll(typeKey, "_", ".") + ".validator.v1"
 }
 
 func ensureRuntimeValidationHooks(ctx context.Context, store runtime.HookBindingStore, contractID string) error {

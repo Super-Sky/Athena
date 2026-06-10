@@ -443,6 +443,11 @@ func (s *Service) OpenChatSession(ctx context.Context, requestID string, req Cha
 	if err != nil {
 		return nil, err
 	}
+	resolvedContract, err := s.resolveRuntimeContractResolution(ctx, task.TaskType)
+	if err != nil {
+		return nil, err
+	}
+	applyRuntimeContractResolutionToTask(task, resolvedContract)
 	if err := s.AcquireRequestSlot(ctx); err != nil {
 		return nil, err
 	}
@@ -628,16 +633,18 @@ func (s *Service) OpenChatSession(ctx context.Context, requestID string, req Cha
 			prepared = invalidModelPrepared(reason, detail, message)
 		} else {
 			prepared, err = s.Runtime.Prepare(ctx, userSession, runtime.Input{
-				RequestID:       requestID,
-				SessionID:       userSession.ID,
-				Query:           req.Query,
-				ModelSelection:  modelSelection,
-				Task:            task,
-				Orchestration:   resolveOrchestrationState(req),
-				Customization:   req.Customization,
-				Supplement:      req.Supplement,
-				TimeoutOverride: req.TimeoutAfter,
-				Pending:         userSession.Pending,
+				RequestID:        requestID,
+				SessionID:        userSession.ID,
+				Query:            req.Query,
+				ModelSelection:   modelSelection,
+				Task:             task,
+				ResolvedContract: resolvedRuntimeContract(resolvedContract),
+				ResolvedTaskType: resolvedTaskTypeRegistration(resolvedContract),
+				Orchestration:    resolveOrchestrationState(req),
+				Customization:    req.Customization,
+				Supplement:       req.Supplement,
+				TimeoutOverride:  req.TimeoutAfter,
+				Pending:          userSession.Pending,
 			})
 			if err != nil {
 				s.ReleaseRequestSlot()

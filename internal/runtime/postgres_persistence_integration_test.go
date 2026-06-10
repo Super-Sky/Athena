@@ -496,13 +496,14 @@ func TestPostgresRuntimeStoreIntegrationRoundTrip(t *testing.T) {
 		CandidateKind:   "minimal_output",
 		Status:          "ready",
 		Summary:         "candidate summary",
-		SchemaVersion:   "projection.v1",
+		SchemaVersion:   ProjectionSchemaVersionMinimalOutput,
 		RedactedPayload: map[string]any{"summary": "safe output"},
 		SemanticPayload: map[string]any{"answer": "safe output"},
 		ArtifactRefs:    map[string]any{"refs": []any{"artifact://runtime/test"}},
 		UIHints:         map[string]any{"severity": "info"},
 		MaterializationTarget: map[string]any{
-			"target_type": "none",
+			"target_type":                ProjectionMaterializationTargetReadModel,
+			"core_materialization_scope": ProjectionMaterializationScopeCandidateOnly,
 		},
 		Metadata:  map[string]any{"projection_scope": "candidate_output"},
 		CreatedAt: now,
@@ -524,8 +525,11 @@ func TestPostgresRuntimeStoreIntegrationRoundTrip(t *testing.T) {
 	if !ok || gotProjection.ID != projection.ID {
 		t.Fatalf("GetProjectionCandidate() = %#v, %v; want projection %q", gotProjection, ok, projection.ID)
 	}
-	if gotProjection.SchemaVersion != "projection.v1" || gotProjection.SemanticPayload["answer"] != "safe output" || gotProjection.UIHints["severity"] != "info" {
+	if gotProjection.SchemaVersion != ProjectionSchemaVersionMinimalOutput || gotProjection.SemanticPayload["answer"] != "safe output" || gotProjection.UIHints["severity"] != "info" {
 		t.Fatalf("GetProjectionCandidate() lost semantic projection fields: %#v", gotProjection)
+	}
+	if gotProjection.MaterializationTarget["core_materialization_scope"] != ProjectionMaterializationScopeCandidateOnly {
+		t.Fatalf("GetProjectionCandidate() materialization target = %#v, want candidate-only scope", gotProjection.MaterializationTarget)
 	}
 
 	autoSchemaProjection, err := store.CreateProjectionCandidate(ctx, ProjectionCandidate{
@@ -721,6 +725,13 @@ func TestPostgresRuntimeGraphCheckpointStoreIntegration(t *testing.T) {
 	}
 	if !ok || string(got) != string(payload) {
 		t.Fatalf("Get() = %q, %v; want %q", string(got), ok, string(payload))
+	}
+	snapshot, ok, err := store.GetCheckpointSnapshot(ctx, checkpointID)
+	if err != nil {
+		t.Fatalf("GetCheckpointSnapshot() error = %v", err)
+	}
+	if !ok || snapshot.CheckpointID != checkpointID || snapshot.PayloadSize != len(payload) || snapshot.PayloadSHA256 == "" {
+		t.Fatalf("GetCheckpointSnapshot() = %#v, %v; want safe metadata", snapshot, ok)
 	}
 	err = store.Set(ctx, checkpointID, []byte("Authorization: Bearer sk-itest"))
 	if !errors.Is(err, ErrRuntimeCheckpointRejected) {
