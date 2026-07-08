@@ -20,6 +20,10 @@
   - 注册 HTTP 路由、请求结构和大部分 transport handler。
 - `http_test.go`
   - 验证 HTTP 路由和 transport 行为。
+- `agent_runs.go`
+  - 暴露面向业务应用的 Agent Run API，并把 goal-first 请求映射到通用 app/runtime 主链和 runtime persistence trace readout。
+- `agent_runs_test.go`
+  - 验证 Agent Run 请求解析、create/read/trace/resume/cancel 路由和 OpenAI-compatible tool declaration 输入。
 - `control_plane.go`
   - 暴露控制面 bootstrap、scene/skill/runtime-config 接口和控制面 CORS 处理。
 - `openapi.go`

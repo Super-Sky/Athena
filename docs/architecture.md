@@ -93,6 +93,16 @@ flowchart TD
 
 Transport 只处理协议，不承载领域推理。
 
+当前 Transport 已提供面向业务应用的 Agent Run API：
+
+- `POST /api/agent/runs`
+- `GET /api/agent/runs/:runID`
+- `POST /api/agent/runs/:runID/resume`
+- `POST /api/agent/runs/:runID/cancel`
+- `GET /api/agent/runs/:runID/trace`
+
+This API is an app-facing runtime entrypoint, not a business-domain API. It accepts goal, criteria, constraints, budget, context assets, memory scope, governance refs and declarative tool inputs, then maps them into the generic app/runtime path. Domain objects remain owned by the host application.
+
 ### 3.3 App Layer
 
 负责：
@@ -103,6 +113,13 @@ Transport 只处理协议，不承载领域推理。
 - 在 control-plane、context assets 和 runtime 之间完成装配
 
 App 是运行时编排层，不是领域逻辑中心。
+
+Agent Run API 当前以同步 MVP 方式复用 App Layer：
+
+- `goal` 会成为 runtime 当前请求目标。
+- `context_assets` 继续走 Context Asset Plane 的默认注入、覆盖、禁用和优先级逻辑。
+- `tools` 先作为 OpenAI-compatible 声明态输入被保存和映射到 enabled tool names；真实 tool-call loop、远程 registry 与 tool execution contract 继续由后续工具契约能力承接。
+- `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；`cancel` 先暴露稳定路由和明确 unsupported / terminal response，不伪造异步取消。
 
 ### 3.4 Control Plane Layer
 

@@ -1240,6 +1240,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if !strings.Contains(body, `"/api/chat/respond"`) {
 		t.Fatalf("expected chat respond path in body: %s", body)
 	}
+	if !strings.Contains(body, `"/api/agent/runs"`) {
+		t.Fatalf("expected agent runs path in body: %s", body)
+	}
 	if !strings.Contains(body, `"/api/system-resources"`) {
 		t.Fatalf("expected system resources path in body: %s", body)
 	}
@@ -1313,6 +1316,12 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/system-resources"]; !ok {
 		t.Fatalf("openapi spec missing /api/system-resources path: %#v", paths)
 	}
+	if _, ok := paths["/api/agent/runs"]; !ok {
+		t.Fatalf("openapi spec missing /api/agent/runs path: %#v", paths)
+	}
+	if _, ok := paths["/api/agent/runs/{runID}/trace"]; !ok {
+		t.Fatalf("openapi spec missing /api/agent/runs/{runID}/trace path: %#v", paths)
+	}
 	if _, ok := paths["/api/system-resources/{id}/debug-payload"]; !ok {
 		t.Fatalf("openapi spec missing system resource debug-payload path: %#v", paths)
 	}
@@ -1354,6 +1363,15 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	}
 	if _, ok := schemas["RuntimeContractFoundationResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeContractFoundationResponse: %#v", schemas)
+	}
+	if _, ok := schemas["AgentRunCreateRequest"]; !ok {
+		t.Fatalf("openapi spec missing AgentRunCreateRequest: %#v", schemas)
+	}
+	if _, ok := schemas["AgentRunResponse"]; !ok {
+		t.Fatalf("openapi spec missing AgentRunResponse: %#v", schemas)
+	}
+	if _, ok := schemas["AgentRunTraceResponse"]; !ok {
+		t.Fatalf("openapi spec missing AgentRunTraceResponse: %#v", schemas)
 	}
 	if _, ok := schemas["RuntimeContract"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeContract: %#v", schemas)

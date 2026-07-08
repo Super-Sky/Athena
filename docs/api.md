@@ -99,6 +99,11 @@ API 语义按以下边界理解：
 - `DELETE /api/skills/packages/:id`
 - `GET /api/runtime/skills`
 - `POST /api/chat/respond`
+- `POST /api/agent/runs`
+- `GET /api/agent/runs/:runID`
+- `POST /api/agent/runs/:runID/resume`
+- `POST /api/agent/runs/:runID/cancel`
+- `GET /api/agent/runs/:runID/trace`
 - `POST /api/runtime/respond`
 - `POST /api/runtime/scenario/respond`
 - `GET /api/models/providers`
@@ -118,6 +123,32 @@ API 语义按以下边界理解：
 - `POST /api/chat/respond`
 - `POST /api/runtime/respond` 是通用 direct respond adapter：它复用 app/runtime 主路径产出一次直接响应，不定义新的场景专属 core API。
 - `POST /api/runtime/scenario/respond` 是 legacy scenario judgment 兼容入口：它继续承接 `RuntimeScenarioRequest` / `RuntimeScenarioResponse` 形态和 evidence supplement 流程，不作为新的 core direct respond contract。
+
+Agent Run API 当前暴露：
+
+- `POST /api/agent/runs`
+  - 面向业务应用创建一次目标驱动 run，输入以 `goal`、`success_criteria`、`constraints`、`budget`、`context_assets`、`tools`、`memory_scope` 和 `governance_refs` 为核心。
+  - Creates one app-facing goal-driven run. The current MVP executes synchronously through the existing app/runtime path and returns `run_id`, request status, stop reason, output, trace summary and checkpoint readouts when runtime persistence is configured.
+  - `tools` 接受 OpenAI-compatible function tool 形态或字符串简写；本切片只保留声明态并映射到 enabled tool names，真正 `tool_calls` 执行与远程 tool registry 仍属于后续 tool-contract issues。
+- `GET /api/agent/runs/:runID`
+  - 读取单个 run 的 app-facing 状态摘要，底层复用 persisted `TaskRun` 与 trace summary。
+  - Reads the app-facing run status summary from persisted runtime records.
+- `POST /api/agent/runs/:runID/resume`
+  - 基于原 run 发起一次补数续跑；当前实现会先确认原 run 可从 runtime persistence 读回，再创建新的 runtime run，并在响应中写入 `resumed_from_run_id`。
+  - Resumes by first validating the original run readout, then starting a follow-up run with supplement / resume token metadata instead of mutating the original synchronous run in place.
+- `POST /api/agent/runs/:runID/cancel`
+  - 当前同步 MVP 不伪造异步取消；已终态 run 返回 `409` 和 `run_already_terminal`，非终态 run 返回 `409` 和 `sync_execution_not_cancellable`。
+  - The route is stable, but asynchronous cancellation is not implemented in this slice.
+- `GET /api/agent/runs/:runID/trace`
+  - 返回该 run 的 `RuntimeRun`、`RuntimeStep`、`RuntimeLifecycleEvent`、`RuntimeTrace`、`Usage`、`ProjectionCandidate`、checkpoint safe readouts 和聚合 summary。
+  - Returns the full safe trace timeline assembled from runtime persistence.
+
+Agent Run API 边界：
+
+- Athena core 不接管业务对象、业务证据或业务状态；业务仓仍通过 `context_assets`、`global_context`、`app_context` 和 `input_payload` 注入应用语义。
+- The API contract is generic. Fund, stock, drama, or other domain objects must stay in the business application layer.
+- 省略或传入 `task_type=agent_run` 时，当前内部 runtime task type 映射到已注册 `chat`，并把 `agent_run.v1` 契约写入 app context / input payload；未来注册式 task type 可以显式传入其他 `task_type`。
+- If runtime persistence is not configured, read/trace endpoints return `503`; create responses may still complete but cannot expose a persisted trace.
 
 Validation MCP 当前暴露：
 

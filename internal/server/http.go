@@ -380,6 +380,21 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.POST("/api/chat/respond", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleChatRespond(ctx, c, cfg, application)
 	})
+	h.POST("/api/agent/runs", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleCreateAgentRun(ctx, c, cfg, application)
+	})
+	h.GET("/api/agent/runs/:runID", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleGetAgentRun(ctx, c, cfg, application)
+	})
+	h.POST("/api/agent/runs/:runID/resume", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleResumeAgentRun(ctx, c, cfg, application)
+	})
+	h.POST("/api/agent/runs/:runID/cancel", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleCancelAgentRun(ctx, c, cfg, application)
+	})
+	h.GET("/api/agent/runs/:runID/trace", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleGetAgentRunTrace(ctx, c, cfg, application)
+	})
 	h.OPTIONS("/api/control-plane/*path", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleControlPlaneOptions(ctx, c, cfg)
 	})
