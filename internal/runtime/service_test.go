@@ -268,6 +268,62 @@ func TestServicePrepareAppliesSpecificToolChoiceToAllowedTools(t *testing.T) {
 	}
 }
 
+func TestServicePreparePreservesGovernedCanonicalToolDeclarations(t *testing.T) {
+	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
+	prepared, err := service.Prepare(context.Background(), &session.Session{ID: "sess-tool-schema"}, Input{
+		RequestID: "req-tool-schema",
+		SessionID: "sess-tool-schema",
+		Query:     "look up profile",
+		ToolDeclarations: []ToolDefinition{
+			{
+				Type: ToolTypeFunction,
+				Function: ToolFunctionDefinition{
+					Name:        "lookup_profile",
+					Description: "Caller schema.",
+					Parameters:  map[string]any{"type": "object"},
+				},
+			},
+		},
+		ModelSelection: &model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if len(prepared.Spec.Tools.AllowedTools) != 1 || prepared.Spec.Tools.AllowedTools[0] != "lookup_profile" {
+		t.Fatalf("allowed tools = %#v, want lookup_profile", prepared.Spec.Tools.AllowedTools)
+	}
+	if len(prepared.Spec.Tools.Declarations) != 1 || prepared.Spec.Tools.Declarations[0].Function.Description != "Caller schema." {
+		t.Fatalf("tool declarations = %#v, want caller schema", prepared.Spec.Tools.Declarations)
+	}
+}
+
+func TestServicePrepareRejectsUnregisteredCanonicalToolDeclaration(t *testing.T) {
+	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
+	_, err := service.Prepare(context.Background(), &session.Session{ID: "sess-unknown-tool"}, Input{
+		RequestID: "req-unknown-tool",
+		SessionID: "sess-unknown-tool",
+		Query:     "call unknown",
+		ToolDeclarations: []ToolDefinition{
+			{
+				Type:     ToolTypeFunction,
+				Function: ToolFunctionDefinition{Name: "unknown_tool"},
+			},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "is not registered") {
+		t.Fatalf("Prepare() error = %v, want unregistered tool error", err)
+	}
+}
+
 func TestEinoTurnExecutorPrepareUsesRequestedModelWithoutFallback(t *testing.T) {
 	provider := &recordingModelProvider{}
 	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())

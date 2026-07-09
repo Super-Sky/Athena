@@ -34,9 +34,12 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - app 层负责 workflow、automation、context assets、execution governance 和 base capability 兼容结果拼装
 - 面向业务应用的 Agent Run API 已接入 `internal/server/agent_runs.go`：
   - `POST /api/agent/runs` 以 `goal / success_criteria / constraints / budget / context_assets / tools / memory_scope / governance_refs` 创建一次目标驱动 run
+  - OpenAI-compatible function schemas 与 `tool_choice` 会在 transport 校验后转换为 `runtime.ToolDefinition` 和 canonical model policy；非法 schema、重复名称和错误 choice 会在执行前拒绝
+  - `ToolCallTranscript` 从 Eino model / ToolsNode loop 采集多轮调用、稳定 ID、结果、错误与 timing，并投影为有序 `messages`、顶层 `tool_calls / tool_results` 和脱敏 runtime trace
   - `GET /api/agent/runs/:runID` 与 `GET /api/agent/runs/:runID/trace` 复用 runtime persistence read boundary 返回 run 状态、trace timeline、usage、projection 和 checkpoint safe readouts
   - `POST /api/agent/runs/:runID/resume` 先校验原 run 可读，再创建一次带 `resumed_from_run_id` 的 follow-up run；`POST /api/agent/runs/:runID/cancel` 当前返回同步 MVP 的稳定 unsupported / terminal response
   - The contract is generic and app-facing. Business domains such as fund analysis must remain in the host app and enter Athena through context, assets, payload, tools and governance references.
+  - Remote business tool registration/execution remains a separate contract; this slice executes only registered Athena tools.
 - Eino Graph runtime foundation：
   - 默认 chat/direct respond runtime 主链通过 `runtime.NewEinoGraphTurnExecutor` 包装现有 Eino ADK turn executor
   - 默认 turn agent 内部已使用 graph-native ChatModel / ToolsNode loop，并通过 Eino local state 保存 ReAct 消息历史

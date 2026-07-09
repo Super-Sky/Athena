@@ -18,6 +18,7 @@ import (
 	"moss/internal/controlplane"
 	"moss/internal/customization"
 	platformcontext "moss/internal/extensions/platform/context"
+	modelparams "moss/internal/model/parameters"
 	"moss/internal/runtime"
 )
 
@@ -77,6 +78,8 @@ type agentRunStartRequest struct {
 	TimeoutAfterSeconds    int                        `json:"timeout_after_seconds,omitempty"`
 	DisableFastPath        bool                       `json:"disable_fast_path,omitempty"`
 	ResumedFromRunID       string                     `json:"-"`
+	CanonicalTools         []runtime.ToolDefinition   `json:"-"`
+	CanonicalToolChoice    modelparams.ToolChoice     `json:"-"`
 }
 
 type agentRunResumeRequest struct {
@@ -137,9 +140,45 @@ type agentRunResponse struct {
 	Run              *runtimeRunDTO                `json:"run,omitempty"`
 	TraceSummary     *agentRunTraceSummary         `json:"trace_summary,omitempty"`
 	Checkpoints      []runtimeCheckpointReadoutDTO `json:"checkpoints,omitempty"`
-	ToolCalls        []map[string]any              `json:"tool_calls,omitempty"`
+	Messages         []agentRunMessageDTO          `json:"messages,omitempty"`
+	ToolCalls        []agentRunToolCallDTO         `json:"tool_calls,omitempty"`
+	ToolResults      []agentRunToolResultDTO       `json:"tool_results,omitempty"`
 	TraceAvailable   bool                          `json:"trace_available"`
 	Metadata         map[string]any                `json:"metadata,omitempty"`
+}
+
+type agentRunToolCallDTO struct {
+	Index    int                     `json:"index"`
+	ID       string                  `json:"id"`
+	Type     string                  `json:"type"`
+	Function agentRunFunctionCallDTO `json:"function"`
+	Status   runtime.ToolCallStatus  `json:"status,omitempty"`
+}
+
+type agentRunFunctionCallDTO struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type agentRunToolResultDTO struct {
+	Role       string                 `json:"role"`
+	ToolCallID string                 `json:"tool_call_id"`
+	Name       string                 `json:"name,omitempty"`
+	Content    string                 `json:"content,omitempty"`
+	Status     runtime.ToolCallStatus `json:"status,omitempty"`
+	IsError    bool                   `json:"is_error,omitempty"`
+	Error      string                 `json:"error,omitempty"`
+}
+
+type agentRunMessageDTO struct {
+	Role       string                 `json:"role"`
+	Content    *string                `json:"content,omitempty"`
+	ToolCalls  []agentRunToolCallDTO  `json:"tool_calls,omitempty"`
+	ToolCallID string                 `json:"tool_call_id,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	Status     runtime.ToolCallStatus `json:"status,omitempty"`
+	IsError    bool                   `json:"is_error,omitempty"`
+	Error      string                 `json:"error,omitempty"`
 }
 
 type agentRunTraceReadout struct {
@@ -426,6 +465,13 @@ func agentRunResponseFromSession(ctx context.Context, application *appcore.Servi
 			response.StopReason = string(chatSession.Prepared.InitialStatus)
 		}
 	}
+	if chatSession.Prepared != nil && chatSession.Prepared.ToolTranscript != nil {
+		calls := chatSession.Prepared.ToolTranscript.Snapshot()
+		response.ToolCalls, response.ToolResults = agentRunToolTranscriptDTOs(calls)
+		response.Messages = agentRunToolMessages(calls, response.Output)
+	} else if strings.TrimSpace(response.Output) != "" {
+		response.Messages = agentRunToolMessages(nil, response.Output)
+	}
 	runID := agentRunIDFromPrepared(chatSession.Prepared)
 	if runID == "" {
 		return response
@@ -444,6 +490,70 @@ func agentRunResponseFromSession(ctx context.Context, application *appcore.Servi
 		response.StopReason = stopReason
 	}
 	return response
+}
+
+func agentRunToolTranscriptDTOs(calls []runtime.ToolCall) ([]agentRunToolCallDTO, []agentRunToolResultDTO) {
+	toolCalls := make([]agentRunToolCallDTO, 0, len(calls))
+	toolResults := make([]agentRunToolResultDTO, 0, len(calls))
+	for _, call := range calls {
+		toolCalls = append(toolCalls, agentRunToolCallDTO{
+			Index:  call.Index,
+			ID:     call.ID,
+			Type:   agentRunDefaultString(strings.TrimSpace(call.Type), runtime.ToolTypeFunction),
+			Status: call.Status,
+			Function: agentRunFunctionCallDTO{
+				Name:      call.Name,
+				Arguments: call.Arguments,
+			},
+		})
+		if call.Result == nil {
+			continue
+		}
+		toolResults = append(toolResults, agentRunToolResultDTO{
+			Role:       "tool",
+			ToolCallID: call.Result.ToolCallID,
+			Name:       call.Result.Name,
+			Content:    call.Result.Content,
+			Status:     call.Status,
+			IsError:    call.Result.IsError,
+			Error:      call.Result.Error,
+		})
+	}
+	return toolCalls, toolResults
+}
+
+func agentRunToolMessages(calls []runtime.ToolCall, finalOutput string) []agentRunMessageDTO {
+	messages := make([]agentRunMessageDTO, 0, len(calls)*2+1)
+	for start := 0; start < len(calls); {
+		round := calls[start].Round
+		end := start + 1
+		for end < len(calls) && calls[end].Round == round {
+			end++
+		}
+		roundCalls, roundResults := agentRunToolTranscriptDTOs(calls[start:end])
+		messages = append(messages, agentRunMessageDTO{
+			Role:      "assistant",
+			ToolCalls: roundCalls,
+		})
+		for _, result := range roundResults {
+			content := result.Content
+			messages = append(messages, agentRunMessageDTO{
+				Role:       result.Role,
+				Content:    &content,
+				ToolCallID: result.ToolCallID,
+				Name:       result.Name,
+				Status:     result.Status,
+				IsError:    result.IsError,
+				Error:      result.Error,
+			})
+		}
+		start = end
+	}
+	if strings.TrimSpace(finalOutput) != "" {
+		content := finalOutput
+		messages = append(messages, agentRunMessageDTO{Role: "assistant", Content: &content})
+	}
+	return messages
 }
 
 func readAgentRunTrace(ctx context.Context, application *appcore.Service, runID string) (agentRunTraceReadout, error) {
@@ -510,6 +620,16 @@ func parseAgentRunStartRequest(c *hertzapp.RequestContext) (agentRunStartRequest
 	if strings.TrimSpace(req.ModelRecordID) != "" {
 		return agentRunStartRequest{}, fmt.Errorf("model_record_id is no longer supported; use model_id")
 	}
+	canonicalTools, err := canonicalAgentRunTools(req.Tools)
+	if err != nil {
+		return agentRunStartRequest{}, err
+	}
+	canonicalToolChoice, err := canonicalAgentRunToolChoice(req.ToolChoice, canonicalTools)
+	if err != nil {
+		return agentRunStartRequest{}, err
+	}
+	req.CanonicalTools = canonicalTools
+	req.CanonicalToolChoice = canonicalToolChoice
 	normalizeAgentRunSupplement(&req)
 	return req, nil
 }
@@ -585,10 +705,11 @@ func agentRunChatRequest(req agentRunStartRequest, custom customization.UserCust
 		AppContext:            agentRunAppContext(req),
 		InputPayload:          agentRunInputPayload(req),
 		ModelID:               strings.TrimSpace(req.ModelID),
+		ToolDeclarations:      append([]runtime.ToolDefinition(nil), req.CanonicalTools...),
 		Customization:         custom,
 		Supplement:            req.Supplement,
 		TimeoutAfter:          time.Duration(req.TimeoutAfterSeconds) * time.Second,
-		DisableFastPath:       req.DisableFastPath,
+		DisableFastPath:       req.DisableFastPath || len(req.CanonicalTools) > 0,
 	}
 }
 
@@ -618,6 +739,9 @@ func agentRunInputPayload(req agentRunStartRequest) map[string]any {
 		payload = map[string]any{}
 	}
 	payload["agent_run"] = agentRunContractMap(req)
+	if override := agentRunToolChoiceOverride(req.CanonicalToolChoice); len(override) > 0 {
+		payload["model_policy_override"] = override
+	}
 	return payload
 }
 
@@ -666,6 +790,160 @@ func (d *agentRunToolDeclaration) UnmarshalJSON(payload []byte) error {
 		d.Type = "function"
 	}
 	return nil
+}
+
+func canonicalAgentRunTools(declarations []agentRunToolDeclaration) ([]runtime.ToolDefinition, error) {
+	canonical := make([]runtime.ToolDefinition, 0, len(declarations))
+	seen := make(map[string]struct{}, len(declarations))
+	for _, declaration := range declarations {
+		callType := strings.TrimSpace(declaration.Type)
+		if callType == "" {
+			callType = runtime.ToolTypeFunction
+		}
+		if callType != runtime.ToolTypeFunction {
+			return nil, fmt.Errorf("tools only support type %q", runtime.ToolTypeFunction)
+		}
+		function := declaration.Function
+		if function == nil {
+			function = &agentRunToolFunction{
+				Name:        declaration.Name,
+				Description: declaration.Description,
+				Parameters:  declaration.Parameters,
+			}
+		}
+		name := strings.TrimSpace(function.Name)
+		if err := validateAgentRunToolName(name); err != nil {
+			return nil, err
+		}
+		if _, exists := seen[name]; exists {
+			return nil, fmt.Errorf("tool function name %q is duplicated", name)
+		}
+		if err := validateAgentRunToolParameters(name, function.Parameters); err != nil {
+			return nil, err
+		}
+		seen[name] = struct{}{}
+		canonical = append(canonical, runtime.ToolDefinition{
+			Type: runtime.ToolTypeFunction,
+			Function: runtime.ToolFunctionDefinition{
+				Name:        name,
+				Description: strings.TrimSpace(function.Description),
+				Parameters:  cloneAnyMap(function.Parameters),
+			},
+			Metadata: cloneAnyMap(declaration.Metadata),
+		})
+	}
+	return canonical, nil
+}
+
+func canonicalAgentRunToolChoice(raw any, tools []runtime.ToolDefinition) (modelparams.ToolChoice, error) {
+	choice := modelparams.ToolChoice{Kind: modelparams.ToolChoiceAuto}
+	if raw == nil {
+		if len(tools) == 0 {
+			choice.Kind = modelparams.ToolChoiceNone
+		}
+		return choice, nil
+	}
+	if value, ok := raw.(string); ok {
+		switch strings.TrimSpace(value) {
+		case "none":
+			choice.Kind = modelparams.ToolChoiceNone
+		case "auto":
+			choice.Kind = modelparams.ToolChoiceAuto
+		case "required":
+			choice.Kind = modelparams.ToolChoiceRequired
+		default:
+			return modelparams.ToolChoice{}, fmt.Errorf("tool_choice must be none, auto, required, or a function object")
+		}
+	} else {
+		payload, ok := raw.(map[string]any)
+		if !ok {
+			return modelparams.ToolChoice{}, fmt.Errorf("tool_choice must be a string or object")
+		}
+		if callType := strings.TrimSpace(agentRunStringValue(payload["type"])); callType != runtime.ToolTypeFunction {
+			return modelparams.ToolChoice{}, fmt.Errorf("tool_choice object type must be %q", runtime.ToolTypeFunction)
+		}
+		function, ok := payload["function"].(map[string]any)
+		if !ok {
+			return modelparams.ToolChoice{}, fmt.Errorf("tool_choice function object is required")
+		}
+		name := strings.TrimSpace(agentRunStringValue(function["name"]))
+		if err := validateAgentRunToolName(name); err != nil {
+			return modelparams.ToolChoice{}, fmt.Errorf("tool_choice: %w", err)
+		}
+		choice = modelparams.ToolChoice{Kind: modelparams.ToolChoiceSpecificTool, ToolName: name}
+	}
+	if choice.Kind == modelparams.ToolChoiceRequired && len(tools) == 0 {
+		return modelparams.ToolChoice{}, fmt.Errorf("tool_choice=required requires at least one tool")
+	}
+	if choice.Kind == modelparams.ToolChoiceSpecificTool && !agentRunHasCanonicalTool(tools, choice.ToolName) {
+		return modelparams.ToolChoice{}, fmt.Errorf("tool_choice function %q is not declared in tools", choice.ToolName)
+	}
+	return choice, nil
+}
+
+func agentRunToolChoiceOverride(choice modelparams.ToolChoice) map[string]any {
+	switch choice.Kind {
+	case modelparams.ToolChoiceNone:
+		return map[string]any{"tool_policy": string(modelparams.ToolPolicyIntentNone)}
+	case modelparams.ToolChoiceRequired:
+		return map[string]any{"tool_policy": string(modelparams.ToolPolicyIntentRequired)}
+	case modelparams.ToolChoiceSpecificTool:
+		return map[string]any{
+			"tool_policy": string(modelparams.ToolPolicyIntentSpecificTool),
+			"tool_name":   strings.TrimSpace(choice.ToolName),
+		}
+	case modelparams.ToolChoiceAuto:
+		return map[string]any{"tool_policy": string(modelparams.ToolPolicyIntentAuto)}
+	default:
+		return nil
+	}
+}
+
+func validateAgentRunToolName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("tool function name is required")
+	}
+	if len(name) > 64 {
+		return fmt.Errorf("tool function name %q exceeds 64 characters", name)
+	}
+	for _, char := range name {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' || char == '-' {
+			continue
+		}
+		return fmt.Errorf("tool function name %q contains unsupported characters", name)
+	}
+	return nil
+}
+
+func validateAgentRunToolParameters(name string, parameters map[string]any) error {
+	if len(parameters) == 0 {
+		return nil
+	}
+	schemaType := strings.TrimSpace(agentRunStringValue(parameters["type"]))
+	if schemaType != "object" {
+		return fmt.Errorf("tool function %q parameters must use an object JSON schema", name)
+	}
+	if properties, exists := parameters["properties"]; exists {
+		if _, ok := properties.(map[string]any); !ok {
+			return fmt.Errorf("tool function %q parameters.properties must be an object", name)
+		}
+	}
+	return nil
+}
+
+func agentRunHasCanonicalTool(tools []runtime.ToolDefinition, name string) bool {
+	for _, tool := range tools {
+		if strings.TrimSpace(tool.Function.Name) == strings.TrimSpace(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func agentRunStringValue(value any) string {
+	typed, _ := value.(string)
+	return typed
 }
 
 func agentRunToolNames(tools []agentRunToolDeclaration) []string {

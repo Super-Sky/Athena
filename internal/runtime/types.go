@@ -111,6 +111,7 @@ type Input struct {
 	SessionID        string
 	Query            string
 	ModelSelection   *model.Selection
+	ToolDeclarations []ToolDefinition
 	Task             *runtimetask.RuntimeTask
 	ResolvedContract *RuntimeContract
 	ResolvedTaskType *TaskTypeRegistration
@@ -160,6 +161,7 @@ type SkillSpec struct {
 // ToolSpec 保存当前轮允许使用的原子 tools 及其来源关系。
 type ToolSpec struct {
 	AllowedTools []string            `json:"allowed_tools,omitempty"`
+	Declarations []ToolDefinition    `json:"declarations,omitempty"`
 	Constraints  map[string][]string `json:"constraints,omitempty"`
 	Sources      map[string]string   `json:"sources,omitempty"`
 }
@@ -453,5 +455,6 @@ type PreparedExecution struct {
 	RuntimeRecords    *MinimalPersistenceRecordSet
 	TerminalProjector *RuntimeTerminalProjector
 	CallbackRecorder  *RuntimeCallbackRecorder
+	ToolTranscript    *ToolCallTranscript
 	CheckpointRef     *RuntimeGraphCheckpointRef
 }

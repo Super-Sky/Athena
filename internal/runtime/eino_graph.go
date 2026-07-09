@@ -118,6 +118,7 @@ func (e EinoGraphTurnExecutor) Prepare(ctx context.Context, state RuntimeState, 
 			Now:       e.graph.Now,
 			RecordSet: frame.RecordSet,
 			Callbacks: frame.Prepared.CallbackRecorder,
+			Tools:     frame.Prepared.ToolTranscript,
 			Metadata: map[string]any{
 				"graph_steps":     graphStepNames(frame.Steps),
 				"callback_events": graphCallbackEventSummaries(frame.CallbackEvents),
@@ -313,6 +314,7 @@ func (g EinoGraphFoundation) persistenceProjectionNode(ctx context.Context, fram
 			Now:       g.Now,
 			RecordSet: frame.RecordSet,
 			Callbacks: frame.Prepared.CallbackRecorder,
+			Tools:     frame.Prepared.ToolTranscript,
 			Metadata: map[string]any{
 				"graph_steps":     graphStepNames(frame.Steps),
 				"callback_events": graphCallbackEventSummaries(frame.CallbackEvents),

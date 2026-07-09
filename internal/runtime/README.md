@@ -39,7 +39,13 @@
 - `eino_native_agent.go`
   - 实现默认 graph-native ChatModel / ToolsNode ReAct loop，并通过 Eino local state 保留模型与工具往返历史；checkpoint store 可用时会启用 Eino checkpoint / interrupt / resume。
 - `eino_native_agent_test.go`
-  - 验证 graph-native model-only、tool-loop、ReAct state 传递、工具中断和 checkpoint resume 行为。
+  - 验证 graph-native model-only、tool-loop、canonical schema / tool choice、调用结果与错误关联、ReAct state 传递、工具中断和 checkpoint resume 行为。
+- `tool_contract.go`
+  - 定义 provider-neutral tool declaration、call、result 和线程安全的多轮 execution transcript。
+- `tool_contract_test.go`
+  - 验证稳定 ID、并行结果关联、错误状态和持久化 trace 脱敏边界。
+- `tool_transcript_projector.go`
+  - 将 canonical tool transcript 投影为可关联但不包含 raw arguments/results 的安全 runtime trace。
 - `base_capabilities.go`
   - 定义交付物写入、只读资源读取、结构化解析和 runtime 状态查询 contract。
 - `base_capabilities_test.go`

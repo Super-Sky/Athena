@@ -11,6 +11,7 @@ import (
 	einomodel "github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	einoschema "github.com/cloudwego/eino/schema"
+	modelparams "moss/internal/model/parameters"
 )
 
 func TestEinoGraphNativeAgentRunsToolsNodeLoopWithState(t *testing.T) {
@@ -64,16 +65,18 @@ func TestEinoGraphNativeAgentRunsToolsNodeLoopWithState(t *testing.T) {
 		},
 	}
 	lookupTool := &graphNativeLookupTool{}
+	transcript := NewToolCallTranscript()
 	recorder := NewRuntimeCallbackRecorder(RuntimeCallbackRecorderConfig{
 		ProviderName: "Test Provider",
 		ModelName:    "test-model",
 	})
 	agent, err := NewEinoGraphNativeAgent(ctx, EinoGraphNativeAgentConfig{
-		Name:        "test-agent",
-		Instruction: "Use tools when needed.",
-		Model:       model,
-		Tools:       []einotool.BaseTool{lookupTool},
-		Callbacks:   recorder.Handler(),
+		Name:           "test-agent",
+		Instruction:    "Use tools when needed.",
+		Model:          model,
+		Tools:          []einotool.BaseTool{lookupTool},
+		ToolTranscript: transcript,
+		Callbacks:      recorder.Handler(),
 	})
 	if err != nil {
 		t.Fatalf("NewEinoGraphNativeAgent() error = %v", err)
@@ -100,6 +103,13 @@ func TestEinoGraphNativeAgentRunsToolsNodeLoopWithState(t *testing.T) {
 	}
 	if !hasModelTokenUsage(callbackEvents, 10) {
 		t.Fatalf("callback events = %#v, want model token usage", callbackEvents)
+	}
+	calls := transcript.Snapshot()
+	if len(calls) != 1 || calls[0].ID != "call_lookup" || calls[0].Status != ToolCallStatusCompleted {
+		t.Fatalf("tool transcript = %#v, want completed call_lookup", calls)
+	}
+	if calls[0].Result == nil || calls[0].Result.ToolCallID != "call_lookup" || !strings.Contains(calls[0].Result.Content, `"answer":"ok"`) {
+		t.Fatalf("tool result = %#v, want correlated lookup result", calls[0].Result)
 	}
 }
 
@@ -139,6 +149,113 @@ func TestEinoGraphNativeAgentRunsModelOnlyPath(t *testing.T) {
 	}
 	if model.withToolsCalls != 0 {
 		t.Fatalf("WithTools calls = %d, want 0", model.withToolsCalls)
+	}
+}
+
+func TestEinoGraphNativeAgentUsesCanonicalSchemaAndSpecificToolChoice(t *testing.T) {
+	ctx := context.Background()
+	model := &graphNativeRecordingModel{}
+	agent, err := NewEinoGraphNativeAgent(ctx, EinoGraphNativeAgentConfig{
+		Name:  "schema-agent",
+		Model: model,
+		Tools: []einotool.BaseTool{&graphNativeLookupTool{}},
+		ToolDeclarations: []ToolDefinition{
+			{
+				Type: ToolTypeFunction,
+				Function: ToolFunctionDefinition{
+					Name:        "lookup",
+					Description: "Caller-provided lookup schema.",
+					Parameters: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"query": map[string]any{"type": "string"},
+						},
+						"required": []any{"query"},
+					},
+				},
+			},
+		},
+		ToolChoice: modelparams.ToolChoice{
+			Kind:     modelparams.ToolChoiceSpecificTool,
+			ToolName: "lookup",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEinoGraphNativeAgent() error = %v", err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
+	_ = runGraphNativeAgent(t, runner, []*einoschema.Message{einoschema.UserMessage("hello")})
+
+	if len(model.tools) != 1 || model.tools[0].Desc != "Caller-provided lookup schema." {
+		t.Fatalf("bound tools = %#v, want caller-provided schema", model.tools)
+	}
+	jsonSchema, err := model.tools[0].ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema() error = %v", err)
+	}
+	if jsonSchema == nil || jsonSchema.Type != "object" || len(jsonSchema.Required) != 1 || jsonSchema.Required[0] != "query" {
+		t.Fatalf("bound json schema = %#v, want required query object", jsonSchema)
+	}
+	if model.options == nil || model.options.ToolChoice == nil || *model.options.ToolChoice != einoschema.ToolChoiceForced {
+		t.Fatalf("model options = %#v, want forced tool choice", model.options)
+	}
+	if len(model.options.AllowedToolNames) != 1 || model.options.AllowedToolNames[0] != "lookup" {
+		t.Fatalf("allowed tool names = %#v, want lookup", model.options.AllowedToolNames)
+	}
+}
+
+func TestEinoGraphNativeAgentCorrelatesToolExecutionError(t *testing.T) {
+	ctx := context.Background()
+	model := &graphNativeRecordingModel{
+		generate: func(call int, _ []*einoschema.Message) (*einoschema.Message, error) {
+			if call != 1 {
+				return nil, fmt.Errorf("unexpected generate call %d", call)
+			}
+			return einoschema.AssistantMessage("", []einoschema.ToolCall{
+				{
+					ID:   "call_fail",
+					Type: "function",
+					Function: einoschema.FunctionCall{
+						Name:      "fail",
+						Arguments: `{"reason":"test"}`,
+					},
+				},
+			}), nil
+		},
+	}
+	transcript := NewToolCallTranscript()
+	agent, err := NewEinoGraphNativeAgent(ctx, EinoGraphNativeAgentConfig{
+		Name:           "failure-agent",
+		Model:          model,
+		Tools:          []einotool.BaseTool{&graphNativeFailingTool{}},
+		ToolTranscript: transcript,
+	})
+	if err != nil {
+		t.Fatalf("NewEinoGraphNativeAgent() error = %v", err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
+	iter := runner.Run(ctx, []*einoschema.Message{einoschema.UserMessage("fail")})
+	var runErr error
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if event != nil && event.Err != nil {
+			runErr = event.Err
+		}
+	}
+	if runErr == nil || !strings.Contains(runErr.Error(), "intentional tool failure") {
+		t.Fatalf("runner error = %v, want intentional tool failure", runErr)
+	}
+	calls := transcript.Snapshot()
+	if len(calls) != 1 || calls[0].ID != "call_fail" || calls[0].Status != ToolCallStatusFailed {
+		t.Fatalf("tool transcript = %#v, want failed call_fail", calls)
+	}
+	if calls[0].Result == nil || calls[0].Result.ToolCallID != "call_fail" || !calls[0].Result.IsError {
+		t.Fatalf("tool result = %#v, want correlated error result", calls[0].Result)
 	}
 }
 
@@ -223,11 +340,13 @@ type graphNativeRecordingModel struct {
 	generateCalls  int
 	withToolsCalls int
 	tools          []*einoschema.ToolInfo
+	options        *einomodel.Options
 	generate       func(call int, messages []*einoschema.Message) (*einoschema.Message, error)
 }
 
-func (m *graphNativeRecordingModel) Generate(_ context.Context, messages []*einoschema.Message, _ ...einomodel.Option) (*einoschema.Message, error) {
+func (m *graphNativeRecordingModel) Generate(_ context.Context, messages []*einoschema.Message, opts ...einomodel.Option) (*einoschema.Message, error) {
 	m.generateCalls++
+	m.options = einomodel.GetCommonOptions(nil, opts...)
 	if m.generate == nil {
 		return einoschema.AssistantMessage("ok", nil), nil
 	}
@@ -272,6 +391,22 @@ func (t *graphNativeLookupTool) InvokableRun(_ context.Context, argumentsInJSON 
 type graphNativeApprovalTool struct {
 	interrupted bool
 	resumed     bool
+}
+
+type graphNativeFailingTool struct{}
+
+func (t *graphNativeFailingTool) Info(context.Context) (*einoschema.ToolInfo, error) {
+	return &einoschema.ToolInfo{
+		Name: "fail",
+		Desc: "Fail intentionally.",
+		ParamsOneOf: einoschema.NewParamsOneOfByParams(map[string]*einoschema.ParameterInfo{
+			"reason": {Type: "string"},
+		}),
+	}, nil
+}
+
+func (t *graphNativeFailingTool) InvokableRun(context.Context, string, ...einotool.Option) (string, error) {
+	return "", fmt.Errorf("intentional tool failure")
 }
 
 func (t *graphNativeApprovalTool) Info(context.Context) (*einoschema.ToolInfo, error) {

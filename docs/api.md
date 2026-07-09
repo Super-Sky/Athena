@@ -129,7 +129,9 @@ Agent Run API 当前暴露：
 - `POST /api/agent/runs`
   - 面向业务应用创建一次目标驱动 run，输入以 `goal`、`success_criteria`、`constraints`、`budget`、`context_assets`、`tools`、`memory_scope` 和 `governance_refs` 为核心。
   - Creates one app-facing goal-driven run. The current MVP executes synchronously through the existing app/runtime path and returns `run_id`, request status, stop reason, output, trace summary and checkpoint readouts when runtime persistence is configured.
-  - `tools` 接受 OpenAI-compatible function tool 形态或字符串简写；本切片只保留声明态并映射到 enabled tool names，真正 `tool_calls` 执行与远程 tool registry 仍属于后续 tool-contract issues。
+  - `tools` 接受 OpenAI-compatible function tool 或字符串简写，并转换为 provider-neutral runtime declarations；当前只允许调用 Athena 已注册的工具，业务远程工具注册与执行属于 issue `#9`。
+  - `tool_choice` 支持 `none`、`auto`、`required` 和指定 function object。省略时，无工具默认为 `none`，有工具默认为 `auto`。
+  - The response exposes ordered `messages`, assistant `tool_calls`, correlated `tool_results`, stable call IDs and final `output`. Top-level call/result arrays are compatibility projections of the canonical transcript.
 - `GET /api/agent/runs/:runID`
   - 读取单个 run 的 app-facing 状态摘要，底层复用 persisted `TaskRun` 与 trace summary。
   - Reads the app-facing run status summary from persisted runtime records.
@@ -147,6 +149,8 @@ Agent Run API 边界：
 
 - Athena core 不接管业务对象、业务证据或业务状态；业务仓仍通过 `context_assets`、`global_context`、`app_context` 和 `input_payload` 注入应用语义。
 - The API contract is generic. Fund, stock, drama, or other domain objects must stay in the business application layer.
+- 工具参数和结果可在同步响应中返回；持久化 trace 只保存 call ID、tool name、状态、时序、参数键和长度等安全摘要，不保存原始参数或结果。
+- Raw tool arguments/results are available to the synchronous caller, while persisted traces use a redacted correlation timeline.
 - 省略或传入 `task_type=agent_run` 时，当前内部 runtime task type 映射到已注册 `chat`，并把 `agent_run.v1` 契约写入 app context / input payload；未来注册式 task type 可以显式传入其他 `task_type`。
 - If runtime persistence is not configured, read/trace endpoints return `503`; create responses may still complete but cannot expose a persisted trace.
 

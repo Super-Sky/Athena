@@ -139,16 +139,20 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		ProviderName: spec.Model.Executed.ProviderName,
 		ModelName:    spec.Model.Executed.ProviderModelID,
 	})
+	toolTranscript := NewToolCallTranscript()
 	checkpointRef := RuntimeGraphCheckpointRefForTurn(state)
 	agent, err := NewEinoGraphNativeAgent(ctx, EinoGraphNativeAgentConfig{
-		Name:            "AthenaRuntimeAgent",
-		Description:     fmt.Sprintf("Runtime turn agent for skill=%s", spec.Skill.PrimarySkill),
-		Instruction:     instruction,
-		Model:           chatModel,
-		Tools:           selectedTools,
-		Callbacks:       callbackRecorder.Handler(),
-		CheckpointStore: e.CheckpointStore,
-		CheckpointID:    checkpointRef.CheckpointID,
+		Name:             "AthenaRuntimeAgent",
+		Description:      fmt.Sprintf("Runtime turn agent for skill=%s", spec.Skill.PrimarySkill),
+		Instruction:      instruction,
+		Model:            chatModel,
+		Tools:            selectedTools,
+		ToolDeclarations: append([]ToolDefinition(nil), spec.Tools.Declarations...),
+		ToolChoice:       resolvedToolChoice(spec.Model.ResolvedParameters),
+		ToolTranscript:   toolTranscript,
+		Callbacks:        callbackRecorder.Handler(),
+		CheckpointStore:  e.CheckpointStore,
+		CheckpointID:     checkpointRef.CheckpointID,
 	})
 	if err != nil {
 		return nil, err
@@ -218,6 +222,7 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		Runner:           runner,
 		Messages:         normalizeMessages(messages),
 		CallbackRecorder: callbackRecorder,
+		ToolTranscript:   toolTranscript,
 		CheckpointRef:    &checkpointRef,
 	}, nil
 }
@@ -289,6 +294,13 @@ func resolvedPolicyToolChoice(parameters *modelparams.ResolvedModelParameters) s
 		return ""
 	}
 	return string(parameters.ToolChoice.Kind)
+}
+
+func resolvedToolChoice(parameters *modelparams.ResolvedModelParameters) modelparams.ToolChoice {
+	if parameters == nil {
+		return modelparams.ToolChoice{Kind: modelparams.ToolChoiceAuto}
+	}
+	return parameters.ToolChoice
 }
 
 func resolvedPolicyReasoningEffort(parameters *modelparams.ResolvedModelParameters) string {
