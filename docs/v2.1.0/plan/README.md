@@ -5,4 +5,4 @@
 ## 文件索引
 
 - `master-plan.md`
-  - v2.1.0 RuntimeContract foundation、Batch 2 收口与 Application Runtime MVP tool-call contract 的 canonical checklist。
+  - v2.1.0 RuntimeContract foundation、Batch 2 收口、Application Runtime tool-call 与 remote business tool contract 的 canonical checklist。

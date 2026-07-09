@@ -21,6 +21,8 @@
   - 验证 `Service` 主编排路径的基础行为。
 - `control_plane.go`
   - 封装控制面 scene、skill、tool、governance、system resources、版本快照和认证相关用例。
+- `remote_tools.go`
+  - 将持久化 remote tool 注册、治理判定、观测事件与实时 tool catalog 串联，并负责 upsert/delete。
 - `direct_respond_rich_delivery.go`
   - 拼装 direct respond 富交付 read model，包括 summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果。
 - `direct_respond_rich_delivery_test.go`
@@ -78,6 +80,7 @@
 - `RollbackSystemTruthActiveVersion`
 - `ListRuntimeRuns`
 - `OpenChatSession`
+- `ListRemoteTools / UpsertRemoteTool / DeleteRemoteTool`
 
 ## 关键依赖
 

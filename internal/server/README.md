@@ -25,7 +25,9 @@
 - `agent_runs_test.go`
   - 验证 Agent Run 请求解析、tool schema / choice 错误、call/result message 映射以及 create/read/trace/resume/cancel 路由。
 - `control_plane.go`
-  - 暴露控制面 bootstrap、scene/skill/runtime-config 接口和控制面 CORS 处理。
+  - 暴露控制面 bootstrap、scene/skill/runtime-config、remote tool registry 接口和控制面 CORS 处理。
+- `remote_tools_test.go`
+  - 验证 remote tool 注册、HTTP 执行、治理/trace、重启恢复、删除和 origin 拒绝闭环。
 - `openapi.go`
   - 生成和暴露 OpenAPI 文档。
 - `request.go`

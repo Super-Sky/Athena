@@ -146,6 +146,7 @@ type DefaultCapabilityResolver struct {
 	SceneCatalogProvider func(context.Context) []scene.Definition
 	Adapter              skills.Adapter
 	Tools                map[string]tools.Definition
+	ToolProvider         func(context.Context) map[string]tools.Definition
 	Policy               policy.CapabilityPolicy
 }
 
@@ -155,8 +156,12 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	task := ensureRuntimeTask(in)
 	effectiveQuery := resolveEffectiveQuery(in)
 	orchestration := normalizeOrchestrationInput(in)
+	toolDefinitions := r.Tools
+	if r.ToolProvider != nil {
+		toolDefinitions = r.ToolProvider(ctx)
+	}
 	explicitSkills := compactStrings(in.Customization.EnabledSkills)
-	declaredToolNames, err := validateRuntimeToolDeclarations(in.ToolDeclarations, r.Tools)
+	declaredToolNames, err := validateRuntimeToolDeclarations(in.ToolDeclarations, toolDefinitions)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -213,7 +218,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		}
 	}
 	for _, toolName := range explicitTools {
-		if _, ok := r.Tools[toolName]; !ok {
+		if _, ok := toolDefinitions[toolName]; !ok {
 			continue
 		}
 		if _, exists := toolSet[toolName]; exists {
@@ -228,7 +233,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	allowedTools := make([]string, 0, len(toolSet))
 	sources := make(map[string]string, len(toolSet))
 	for toolName, source := range toolSet {
-		if _, ok := r.Tools[toolName]; !ok {
+		if _, ok := toolDefinitions[toolName]; !ok {
 			continue
 		}
 		allowedTools = append(allowedTools, toolName)

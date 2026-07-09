@@ -25,8 +25,21 @@ type EinoTurnExecutor struct {
 	Config          config.Config
 	ModelProvider   model.Provider
 	ToolDefs        map[string]tools.Definition
+	ToolProvider    func(context.Context) map[string]tools.Definition
 	Observability   *observability.Manager
 	CheckpointStore RuntimeGraphCheckpointByteStore
+}
+
+// NewEinoTurnExecutorWithCatalog creates an Eino executor backed by a dynamic tool catalog.
+// NewEinoTurnExecutorWithCatalog 创建由动态工具目录支持的 Eino 执行器。
+func NewEinoTurnExecutorWithCatalog(cfg config.Config, provider model.Provider, catalog *tools.Catalog, obs *observability.Manager, checkpointStore RuntimeGraphCheckpointByteStore) TurnExecutor {
+	return EinoTurnExecutor{
+		Config:          cfg,
+		ModelProvider:   provider,
+		ToolProvider:    func(context.Context) map[string]tools.Definition { return catalog.Snapshot() },
+		Observability:   obs,
+		CheckpointStore: checkpointStore,
+	}
 }
 
 // NewEinoTurnExecutor creates the default Eino-backed turn executor used by the runtime service.
@@ -95,9 +108,13 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 	spec.Metadata.Constraints["runtime_model_prepare_primary_attempts"] = primaryAttempts
 	spec.Metadata.Constraints["runtime_model_prepare_fallback_attempts"] = fallbackAttempts
 
+	toolDefinitions := e.ToolDefs
+	if e.ToolProvider != nil {
+		toolDefinitions = e.ToolProvider(ctx)
+	}
 	selectedTools := make([]tool.BaseTool, 0, len(spec.Tools.AllowedTools))
 	for _, toolName := range spec.Tools.AllowedTools {
-		def, ok := e.ToolDefs[toolName]
+		def, ok := toolDefinitions[toolName]
 		if !ok {
 			continue
 		}

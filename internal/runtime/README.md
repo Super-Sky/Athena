@@ -25,7 +25,7 @@
 ## 文件索引
 
 - `eino.go`
-  - 提供基于 Eino 的默认执行器适配，并把模型、工具和 instruction 装配到 graph-native agent。
+  - 提供基于 Eino 的默认执行器适配，并从单次动态 catalog 快照把模型、工具和 instruction 装配到 graph-native agent。
 - `eino_checkpoint.go`
   - 定义 Athena `WaitState` / resume token 到 Eino checkpoint ID 的确定性映射，并提供 runtime-private Eino checkpoint byte store 边界与内存实现。
 - `eino_callback_recorder.go`
@@ -75,7 +75,7 @@
 - `results.go`
   - 定义完整结果包、摘要、卡片、右栏和成长信号等通用结果结构。
 - `service.go`
-  - 实现 runtime 主链和默认编排逻辑。
+  - 实现 runtime 主链和默认编排逻辑；能力解析可读取动态 tool provider 快照。
 - `service_test.go`
   - 验证 runtime 主链行为。
 - `types.go`

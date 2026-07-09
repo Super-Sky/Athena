@@ -46,6 +46,22 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 补齐声明转换、ID 关联、非法参数与工具执行错误测试。
 - [x] 同步 API、架构、实现与 feature 文档，并完成交付门禁。
 
+## Remote Business Tool Checklist
+
+- canonical issue: `Super-Sky/Athena#9`
+- branch: `codex/remote-tool-registry-issue-9`
+- base branch: `codex/openai-tool-calls-issue-8`
+- current state: `ready_for_delivery`
+
+- [x] 定义 remote tool registration、execution request/response 与 normalized error contract。
+- [x] 提供线程安全 dynamic tool catalog，让 runtime resolver 与 Eino executor 读取同一快照。
+- [x] 提供 control-plane authenticated registration/list/delete API，并在重启后恢复注册。
+- [x] 对 endpoint 执行 origin allowlist、timeout、response-size、retry 与 idempotency 校验。
+- [x] 在任何远程 HTTP 调用前执行 tool governance，并落实 deny/redaction/sandbox decision。
+- [x] 将远程执行关联到 canonical tool call/result trace 与 generic usage。
+- [x] 用本地 fake business service 验证注册、执行、超时、重试、错误和治理拒绝。
+- [x] 同步 OpenAPI、API/架构/实现/能力总览、feature 文档与真实场景测试。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
@@ -96,14 +112,16 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-07-09 transcript benchmark 三次结果为 `7699-11073 ns/op`、`784 B/op`、`9 allocs/op`；单次 execution transcript 不进入 session history。
 - `go vet ./internal/runtime` 的 `EinoGraphFoundation contains sync.Mutex` 值传递告警在 issue #8 基线分支同样存在，不属于本次改动。
 - Codex in-app Browser 已确认 `http://127.0.0.1:8091/swagger` 加载为 `Athena Swagger UI`；Swagger 大 DOM 读取超时，typed schema 由真实 `/swagger/openapi.json` 响应补充验证。
+- 2026-07-09 issue #9 已完成 remote registry、dynamic catalog、governance-before-network、HTTP callback、网络预算、safe trace/usage 与重启恢复。
+- 2026-07-09 全仓验证通过：`env -u APP_ENV go test ./...`；fake business service 测试覆盖注册、执行、redaction、deny、timeout、retry、correlation、response budget、redirect、restore 与 delete。
 
 ## Next Iteration Plan
 
-Batch 2 与 issue #8 checklist 已完成。下一轮优先接入 issue #9 remote business tool registry/execution，继续避免引入场景专属 core contract。
+Batch 2 与 issues #8/#9 checklist 已完成。下一轮进入 `athena-fund-assistant` 首批真实数据 provider 与 business tool callback 集成。
 
 执行清单：
 
-1. 提交、推送 issue `#8` 分支并创建 stacked PR，回 issue 时间线同步交付证据。
-2. 为 issue `#9` 设计 app-owned remote tool registration、HTTP execution、timeout/retry、governance 与 trace contract。
-3. 由 `athena-fund-assistant` 注册第一组 fund snapshot / portfolio / journal 业务工具。
+1. 提交、推送 issue `#9` 分支并创建 stacked PR，回 issue 时间线同步交付证据。
+2. 由 `athena-fund-assistant` 先验证免费 A 股基金/美股数据源结构，再编码首批 snapshot tools。
+3. 使用本地 Docker 网络注册 fund snapshot / portfolio / journal 业务工具，并执行双服务 E2E。
 4. 若目标分支最终准备合入 `master`，先执行 `master-merge-gate` 并取得人工确认。

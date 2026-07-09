@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	einomessage "github.com/cloudwego/eino/schema"
@@ -37,6 +38,7 @@ type Service struct {
 	SessionStore  session.Store
 	ModelStore    model.Store
 	ModelProvider model.Provider
+	ToolCatalog   *tools.Catalog
 	SkillStore    skills.Store
 	PackageStore  skills.PackageStore
 	SkillLoader   skills.Loader
@@ -47,6 +49,8 @@ type Service struct {
 	ValidationMCP *validationmcp.Server
 	FastPath      FastPathEvaluator
 	requestSlots  chan struct{}
+	remoteToolMu  sync.Mutex
+	remoteTools   map[string]struct{}
 }
 
 // ChatRequest is the app-layer request contract before runtime normalization.
@@ -136,6 +140,7 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 	if err != nil {
 		panic(err)
 	}
+	toolCatalog := tools.NewCatalog(toolDefs)
 
 	if obs == nil {
 		obs = observability.NewDefaultManagerWithLevel(observability.LogLevel(cfg.Observability.LogLevel))
@@ -190,7 +195,7 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 	// Eino Graph 是默认 runtime 执行承载面；被包装的 executor 继续保持当前单轮行为。
 	checkpointStore, _ := runtimeStore.(runtime.RuntimeGraphCheckpointByteStore)
 	turnExecutor := runtime.NewEinoGraphTurnExecutor(
-		runtime.NewEinoTurnExecutorWithCheckpointStore(cfg, provider, toolDefs, obs, checkpointStore),
+		runtime.NewEinoTurnExecutorWithCatalog(cfg, provider, toolCatalog, obs, checkpointStore),
 		runtime.EinoGraphTurnExecutorOptions{Store: runtimeStore},
 	)
 
@@ -205,6 +210,9 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 		obs,
 	)
 	if resolver, ok := rt.CapabilityResolver.(runtime.DefaultCapabilityResolver); ok {
+		resolver.ToolProvider = func(context.Context) map[string]tools.Definition {
+			return toolCatalog.Snapshot()
+		}
 		resolver.RegistryProvider = func(context.Context) *skills.Registry {
 			registry, err := effectiveSkillRegistry(controlPlane, skillLoader)
 			if err != nil {
@@ -228,6 +236,7 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 		SessionStore:  sessionStore,
 		ModelStore:    modelStore,
 		ModelProvider: provider,
+		ToolCatalog:   toolCatalog,
 		SkillStore:    skillStore,
 		PackageStore:  packageStore,
 		SkillLoader:   skillLoader,
@@ -238,6 +247,10 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 		ValidationMCP: validationmcp.NewServer(),
 		FastPath:      NoopFastPathEvaluator{},
 		requestSlots:  make(chan struct{}, cfg.Runtime.MaxConcurrentRequests),
+		remoteTools:   make(map[string]struct{}),
+	}
+	if err := service.reloadRemoteToolCatalog(context.Background()); err != nil {
+		panic(fmt.Errorf("restore remote tool catalog failed: %w", err))
 	}
 	if err := service.syncRuntimeContractFoundation(context.Background()); err != nil {
 		panic(fmt.Errorf("sync runtime contract foundation failed: %w", err))

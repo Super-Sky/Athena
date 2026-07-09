@@ -36,6 +36,7 @@ type Config struct {
 	Server          ServerConfig          `yaml:"server"`
 	Model           ModelConfig           `yaml:"model"`
 	Runtime         RuntimeConfig         `yaml:"runtime"`
+	RemoteTools     RemoteToolsConfig     `yaml:"remote_tools"`
 	ControlPlane    ControlPlaneConfig    `yaml:"control_plane"`
 	System          SystemConfig          `yaml:"system"`
 	PlatformContext PlatformContextConfig `yaml:"platform_context"`
@@ -67,6 +68,13 @@ type RuntimeConfig struct {
 	ClosedTokenTTLSecs        int    `yaml:"closed_resume_token_ttl_seconds"`
 	SkillPackageRevisionLimit int    `yaml:"skill_package_revision_limit"`
 	SharedRootDir             string `yaml:"shared_root_dir"`
+}
+
+// RemoteToolsConfig groups the outbound allowlist and response budget for app-owned HTTP tools.
+// RemoteToolsConfig 聚合应用自有 HTTP 工具的出站白名单与响应预算。
+type RemoteToolsConfig struct {
+	AllowedOrigins   []string `yaml:"allowed_origins"`
+	MaxResponseBytes int64    `yaml:"max_response_bytes"`
 }
 
 // ControlPlaneConfig groups the standalone control-plane storage path and browser access policy.
@@ -153,6 +161,10 @@ func LoadFromEnv() (Config, error) {
 			ClosedTokenTTLSecs:        envInt("CLOSED_RESUME_TOKEN_TTL_SECONDS", defaultClosedTokenTTLSecs),
 			SkillPackageRevisionLimit: envInt("SKILL_PACKAGE_REVISION_LIMIT", defaultSkillPackageRevs),
 			SharedRootDir:             defaultString(strings.TrimSpace(os.Getenv("SHARED_ROOT_DIR")), defaultSharedRootDir),
+		},
+		RemoteTools: RemoteToolsConfig{
+			AllowedOrigins:   envStringSlice("REMOTE_TOOL_ALLOWED_ORIGINS"),
+			MaxResponseBytes: envInt64("REMOTE_TOOL_MAX_RESPONSE_BYTES", 1<<20),
 		},
 		ControlPlane: ControlPlaneConfig{
 			StorePath:         defaultString(strings.TrimSpace(os.Getenv("CONTROL_PLANE_STORE_PATH")), filepath.Join(defaultConfigDir, "controlplane", "overrides.json")),
@@ -268,6 +280,10 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Runtime.ClosedTokenTTLSecs = envInt("CLOSED_RESUME_TOKEN_TTL_SECONDS", cfg.Runtime.ClosedTokenTTLSecs)
 	cfg.Runtime.SkillPackageRevisionLimit = envInt("SKILL_PACKAGE_REVISION_LIMIT", cfg.Runtime.SkillPackageRevisionLimit)
 	cfg.Runtime.SharedRootDir = defaultString(strings.TrimSpace(os.Getenv("SHARED_ROOT_DIR")), cfg.Runtime.SharedRootDir)
+	if values := envStringSlice("REMOTE_TOOL_ALLOWED_ORIGINS"); len(values) > 0 {
+		cfg.RemoteTools.AllowedOrigins = values
+	}
+	cfg.RemoteTools.MaxResponseBytes = envInt64("REMOTE_TOOL_MAX_RESPONSE_BYTES", cfg.RemoteTools.MaxResponseBytes)
 	cfg.ControlPlane.StorePath = defaultString(strings.TrimSpace(os.Getenv("CONTROL_PLANE_STORE_PATH")), cfg.ControlPlane.StorePath)
 	if values := envStringSlice("CONTROL_PLANE_ALLOWED_ORIGINS"); len(values) > 0 {
 		cfg.ControlPlane.AllowedOrigins = values
@@ -325,6 +341,9 @@ func (c Config) Validate() error {
 	}
 	if c.Runtime.ClosedTokenTTLSecs <= 0 {
 		return fmt.Errorf("CLOSED_RESUME_TOKEN_TTL_SECONDS must be greater than 0")
+	}
+	if c.RemoteTools.MaxResponseBytes < 0 {
+		return fmt.Errorf("REMOTE_TOOL_MAX_RESPONSE_BYTES must be greater than or equal to 0")
 	}
 	if strings.TrimSpace(c.ControlPlane.StorePath) == "" {
 		return fmt.Errorf("CONTROL_PLANE_STORE_PATH must not be empty")
@@ -490,6 +509,18 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 
+	return value
+}
+
+func envInt64(key string, fallback int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return fallback
+	}
 	return value
 }
 

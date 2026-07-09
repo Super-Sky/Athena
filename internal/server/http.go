@@ -428,6 +428,15 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.PUT("/api/control-plane/tools/:name", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handlePutControlPlaneTool)(ctx, c, cfg, application)
 	})
+	h.GET("/api/control-plane/remote-tools", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleListRemoteTools)(ctx, c, cfg, application)
+	})
+	h.PUT("/api/control-plane/remote-tools/:name", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handlePutRemoteTool)(ctx, c, cfg, application)
+	})
+	h.DELETE("/api/control-plane/remote-tools/:name", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleDeleteRemoteTool)(ctx, c, cfg, application)
+	})
 	h.GET("/api/control-plane/runtime-config", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleGetControlPlaneRuntime)(ctx, c, cfg, application)
 	})
