@@ -24,6 +24,8 @@ func TestLoadFromEnvDefaultsToPostgresStores(t *testing.T) {
 	t.Setenv("DB_MAX_OPEN_CONNS", "1")
 	t.Setenv("DB_CONN_MAX_LIFETIME_SECONDS", "1")
 	t.Setenv("SECURITY_ENCRYPTION_KEY", "test-encryption-key")
+	t.Setenv("REMOTE_TOOL_ALLOWED_ORIGINS", "http://fund-api:8081,http://127.0.0.1:8081")
+	t.Setenv("REMOTE_TOOL_MAX_RESPONSE_BYTES", "2048")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -48,6 +50,12 @@ func TestLoadFromEnvDefaultsToPostgresStores(t *testing.T) {
 	}
 	if cfg.System.ActiveStateDir != filepath.Join("output", "system-state") {
 		t.Fatalf("cfg.System.ActiveStateDir = %q, want output/system-state", cfg.System.ActiveStateDir)
+	}
+	if len(cfg.RemoteTools.AllowedOrigins) != 2 || cfg.RemoteTools.AllowedOrigins[0] != "http://fund-api:8081" {
+		t.Fatalf("cfg.RemoteTools.AllowedOrigins = %#v", cfg.RemoteTools.AllowedOrigins)
+	}
+	if cfg.RemoteTools.MaxResponseBytes != 2048 {
+		t.Fatalf("cfg.RemoteTools.MaxResponseBytes = %d, want 2048", cfg.RemoteTools.MaxResponseBytes)
 	}
 }
 

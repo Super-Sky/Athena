@@ -120,10 +120,10 @@ Agent Run API 当前以同步 MVP 方式复用 App Layer：
 - `context_assets` 继续走 Context Asset Plane 的默认注入、覆盖、禁用和优先级逻辑。
 - Transport 将 OpenAI-compatible `tools` / `tool_choice` 转为 provider-neutral runtime contract；Eino adapter 只在执行边界转换为 `ToolInfo`、模型调用选项和 `schema.Message`。
 - graph-native ReAct loop 通过 per-execution transcript 记录 assistant tool-call 轮次、稳定 ID、参数、tool result、错误与 timing；响应保留有序 message 结构，持久化 trace 仅投影安全摘要。
-- 当前 declaration 必须关联 Athena 已注册的本地工具。业务远程 registry、HTTP callback、重试和治理执行仍由 issue `#9` 承接。
+- 当前 declaration 必须关联 Athena live catalog 中已启用的工具。业务应用可通过 authenticated remote registry 提供 HTTP callback；runtime resolver 与 Eino executor 对每次 operation 使用同一目录快照。
 - `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；`cancel` 先暴露稳定路由和明确 unsupported / terminal response，不伪造异步取消。
 
-The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in transport, while Eino-specific conversion stays in the runtime adapter. Remote business tool registration and execution are deliberately outside this slice.
+The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in transport, Eino-specific conversion stays in the runtime adapter, and app-owned implementations stay behind the versioned HTTP envelope.
 
 ### 3.4 Control Plane Layer
 
@@ -132,6 +132,7 @@ The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in tra
 - scene / skill / tool / governance / runtime config / tool governance policy 的可调视图
 - system truth、system resource、版本快照、审计和回滚
 - tool governance effective policy 与 decision log 的控制面验收视图
+- app-owned remote tool registration、配置版本与重启恢复
 - 最小登录、锁定状态和控制台 contract
 
 它不负责：
@@ -168,6 +169,8 @@ The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in tra
 
 能力本身是通用能力；是否允许使用，由治理层决定。
 
+Remote business tools 通过线程安全动态 catalog 进入该层。Control Plane 持有注册事实，业务应用持有 schema 实现与业务数据；Athena 不在注册文档中保存 callback credentials。
+
 ### 3.7 Execution Governance Layer
 
 负责在 capability 和真正执行之间做统一判断：
@@ -178,6 +181,8 @@ The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in tra
 - fact quality / policy checkpoint
 
 治理语义不能散落在单个 skill、tool 或 adapter 中。
+
+Remote adapter 会在 HTTP 调用前落实 allow、deny、redaction 与 sandbox-ref；网络出口同时受 exact-origin allowlist、timeout、response-size、redirect、retry/idempotency 约束。
 
 ### 3.8 Session & Continuity Plane
 

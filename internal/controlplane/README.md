@@ -30,6 +30,8 @@
   - 管理 active truth dir 中的 file-backed system resources，以及 `sources/**/*.md` 主源同步、source 保存后自动 `parse / compile / activate`、typed compile、versions / audit / rollback、debug payload / export 流水线。
 - `tool_governance.go`
   - 编译并聚合 `tool_governance_policy` system truth，提供 effective policy、validation tool request 决策和 persisted decision log。
+- `remote_tools.go`
+  - 持久化 app-owned remote tool 注册，并提供稳定排序、upsert、delete 与配置版本记录。
 - `manager_test.go`
   - 验证场景、skill、tool、governance 与版本回滚的合成行为。
 - `system_resources_test.go`
@@ -47,6 +49,7 @@
 - `ListSystemResourceVersions / GetSystemResourceVersion / RollbackSystemResourceVersion`
 - `ListSystemResourceAuditEntries`
 - `EffectiveToolGovernancePolicy / EvaluateToolGovernance / ListToolGovernanceDecisions`
+- `ListRemoteTools / PutRemoteTool / DeleteRemoteTool`
 - `Login / Logout / AuthStatus`
 
 ## 关键依赖

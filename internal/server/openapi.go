@@ -411,6 +411,39 @@ func buildOpenAPIPaths() map[string]any {
 				},
 			},
 		},
+		"/api/control-plane/remote-tools": map[string]any{
+			"get": map[string]any{
+				"tags":        []string{"control-plane"},
+				"summary":     "列出应用自有 HTTP tool 注册",
+				"operationId": "listRemoteTools",
+				"responses": map[string]any{
+					"200": jsonResponse("远程 tool 注册目录", "RemoteToolRegistrationListResponse"),
+				},
+			},
+		},
+		"/api/control-plane/remote-tools/{name}": map[string]any{
+			"put": map[string]any{
+				"tags":        []string{"control-plane"},
+				"summary":     "注册或更新应用自有 HTTP tool",
+				"operationId": "putRemoteTool",
+				"parameters":  pathIDParameter("name", "tool 名称"),
+				"requestBody": jsonRequest("RemoteToolRegistration", true),
+				"responses": map[string]any{
+					"200": jsonResponse("远程 tool 注册", "RemoteToolRegistration"),
+					"400": jsonResponse("注册校验失败", "ErrorResponse"),
+				},
+			},
+			"delete": map[string]any{
+				"tags":        []string{"control-plane"},
+				"summary":     "删除应用自有 HTTP tool",
+				"operationId": "deleteRemoteTool",
+				"parameters":  pathIDParameter("name", "tool 名称"),
+				"responses": map[string]any{
+					"204": map[string]any{"description": "远程 tool 已删除"},
+					"404": jsonResponse("远程 tool 不存在", "ErrorResponse"),
+				},
+			},
+		},
 		"/api/control-plane/runtime-config": map[string]any{
 			"get": map[string]any{
 				"tags":        []string{"control-plane"},
@@ -1860,6 +1893,29 @@ func buildOpenAPISchemas() map[string]any {
 		"ControlPlaneToolListResponse": objectSchema(map[string]any{
 			"items": arraySchema(refSchema("ControlPlaneTool")),
 		}, []string{"items"}),
+		"RemoteToolRegistration": objectSchema(map[string]any{
+			"registration_id":    stringSchema("业务应用提供的稳定注册 ID。", "fund-market-snapshot-v1"),
+			"app_id":             stringSchema("业务应用稳定标识。", "athena-fund-assistant"),
+			"name":               stringSchema("OpenAI-compatible function name。", "fund_market_snapshot"),
+			"description":        stringSchema("模型可见的工具说明。", "Read one normalized fund market snapshot."),
+			"parameters":         map[string]any{"type": "object", "description": "Root object JSON Schema.", "additionalProperties": true},
+			"endpoint":           stringSchema("白名单内的应用 HTTP callback endpoint。", "http://fund-api:8081/internal/tools/execute"),
+			"tool_scope":         stringSchema("治理作用域。", "market_data_read"),
+			"operation":          stringSchema("治理操作标识。", "read"),
+			"risk_level":         stringSchema("治理风险等级。", "low"),
+			"side_effect_level":  stringSchema("副作用等级。", "none"),
+			"idempotent":         boolSchema("调用是否幂等。", true),
+			"sandbox_ref":        stringSchema("可选外部沙箱引用。", ""),
+			"timeout_ms":         intSchema("单次 HTTP 调用超时，最大 30000ms。", 5000),
+			"retry_max_attempts": intSchema("失败后的重试次数，最大 3。", 1),
+			"enabled":            boolSchema("是否发布到实时 tool catalog。", true),
+			"metadata":           map[string]any{"type": "object", "additionalProperties": true},
+			"created_at":         map[string]any{"type": "string", "format": "date-time"},
+			"updated_at":         map[string]any{"type": "string", "format": "date-time"},
+		}, []string{"registration_id", "app_id", "name", "endpoint", "enabled"}),
+		"RemoteToolRegistrationListResponse": objectSchema(map[string]any{
+			"items": arraySchema(refSchema("RemoteToolRegistration")),
+		}, []string{"items"}),
 		"ControlPlaneRuntimeConfig": objectSchema(map[string]any{
 			"choice_required_enabled":     boolSchema("是否允许原生返回 choice_required。", true),
 			"automation_fallback_enabled": boolSchema("是否允许自动化草案路径进入 fallback。", true),
@@ -1992,11 +2048,12 @@ func buildOpenAPISchemas() map[string]any {
 			"document": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"scenes":     arraySchema(refSchema("ControlPlaneScene")),
-					"skills":     arraySchema(refSchema("ControlPlaneSkill")),
-					"tools":      arraySchema(refSchema("ControlPlaneTool")),
-					"governance": refSchema("ControlPlaneGovernanceConfig"),
-					"runtime":    refSchema("ControlPlaneGovernanceConfig"),
+					"scenes":       arraySchema(refSchema("ControlPlaneScene")),
+					"skills":       arraySchema(refSchema("ControlPlaneSkill")),
+					"tools":        arraySchema(refSchema("ControlPlaneTool")),
+					"remote_tools": arraySchema(refSchema("RemoteToolRegistration")),
+					"governance":   refSchema("ControlPlaneGovernanceConfig"),
+					"runtime":      refSchema("ControlPlaneGovernanceConfig"),
 				},
 			},
 		}, []string{"version_id", "created_at", "document"}),

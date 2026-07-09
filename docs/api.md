@@ -34,6 +34,9 @@ API 语义按以下边界理解：
 - `PUT /api/control-plane/skills/:name`
 - `GET /api/control-plane/tools`
 - `PUT /api/control-plane/tools/:name`
+- `GET /api/control-plane/remote-tools`
+- `PUT /api/control-plane/remote-tools/:name`
+- `DELETE /api/control-plane/remote-tools/:name`
 - `GET /api/control-plane/runtime-config`
 - `PUT /api/control-plane/runtime-config`
 - `POST /api/control-plane/runtime/validation-runs`
@@ -168,6 +171,14 @@ Runtime validation trigger 当前会把 Phase 1-5 串成一条 deterministic val
   - 再调用 Validation MCP `risk_signal_lookup`，通过 tool governance 生成 decision，并把 MCP trace / usage / projection 写入 runtime persistence。
   - 最后生成 `external_sandbox_ref` structured result，写入 sandbox lifecycle event、trace、generic usage 和 projection candidate。
   - 响应包含 `validation_mcp`、`sandbox`、`sandbox_trace`、`sandbox_usage` 和 `sandbox_projection`，用于 System Validation 页面验收。
+
+## Remote business tool registry
+
+`/api/control-plane/remote-tools` 允许独立业务服务把 HTTP tool 实现注册进 Athena live catalog。注册内容不保存 credentials；`endpoint` 必须命中 `REMOTE_TOOL_ALLOWED_ORIGINS` 的 exact origin，schema 根节点必须为 object，`timeout_ms` 范围为 `1..30000`，`retry_max_attempts` 范围为 `0..3`。带副作用且非幂等的工具禁止重试。
+
+Callback 使用 `remote_tool_execution.v1`。请求包含 `request_id`、`tool_call_id`、`registration_id`、`app_id`、`tool_name`、JSON object `arguments`、`attempt` 和安全 metadata。响应必须回传相同 ID，并返回 `status=ok` + `content`，或标准化 `error.code/message/retryable`。
+
+Athena 禁止 callback redirect，并在任何网络请求前执行 tool governance。Raw arguments/results 只在当前执行链内流转；持久化 trace 与 generic metric 只记录 origin、attempt、duration、decision ID、status 和 normalized error code 等安全元数据。
 
 ## V1 协议补充
 
@@ -367,6 +378,8 @@ Athena 当前会优先消费 summary，再决定是否返回：
   - 管理 skill override
 - `GET/PUT /api/control-plane/tools/:name`
   - 管理 tool registry 的白名单元数据 override
+- `GET/PUT/DELETE /api/control-plane/remote-tools/:name`
+  - 管理 app-owned HTTP tool 注册；接口复用 Control Plane auth，成功后立即更新 live catalog
 - `GET/PUT /api/control-plane/runtime-config`
   - 兼容保留的 runtime tuning 入口
 - `POST /api/control-plane/runtime/validation-runs`

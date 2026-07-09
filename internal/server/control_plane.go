@@ -14,6 +14,7 @@ import (
 	appcore "moss/internal/app"
 	"moss/internal/config"
 	"moss/internal/controlplane"
+	"moss/internal/tools"
 	"moss/internal/validationmcp"
 )
 
@@ -237,6 +238,44 @@ func handlePutControlPlaneTool(ctx context.Context, c *hertzapp.RequestContext, 
 		return
 	}
 	c.JSON(consts.StatusOK, item)
+}
+
+func handleListRemoteTools(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	applyControlPlaneCORS(c, cfg)
+	items, err := application.ListRemoteTools(ctx)
+	if err != nil {
+		c.JSON(consts.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": items})
+}
+
+func handlePutRemoteTool(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	applyControlPlaneCORS(c, cfg)
+	var req tools.RemoteRegistration
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	item, err := application.UpsertRemoteTool(ctx, strings.TrimSpace(c.Param("name")), req)
+	if err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	c.JSON(consts.StatusOK, item)
+}
+
+func handleDeleteRemoteTool(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	applyControlPlaneCORS(c, cfg)
+	if err := application.DeleteRemoteTool(ctx, strings.TrimSpace(c.Param("name"))); err != nil {
+		status := consts.StatusInternalServerError
+		if strings.Contains(err.Error(), "not found") {
+			status = consts.StatusNotFound
+		}
+		c.JSON(status, map[string]string{"error": err.Error()})
+		return
+	}
+	c.Status(consts.StatusNoContent)
 }
 
 func handleGetControlPlaneRuntime(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {

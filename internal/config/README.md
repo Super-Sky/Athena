@@ -15,7 +15,7 @@
 ## 文件索引
 
 - `config.go`
-  - 定义配置结构、读取顺序和环境变量覆盖逻辑。
+  - 定义配置结构、读取顺序和环境变量覆盖逻辑，包括 remote tool origin allowlist 与响应预算。
 - `config_test.go`
   - 验证配置加载与覆盖行为。
 

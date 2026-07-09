@@ -6,7 +6,7 @@ Athena 需要为 `athena-fund-assistant` 等上层业务应用提供一个稳定
 
 Athena now exposes a stable app-facing Agent Run API for business applications. The API is intentionally generic: domain truth stays in the host application, while Athena owns runtime execution, trace readout, checkpoint metadata and transport contracts.
 
-对应 issues / Canonical issues: `Super-Sky/Athena#7`, `Super-Sky/Athena#8`
+对应 issues / Canonical issues: `Super-Sky/Athena#7`, `Super-Sky/Athena#8`, `Super-Sky/Athena#9`
 
 ## 契约 / Contract
 
@@ -71,12 +71,13 @@ Athena now exposes a stable app-facing Agent Run API for business applications. 
 - Stable synthesized IDs reuse the existing `github.com/google/uuid` dependency.
 - OpenAI JSON Schema is converted through the existing Eino `jsonschema` and `ToolInfo` boundary.
 - 真实执行仍要求调用方声明的 function name 已存在于 Athena tool registry，并要求已配置支持 tool calling 的模型。
+- issue `#9` 已允许业务应用通过 authenticated control-plane API 注册 app-owned HTTP tool；声明名称必须匹配 enabled live catalog。
 
 ## 当前状态 / Current Status
 
 - issue `#7` 的 Agent Run API foundation 与 issue `#8` 的 tool-call contract 已实现并通过当前自动化、race、benchmark、OpenAPI 和本地 API smoke。
 - issue `#8` 当前处于 `ready_for_delivery`，等待提交、push、stacked PR 与 issue 时间线同步。
-- Remote app-owned tool registry/execution、HTTP callback、timeout/retry 和调用前治理属于 issue `#9`，未在本切片冒充完成。
+- issue `#9` remote app-owned registry/execution 已实现；具体 callback 与网络治理契约见 `feature-remote-business-tools.md`。
 
 ## 边界 / Boundaries
 
@@ -97,9 +98,9 @@ Athena core 不负责：
 - 业务账户授权同步
 - 自动交易或资金操作
 - 业务 evidence 的最终真相判断
-- 业务远程 tool registry、HTTP callback、重试和治理执行
+- 基金等业务工具内部实现与业务数据
 
-The `tools` field accepts OpenAI-compatible function declarations and string shorthand. Athena validates and converts them into a provider-neutral runtime contract, executes matching registered local tools, and returns an ordered call/result transcript. Remote business tool registration and execution remain issue `#9`.
+The `tools` field accepts OpenAI-compatible function declarations and string shorthand. Athena validates and converts them into a provider-neutral runtime contract, executes matching built-in or enabled remote tools, and returns an ordered call/result transcript.
 
 ## 骨架准入说明 / Backbone Rationale
 
@@ -134,7 +135,7 @@ Use the Codex in-app Browser plugin first for local browser checks. If the brows
 
 - 当前运行模式是同步 MVP，`cancel` 不是异步取消。
 - `resume` 创建 follow-up run，不会原地改写原 run。
-- 当前只执行 Athena registry 中已有实现的工具；未注册业务工具会 fail closed，远程业务工具由 issue `#9` 接入。
+- 当前只执行 Athena live catalog 中已有实现的工具；未注册或 disabled 业务工具会 fail closed。
 - 同步 response 可返回 raw arguments/results；持久化 trace 始终使用脱敏摘要。
 - Transcript 是单次 prepared execution 的有界内存对象，runner 完成后只复制到当前响应，不进入 session message history；超长 tool payload 的独立上限仍应在 remote execution issue 中补齐。
 - The transcript is scoped to one prepared execution and is not retained in session history. Remote tools still need explicit payload-size limits.
