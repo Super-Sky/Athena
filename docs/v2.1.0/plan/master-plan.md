@@ -31,6 +31,21 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 收口 semantic projection boundary，确保 projection candidate 不升级为业务 `EvidenceRecord`。
 - [x] 将剩余 direct respond rich delivery 兼容拼装从 transport 收敛到 app/runtime graph node 或 Batch 2 read model。
 
+## Application Runtime MVP Checklist
+
+- canonical issue: `Super-Sky/Athena#8`
+- branch: `codex/openai-tool-calls-issue-8`
+- base branch: `codex/app-agent-run-api-issue-7`
+- current state: `ready_for_delivery`
+
+- [x] 定义 provider-neutral tool definition、tool choice、tool call、tool result 与 transcript contract。
+- [x] 将 OpenAI-compatible `tools` / `tool_choice` 校验并转换为 canonical runtime contract。
+- [x] 从 Eino graph-native loop 采集稳定 `tool_call_id`、arguments、result、status 与 timing。
+- [x] 在 Agent Run response 返回 OpenAI-compatible assistant `tool_calls`。
+- [x] 在 runtime trace 中保存可关联、经过安全处理的 tool call / result timeline。
+- [x] 补齐声明转换、ID 关联、非法参数与工具执行错误测试。
+- [x] 同步 API、架构、实现与 feature 文档，并完成交付门禁。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
@@ -76,14 +91,19 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-06-10 聚焦验证通过：`go test ./internal/runtime ./internal/app ./internal/server`、`cd web && PATH=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build`、`python3 -m py_compile scripts/control_plane_runtime_foundation_smoke.py`。
 - 2026-06-10 direct respond rich delivery 已收口到 app 层 Batch 2 read model：transport 保留解析、schema 修复、HTTP/SSE 映射，`internal/app/direct_respond_rich_delivery.go` 负责 result summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果拼装。
 - 2026-06-10 聚焦验证通过：`go test ./internal/app ./internal/server`。
+- 2026-07-09 issue #8 已完成 OpenAI-compatible tools/tool_choice transport conversion、provider-neutral runtime transcript、Eino adapter、ordered messages、call/result projection 与 redacted trace。
+- 2026-07-09 验证通过：`env -u APP_ENV go test ./...`、`go test -race ./internal/runtime ./internal/server`、`go vet ./internal/app ./internal/server`、Web Node 24 build、绝对路径检查、health/OpenAPI/invalid-schema API smoke。
+- 2026-07-09 transcript benchmark 三次结果为 `7699-11073 ns/op`、`784 B/op`、`9 allocs/op`；单次 execution transcript 不进入 session history。
+- `go vet ./internal/runtime` 的 `EinoGraphFoundation contains sync.Mutex` 值传递告警在 issue #8 基线分支同样存在，不属于本次改动。
+- Codex in-app Browser 已确认 `http://127.0.0.1:8091/swagger` 加载为 `Athena Swagger UI`；Swagger 大 DOM 读取超时，typed schema 由真实 `/swagger/openapi.json` 响应补充验证。
 
 ## Next Iteration Plan
 
-Batch 2 checklist 已完成。下一轮优先执行最终交付门禁、PR review 与 merge gate，继续避免引入场景专属 core contract。
+Batch 2 与 issue #8 checklist 已完成。下一轮优先接入 issue #9 remote business tool registry/execution，继续避免引入场景专属 core contract。
 
 执行清单：
 
-1. 执行 `repo-task-delivery`，确认文档、测试和 issue 回链满足交付门禁。
-2. 跑 Batch 2 聚焦验证：Go tests、Web build、smoke 脚本编译和必要的 API smoke。
-3. 发起最终 PR review；若目标是合入 `master`，先执行 `master-merge-gate`。
-4. 合并 PR 后同步 `Super-Sky/Athena#1` 进度并关闭已完成 checklist。
+1. 提交、推送 issue `#8` 分支并创建 stacked PR，回 issue 时间线同步交付证据。
+2. 为 issue `#9` 设计 app-owned remote tool registration、HTTP execution、timeout/retry、governance 与 trace contract。
+3. 由 `athena-fund-assistant` 注册第一组 fund snapshot / portfolio / journal 业务工具。
+4. 若目标分支最终准备合入 `master`，先执行 `master-merge-gate` 并取得人工确认。

@@ -72,6 +72,7 @@ type ChatRequest struct {
 	AppContext            map[string]any
 	InputPayload          map[string]any
 	ModelID               string
+	ToolDeclarations      []runtime.ToolDefinition
 	Customization         customization.UserCustomization
 	Supplement            *runtime.SupplementPayload
 	TimeoutAfter          time.Duration
@@ -637,6 +638,7 @@ func (s *Service) OpenChatSession(ctx context.Context, requestID string, req Cha
 				SessionID:        userSession.ID,
 				Query:            req.Query,
 				ModelSelection:   modelSelection,
+				ToolDeclarations: append([]runtime.ToolDefinition(nil), req.ToolDeclarations...),
 				Task:             task,
 				ResolvedContract: resolvedRuntimeContract(resolvedContract),
 				ResolvedTaskType: resolvedTaskTypeRegistration(resolvedContract),

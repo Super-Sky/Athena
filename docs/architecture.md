@@ -118,8 +118,12 @@ Agent Run API 当前以同步 MVP 方式复用 App Layer：
 
 - `goal` 会成为 runtime 当前请求目标。
 - `context_assets` 继续走 Context Asset Plane 的默认注入、覆盖、禁用和优先级逻辑。
-- `tools` 先作为 OpenAI-compatible 声明态输入被保存和映射到 enabled tool names；真实 tool-call loop、远程 registry 与 tool execution contract 继续由后续工具契约能力承接。
+- Transport 将 OpenAI-compatible `tools` / `tool_choice` 转为 provider-neutral runtime contract；Eino adapter 只在执行边界转换为 `ToolInfo`、模型调用选项和 `schema.Message`。
+- graph-native ReAct loop 通过 per-execution transcript 记录 assistant tool-call 轮次、稳定 ID、参数、tool result、错误与 timing；响应保留有序 message 结构，持久化 trace 仅投影安全摘要。
+- 当前 declaration 必须关联 Athena 已注册的本地工具。业务远程 registry、HTTP callback、重试和治理执行仍由 issue `#9` 承接。
 - `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；`cancel` 先暴露稳定路由和明确 unsupported / terminal response，不伪造异步取消。
+
+The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in transport, while Eino-specific conversion stays in the runtime adapter. Remote business tool registration and execution are deliberately outside this slice.
 
 ### 3.4 Control Plane Layer
 

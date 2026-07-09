@@ -1370,6 +1370,23 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := schemas["AgentRunResponse"]; !ok {
 		t.Fatalf("openapi spec missing AgentRunResponse: %#v", schemas)
 	}
+	for _, schemaName := range []string{"AgentRunToolChoice", "AgentRunToolCall", "AgentRunToolResult", "AgentRunMessage"} {
+		if _, ok := schemas[schemaName]; !ok {
+			t.Fatalf("openapi spec missing %s: %#v", schemaName, schemas)
+		}
+	}
+	toolChoiceSchema, ok := schemas["AgentRunToolChoice"].(map[string]any)
+	if !ok || len(toolChoiceSchema["oneOf"].([]any)) != 2 {
+		t.Fatalf("AgentRunToolChoice schema = %#v, want string/function oneOf", schemas["AgentRunToolChoice"])
+	}
+	agentRunResponseSchema := schemas["AgentRunResponse"].(map[string]any)
+	agentRunResponseProperties := agentRunResponseSchema["properties"].(map[string]any)
+	if _, ok := agentRunResponseProperties["messages"]; !ok {
+		t.Fatalf("AgentRunResponse missing messages schema: %#v", agentRunResponseSchema)
+	}
+	if _, ok := agentRunResponseProperties["tool_results"]; !ok {
+		t.Fatalf("AgentRunResponse missing tool_results schema: %#v", agentRunResponseSchema)
+	}
 	if _, ok := schemas["AgentRunTraceResponse"]; !ok {
 		t.Fatalf("openapi spec missing AgentRunTraceResponse: %#v", schemas)
 	}

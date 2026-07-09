@@ -26,6 +26,7 @@ func TestParseAgentRunStartRequestAcceptsOpenAITools(t *testing.T) {
 			{"type":"function","function":{"name":"web_search","parameters":{"type":"object"}}},
 			"calculator"
 		],
+		"tool_choice":{"type":"function","function":{"name":"web_search"}},
 		"resume_token":"resume-1",
 		"supplement":{"data":{"risk":"medium"}}
 	}`)
@@ -38,11 +39,114 @@ func TestParseAgentRunStartRequestAcceptsOpenAITools(t *testing.T) {
 	if strings.Join(names, ",") != "web_search,calculator" {
 		t.Fatalf("tool names = %#v, want web_search and calculator", names)
 	}
+	if len(req.CanonicalTools) != 2 || req.CanonicalTools[0].Function.Name != "web_search" {
+		t.Fatalf("canonical tools = %#v, want OpenAI tools converted", req.CanonicalTools)
+	}
+	if req.CanonicalToolChoice.ToolName != "web_search" {
+		t.Fatalf("canonical tool choice = %#v, want web_search", req.CanonicalToolChoice)
+	}
 	if req.Supplement == nil || req.Supplement.Outcome != runtime.SupplementOutcomeProvided {
 		t.Fatalf("unexpected supplement = %#v", req.Supplement)
 	}
 	if req.Supplement.Resume == nil || req.Supplement.Resume.ResumeToken != "resume-1" {
 		t.Fatalf("unexpected resume context = %#v", req.Supplement.Resume)
+	}
+}
+
+func TestParseAgentRunStartRequestRejectsInvalidToolContracts(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "non object schema",
+			body: `{"goal":"test","tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"string"}}}]}`,
+			want: "parameters must use an object JSON schema",
+		},
+		{
+			name: "duplicate name",
+			body: `{"goal":"test","tools":["lookup","lookup"]}`,
+			want: "is duplicated",
+		},
+		{
+			name: "unknown selected tool",
+			body: `{"goal":"test","tools":["lookup"],"tool_choice":{"type":"function","function":{"name":"other"}}}`,
+			want: "is not declared in tools",
+		},
+		{
+			name: "required without tools",
+			body: `{"goal":"test","tool_choice":"required"}`,
+			want: "requires at least one tool",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := parseAgentRunStartRequest(newAgentRunJSONRequestContext(test.body))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("parse error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestParseAgentRunStartRequestDefaultsToolChoiceByToolPresence(t *testing.T) {
+	withoutTools, err := parseAgentRunStartRequest(newAgentRunJSONRequestContext(`{"goal":"test"}`))
+	if err != nil {
+		t.Fatalf("parse without tools error = %v", err)
+	}
+	if withoutTools.CanonicalToolChoice.Kind != "none" {
+		t.Fatalf("tool choice without tools = %#v, want none", withoutTools.CanonicalToolChoice)
+	}
+	withTools, err := parseAgentRunStartRequest(newAgentRunJSONRequestContext(`{"goal":"test","tools":["lookup_profile"]}`))
+	if err != nil {
+		t.Fatalf("parse with tools error = %v", err)
+	}
+	if withTools.CanonicalToolChoice.Kind != "auto" {
+		t.Fatalf("tool choice with tools = %#v, want auto", withTools.CanonicalToolChoice)
+	}
+}
+
+func TestAgentRunToolTranscriptDTOsCorrelateResults(t *testing.T) {
+	calls, results := agentRunToolTranscriptDTOs([]runtime.ToolCall{
+		{
+			Index:     0,
+			Round:     0,
+			ID:        "call_lookup",
+			Type:      runtime.ToolTypeFunction,
+			Name:      "lookup",
+			Arguments: `{"query":"athena"}`,
+			Status:    runtime.ToolCallStatusCompleted,
+			Result: &runtime.ToolResult{
+				ToolCallID: "call_lookup",
+				Name:       "lookup",
+				Content:    `{"answer":"ok"}`,
+			},
+		},
+	})
+	if len(calls) != 1 || calls[0].ID != "call_lookup" || calls[0].Function.Arguments != `{"query":"athena"}` {
+		t.Fatalf("tool calls = %#v, want OpenAI-compatible call", calls)
+	}
+	if len(results) != 1 || results[0].Role != "tool" || results[0].ToolCallID != calls[0].ID {
+		t.Fatalf("tool results = %#v, want correlated tool message", results)
+	}
+	messages := agentRunToolMessages([]runtime.ToolCall{
+		{
+			Index:     0,
+			Round:     0,
+			ID:        "call_lookup",
+			Type:      runtime.ToolTypeFunction,
+			Name:      "lookup",
+			Arguments: `{"query":"athena"}`,
+			Status:    runtime.ToolCallStatusCompleted,
+			Result:    &runtime.ToolResult{ToolCallID: "call_lookup", Name: "lookup", Content: `{"answer":"ok"}`},
+		},
+	}, "done")
+	if len(messages) != 3 || messages[0].Role != "assistant" || messages[1].Role != "tool" || messages[2].Role != "assistant" {
+		t.Fatalf("messages = %#v, want assistant/tool/final assistant order", messages)
+	}
+	if messages[1].ToolCallID != messages[0].ToolCalls[0].ID {
+		t.Fatalf("tool message call id = %q, want %q", messages[1].ToolCallID, messages[0].ToolCalls[0].ID)
 	}
 }
 
@@ -53,7 +157,6 @@ func TestAgentRunEndpointsCreateReadTraceAndCancel(t *testing.T) {
 		"goal":"Summarize portfolio risk and next action",
 		"workspace_id":"workspace-agent-run",
 		"app_instance_id":"fund-assistant",
-		"tools":[{"type":"function","function":{"name":"market_quote"}}],
 		"context_assets":[{"asset_id":"policy.guardrail","asset_type":"policy","content":{"summary":"test"}}]
 	}`)
 
@@ -70,6 +173,9 @@ func TestAgentRunEndpointsCreateReadTraceAndCancel(t *testing.T) {
 	}
 	if created.TraceSummary == nil || created.TraceSummary.TraceCount < 2 {
 		t.Fatalf("trace summary = %#v, want writer and terminal traces", created.TraceSummary)
+	}
+	if len(created.Messages) != 1 || created.Messages[0].Role != "assistant" || created.Messages[0].Content == nil {
+		t.Fatalf("messages = %#v, want final assistant message", created.Messages)
 	}
 
 	read := ut.PerformRequest(httpServer.engine.Engine, http.MethodGet, "/api/agent/runs/"+created.RunID, nil)
