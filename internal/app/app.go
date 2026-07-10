@@ -185,6 +185,9 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 		time.Duration(cfg.ControlPlane.SessionTTLSecs)*time.Second,
 		cfg.ControlPlane.MaxFailedAttempts,
 	)
+	if err := governBuiltinToolDefinitions(toolDefs, toolCatalog, controlPlane, obs); err != nil {
+		panic(fmt.Errorf("configure built-in tool governance: %w", err))
+	}
 	effectiveDefs, err := controlPlane.ApplySkillOverrides(context.Background(), registry.List())
 	if err != nil {
 		panic(err)

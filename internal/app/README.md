@@ -17,6 +17,8 @@
 
 - `app.go`
   - 定义 `Service` 总编排器和服务装配入口，并把 runtime persistence store 注入默认 Eino Graph 执行面。
+- `builtin_tools.go`
+  - 在服务装配期发布通用确定性内置工具，并把每次调用接入治理决策与安全观测。
 - `app_test.go`
   - 验证 `Service` 主编排路径的基础行为。
 - `control_plane.go`

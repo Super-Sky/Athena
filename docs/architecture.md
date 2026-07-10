@@ -121,6 +121,7 @@ Agent Run API 当前以同步 MVP 方式复用 App Layer：
 - Transport 将 OpenAI-compatible `tools` / `tool_choice` 转为 provider-neutral runtime contract；Eino adapter 只在执行边界转换为 `ToolInfo`、模型调用选项和 `schema.Message`。
 - graph-native ReAct loop 通过 per-execution transcript 记录 assistant tool-call 轮次、稳定 ID、参数、tool result、错误与 timing；响应保留有序 message 结构，持久化 trace 仅投影安全摘要。
 - 当前 declaration 必须关联 Athena live catalog 中已启用的工具。业务应用可通过 authenticated remote registry 提供 HTTP callback；runtime resolver 与 Eino executor 对每次 operation 使用同一目录快照。
+- live catalog 同时包含 `calculator`、`current_time` 和 `json_schema_validate` 三个无副作用 Core 工具；它们不访问业务对象、网络或文件系统。HTTP/search/file 等能力仍需在受限 Enhancement 任务中接入。
 - `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；`cancel` 先暴露稳定路由和明确 unsupported / terminal response，不伪造异步取消。
 
 The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in transport, Eino-specific conversion stays in the runtime adapter, and app-owned implementations stay behind the versioned HTTP envelope.

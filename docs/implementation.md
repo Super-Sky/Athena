@@ -43,6 +43,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - runtime resolver 与 Eino executor 从线程安全 catalog 获取 per-operation snapshot；HTTP adapter 在网络前执行治理，并落实 origin、timeout、response budget、redirect、retry/idempotency 约束。
   - canonical transcript 继续承担 call/result/error trace；remote observer 补充 origin、attempt、duration、decision ID、status、error code 与 generic metric。
   - Business tool implementations and domain data remain app-owned.
+  - `internal/tools/builtin.go` 注册 calculator、current_time 和 JSON Schema subset validator；三者使用 existing catalog、governance 和 transcript 主链，不读网络、文件或业务数据。
 - Eino Graph runtime foundation：
   - 默认 chat/direct respond runtime 主链通过 `runtime.NewEinoGraphTurnExecutor` 包装现有 Eino ADK turn executor
   - 默认 turn agent 内部已使用 graph-native ChatModel / ToolsNode loop，并通过 Eino local state 保存 ReAct 消息历史

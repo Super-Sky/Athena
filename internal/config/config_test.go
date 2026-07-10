@@ -7,6 +7,9 @@ import (
 )
 
 func TestLoadFromEnvDefaultsToPostgresStores(t *testing.T) {
+	// Keep this default-value test independent from a developer's active APP_ENV.
+	// 让默认值测试不受开发机当前 APP_ENV 的影响。
+	t.Setenv("APP_ENV", "")
 	t.Setenv("HTTP_PORT", "8080")
 	t.Setenv("MAX_CONCURRENT_REQUESTS", "1")
 	t.Setenv("MAX_CONCURRENT_TOOLS", "1")

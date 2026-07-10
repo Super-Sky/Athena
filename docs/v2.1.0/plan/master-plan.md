@@ -62,6 +62,19 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 用本地 fake business service 验证注册、执行、超时、重试、错误和治理拒绝。
 - [x] 同步 OpenAPI、API/架构/实现/能力总览、feature 文档与真实场景测试。
 
+## Deterministic Built-in Tool Checklist
+
+- canonical issue: `Super-Sky/Athena#14`
+- branch: `codex/builtin-tools-issue-14`
+- base branch: `codex/remote-tool-registry-issue-9`
+- current state: `ready_for_delivery`
+
+- [x] 注册 calculator、current_time 和 JSON Schema subset validator 到 live catalog。
+- [x] 将三条内置工具标记为 `builtin_deterministic`、无副作用且无需确认。
+- [x] 为表达式边界、时区、schema mismatch、畸形 schema 和 runtime declaration admission 补齐测试。
+- [x] 全仓测试、内置工具 race、benchmark 与 Agent Run integration 测试通过；app package race 仍暴露既有 `scene.SetSourcesRoot` 测试初始化竞争，单独跟踪。
+- [ ] 补齐受限 HTTP/search/file Enhancement 方案，不在 Core 工具切片中实现。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
@@ -114,6 +127,8 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - Codex in-app Browser 已确认 `http://127.0.0.1:8091/swagger` 加载为 `Athena Swagger UI`；Swagger 大 DOM 读取超时，typed schema 由真实 `/swagger/openapi.json` 响应补充验证。
 - 2026-07-09 issue #9 已完成 remote registry、dynamic catalog、governance-before-network、HTTP callback、网络预算、safe trace/usage 与重启恢复。
 - 2026-07-09 全仓验证通过：`env -u APP_ENV go test ./...`；fake business service 测试覆盖注册、执行、redaction、deny、timeout、retry、correlation、response budget、redirect、restore 与 delete。
+- 2026-07-10 issue #14 开始增加确定性 Core 工具包：calculator、IANA timezone current_time 与 fail-closed JSON Schema subset validator；不引入网络、文件、凭据或业务对象。
+- 2026-07-10 issue #14 验证通过：`go test ./...`、`go test -race ./internal/tools`、calculator benchmark（约 `1893 ns/op`、`0 B/op`、`0 allocs/op`）及 Agent Run tool call ID/governance integration tests。`go test -race ./internal/tools ./internal/app ./internal/runtime` 仍报告 `scene.SetSourcesRoot` 的既有 app 测试初始化竞争，未由本工具切片引入。
 
 ## Next Iteration Plan
 

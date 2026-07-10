@@ -132,7 +132,7 @@ Agent Run API 当前暴露：
 - `POST /api/agent/runs`
   - 面向业务应用创建一次目标驱动 run，输入以 `goal`、`success_criteria`、`constraints`、`budget`、`context_assets`、`tools`、`memory_scope` 和 `governance_refs` 为核心。
   - Creates one app-facing goal-driven run. The current MVP executes synchronously through the existing app/runtime path and returns `run_id`, request status, stop reason, output, trace summary and checkpoint readouts when runtime persistence is configured.
-  - `tools` 接受 OpenAI-compatible function tool 或字符串简写，并转换为 provider-neutral runtime declarations；当前只允许调用 Athena 已注册的工具，业务远程工具注册与执行属于 issue `#9`。
+  - `tools` 接受 OpenAI-compatible function tool 或字符串简写，并转换为 provider-neutral runtime declarations；当前只允许调用 Athena 已注册的工具。内置 `calculator`、`current_time`、`json_schema_validate` 可直接启用；业务远程工具注册与执行属于 issue `#9`。
   - `tool_choice` 支持 `none`、`auto`、`required` 和指定 function object。省略时，无工具默认为 `none`，有工具默认为 `auto`。
   - The response exposes ordered `messages`, assistant `tool_calls`, correlated `tool_results`, stable call IDs and final `output`. Top-level call/result arrays are compatibility projections of the canonical transcript.
 - `GET /api/agent/runs/:runID`

@@ -12,6 +12,7 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 	einoschema "github.com/cloudwego/eino/schema"
 	modelparams "moss/internal/model/parameters"
+	runtimetools "moss/internal/tools"
 )
 
 func TestEinoGraphNativeAgentRunsToolsNodeLoopWithState(t *testing.T) {
@@ -110,6 +111,61 @@ func TestEinoGraphNativeAgentRunsToolsNodeLoopWithState(t *testing.T) {
 	}
 	if calls[0].Result == nil || calls[0].Result.ToolCallID != "call_lookup" || !strings.Contains(calls[0].Result.Content, `"answer":"ok"`) {
 		t.Fatalf("tool result = %#v, want correlated lookup result", calls[0].Result)
+	}
+}
+
+func TestEinoGraphNativeAgentPropagatesToolCallIDToGovernedTool(t *testing.T) {
+	ctx := context.Background()
+	model := &graphNativeRecordingModel{
+		generate: func(call int, _ []*einoschema.Message) (*einoschema.Message, error) {
+			switch call {
+			case 1:
+				return einoschema.AssistantMessage("", []einoschema.ToolCall{{
+					ID:       "call_governed",
+					Type:     "function",
+					Function: einoschema.FunctionCall{Name: "lookup", Arguments: `{"query":"athena"}`},
+				}}), nil
+			case 2:
+				return einoschema.AssistantMessage("governed tool completed", nil), nil
+			default:
+				return nil, fmt.Errorf("unexpected generate call %d", call)
+			}
+		},
+	}
+	var governanceCallID string
+	var observed runtimetools.GovernedToolEvent
+	definition, err := runtimetools.NewGovernedDefinition(runtimetools.Definition{
+		Name:            "lookup",
+		Description:     "Lookup test information.",
+		BaseTool:        &graphNativeLookupTool{},
+		ToolScope:       "builtin_deterministic",
+		SideEffectLevel: "none",
+	}, runtimetools.GovernedToolOptions{
+		Evaluate: func(_ context.Context, request runtimetools.GovernedToolRequest) (runtimetools.GovernedToolDecision, error) {
+			governanceCallID = request.ToolCallID
+			return runtimetools.GovernedToolDecision{DecisionID: "decision-governed", Decision: "allow"}, nil
+		},
+		Observe: func(_ context.Context, event runtimetools.GovernedToolEvent) {
+			observed = event
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGovernedDefinition() error = %v", err)
+	}
+	agent, err := NewEinoGraphNativeAgent(ctx, EinoGraphNativeAgentConfig{
+		Name:  "governed-agent",
+		Model: model,
+		Tools: []einotool.BaseTool{definition.BaseTool},
+	})
+	if err != nil {
+		t.Fatalf("NewEinoGraphNativeAgent() error = %v", err)
+	}
+	finalMessage := runGraphNativeAgent(t, adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent}), []*einoschema.Message{einoschema.UserMessage("lookup athena")})
+	if finalMessage.Content != "governed tool completed" {
+		t.Fatalf("final message = %#v, want governed completion", finalMessage)
+	}
+	if governanceCallID != "call_governed" || observed.ToolCallID != "call_governed" || observed.DecisionID != "decision-governed" {
+		t.Fatalf("governance call id=%q observation=%#v, want call_governed correlation", governanceCallID, observed)
 	}
 }
 
