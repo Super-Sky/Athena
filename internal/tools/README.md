@@ -2,7 +2,7 @@
 
 ## 模块职责
 
-- `internal/tools` 提供 tool registry、tool 元数据、remote HTTP adapter 和 tool middleware。
+- `internal/tools` 提供 deterministic built-in tools、tool registry、tool 元数据、remote HTTP adapter 和 tool middleware。
 
 ## 不负责什么
 
@@ -16,6 +16,10 @@
 
 - `demo.go`
   - 提供示例或演示性质的 tool 定义。
+- `builtin.go`
+  - 提供 calculator、IANA timezone current time 和受限 JSON Schema 校验等无副作用内置工具。
+- `builtin_test.go`
+  - 覆盖表达式边界、时区、schema 子集、畸形输入和可调用 catalog 注册。
 - `middleware.go`
   - 定义 tool middleware 能力。
 - `catalog.go`
@@ -36,6 +40,7 @@
 - `NewCatalog`
 - `NewRemoteDefinition`
 - `ValidateRemoteRegistration`
+- `BuiltinToolRegistry`
 
 ## 关键依赖
 
@@ -46,3 +51,4 @@
 - 新 tool 加入时，优先看 registry 和 middleware 是否需要同步调整。
 - Remote tool endpoint 必须命中显式 origin allowlist；注册中不得保存凭证。
 - 若 tool 元数据被控制面消费，应同步维护 scope、side effect、confirmation 和 schema summary 字段。
+- 内置 JSON Schema 校验只支持 `docs/features/feature-builtin-tools.md` 记录的子集；新增关键字前必须先补 fail-closed 契约和测试。

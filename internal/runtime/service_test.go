@@ -306,6 +306,38 @@ func TestServicePreparePreservesGovernedCanonicalToolDeclarations(t *testing.T) 
 	}
 }
 
+func TestServicePrepareAllowsBuiltinDeterministicToolDeclarations(t *testing.T) {
+	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
+	prepared, err := service.Prepare(context.Background(), &session.Session{ID: "sess-builtin-tools"}, Input{
+		RequestID: "req-builtin-tools",
+		SessionID: "sess-builtin-tools",
+		Query:     "calculate and validate a structured result",
+		ToolDeclarations: []ToolDefinition{
+			{Type: ToolTypeFunction, Function: ToolFunctionDefinition{Name: "calculator", Parameters: map[string]any{"type": "object"}}},
+			{Type: ToolTypeFunction, Function: ToolFunctionDefinition{Name: "json_schema_validate", Parameters: map[string]any{"type": "object"}}},
+		},
+		ModelSelection: &model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if !runtimeContainsString(prepared.Spec.Tools.AllowedTools, "calculator") || !runtimeContainsString(prepared.Spec.Tools.AllowedTools, "json_schema_validate") {
+		t.Fatalf("allowed tools = %#v, want deterministic built-ins", prepared.Spec.Tools.AllowedTools)
+	}
+	if len(prepared.Spec.Tools.Declarations) != 2 {
+		t.Fatalf("tool declarations = %#v, want two canonical built-ins", prepared.Spec.Tools.Declarations)
+	}
+}
+
 func TestServicePrepareRejectsUnregisteredCanonicalToolDeclaration(t *testing.T) {
 	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
 	_, err := service.Prepare(context.Background(), &session.Session{ID: "sess-unknown-tool"}, Input{

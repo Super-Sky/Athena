@@ -1,5 +1,5 @@
-// registry.go defines tool metadata wrappers built on top of the demo tool registry.
-// registry.go 定义构建在 demo tool registry 之上的 tool 元数据包装结构。
+// registry.go defines tool metadata wrappers for Athena demo and deterministic built-in tools.
+// registry.go 定义 Athena demo 与确定性内置工具的元数据包装结构。
 package tools
 
 import (
@@ -29,8 +29,42 @@ func DemoDefinitions() (map[string]Definition, error) {
 	if err != nil {
 		return nil, err
 	}
+	builtinRegistry, err := BuiltinToolRegistry()
+	if err != nil {
+		return nil, err
+	}
 
 	return map[string]Definition{
+		"calculator": {
+			Name:                 "calculator",
+			Description:          "Evaluate a bounded arithmetic expression.",
+			BaseTool:             builtinRegistry["calculator"],
+			ToolScope:            "builtin_deterministic",
+			RequiresConfirmation: false,
+			SideEffectLevel:      "none",
+			InputSchemaSummary:   "expression:string",
+			OutputSchemaSummary:  "expression and finite numeric value",
+		},
+		"current_time": {
+			Name:                 "current_time",
+			Description:          "Read the current time in an IANA timezone.",
+			BaseTool:             builtinRegistry["current_time"],
+			ToolScope:            "builtin_deterministic",
+			RequiresConfirmation: false,
+			SideEffectLevel:      "none",
+			InputSchemaSummary:   "timezone:IANA string optional",
+			OutputSchemaSummary:  "timezone, RFC3339 time, unix seconds",
+		},
+		"json_schema_validate": {
+			Name:                 "json_schema_validate",
+			Description:          "Validate a JSON-compatible value against the Athena JSON Schema subset.",
+			BaseTool:             builtinRegistry["json_schema_validate"],
+			ToolScope:            "builtin_deterministic",
+			RequiresConfirmation: false,
+			SideEffectLevel:      "none",
+			InputSchemaSummary:   "schema:object, value:JSON-compatible",
+			OutputSchemaSummary:  "valid boolean and validation errors",
+		},
 		"lookup_profile": {
 			Name:                 "lookup_profile",
 			Description:          "Look up a user's basic profile.",

@@ -286,6 +286,7 @@ func newRuntimeGraphNativeToolsNode(ctx context.Context, selectedTools []tool.Ba
 		Tools:               selectedTools,
 		ExecuteSequentially: false,
 		ToolCallMiddlewares: []compose.ToolMiddleware{
+			runtimetools.NewToolCallContextMiddleware(),
 			toolTranscriptMiddleware(transcript),
 			toolsTraceMiddleware(),
 		},
