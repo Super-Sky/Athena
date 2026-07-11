@@ -101,8 +101,11 @@ Transport 只处理协议，不承载领域推理。
 - `POST /api/agent/runs/:runID/resume`
 - `POST /api/agent/runs/:runID/cancel`
 - `GET /api/agent/runs/:runID/trace`
+- `GET /api/agent/runs/:runID/timeline`
 
 This API is an app-facing runtime entrypoint, not a business-domain API. It accepts goal, criteria, constraints, budget, context assets, memory scope, governance refs and declarative tool inputs, then maps them into the generic app/runtime path. Domain objects remain owned by the host application.
+
+The timeline endpoint is a read projection over Athena-owned runtime records. It merges loop steps, lifecycle events, callback/tool traces, usage and delivery projections by timestamp, preserving only safe labels, redacted payloads and metadata for the admin detail view. It does not become a second event store or a host application's business audit log.
 
 ### 3.3 App Layer
 

@@ -37,6 +37,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - OpenAI-compatible function schemas 与 `tool_choice` 会在 transport 校验后转换为 `runtime.ToolDefinition` 和 canonical model policy；非法 schema、重复名称和错误 choice 会在执行前拒绝
   - `ToolCallTranscript` 从 Eino model / ToolsNode loop 采集多轮调用、稳定 ID、结果、错误与 timing，并投影为有序 `messages`、顶层 `tool_calls / tool_results` 和脱敏 runtime trace
   - `GET /api/agent/runs/:runID` 与 `GET /api/agent/runs/:runID/trace` 复用 runtime persistence read boundary 返回 run 状态、trace timeline、usage、projection 和 checkpoint safe readouts
+  - `internal/server/trace_timeline.go` 复用上述 readout，将 loop step、lifecycle、trace、usage 与 delivery projection 按时间投影成 `GET /api/agent/runs/:runID/timeline`；Control Plane 的同名 read path 和 Admin 展示共用该投影，不创建第二套 trace 存储
   - `POST /api/agent/runs/:runID/resume` 先校验原 run 可读，再创建一次带 `resumed_from_run_id` 的 follow-up run；`POST /api/agent/runs/:runID/cancel` 当前返回同步 MVP 的稳定 unsupported / terminal response
   - The contract is generic and app-facing. Business domains such as fund analysis must remain in the host app and enter Athena through context, assets, payload, tools and governance references.
   - app-owned remote tools 可通过 authenticated Control Plane API list/upsert/delete，并在启动时从 control-plane document 恢复。
@@ -84,6 +85,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `/api/control-plane/runtime/runs/:runID/steps`
   - `/api/control-plane/runtime/runs/:runID/lifecycle`
   - `/api/control-plane/runtime/runs/:runID/traces`
+  - `/api/control-plane/runtime/runs/:runID/timeline`
   - `/api/control-plane/runtime/runs/:runID/usage`
   - `/api/control-plane/runtime/runs/:runID/projections`
   - `/api/control-plane/runtime/runs/:runID/checkpoints`
@@ -112,6 +114,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `System Validation` 页面支持 MCP / Sandbox Validation，能展示 deterministic validation run 的 `external_sandbox_ref` mode、execution ref、structured result、audit summary、sandbox trace 和 projection
   - `System Validation` 页面支持 contract foundation readout，能展示 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer 和 foundation capability surface
   - `System Validation` 页面支持 foundation JSON 编辑与保存，可直接调用 runtime contract/task type/hook binding 控制面写接口并回读验证
+  - `System Validation` 页面支持按时间展开 Agent Trace Timeline，显示 loop/model/tool/governance/usage/delivery 的安全详情，不显示 raw prompt、tool args/result 或业务载荷
   - runtime foundation snapshot 会在服务启动和 `SyncSystemResources` 后自动同步；新的 runtime validation run 会带出 `runtime_hook_binding` traces 与 `runtime_hook` usage
   - `Release Readiness` 页面使用 bootstrap、system resources、provider/model 和 OpenAPI 数据汇总 v2.0.0 成品门禁，并把 gate 标记为 ready / warning / blocked；页面可直接触发 runtime validation 并展示 run / step / MCP / sandbox 结果
 

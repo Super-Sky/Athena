@@ -26,6 +26,7 @@ import type {
   RuntimeTaskTypeUpsertInput,
   RuntimeTuning,
   RuntimeTrace,
+  RuntimeTraceTimeline,
   RuntimeUsage,
   RuntimeValidationRunInput,
   RuntimeValidationRunResponse,
@@ -239,6 +240,10 @@ export function loadRuntimeLifecycleEvents(runID: string) {
 export function loadRuntimeTraces(runID: string, limit = 100) {
   const query = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : "";
   return request<{ items: RuntimeTrace[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/traces${query}`);
+}
+
+export function loadRuntimeTimeline(runID: string) {
+  return request<RuntimeTraceTimeline>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/timeline`);
 }
 
 export function loadRuntimeUsage(runID: string, limit = 100) {

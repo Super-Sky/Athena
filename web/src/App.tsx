@@ -30,6 +30,7 @@ import {
   loadRuntimeRuns,
   loadRuntimeSteps,
   loadRuntimeTraces,
+  loadRuntimeTimeline,
   loadRuntimeUsage,
   loadToolGovernanceDecisions,
   loadToolGovernancePolicy,
@@ -98,6 +99,7 @@ import type {
   RuntimeTaskTypeRegistration,
   RuntimeTaskTypeUpsertInput,
   RuntimeTrace,
+  RuntimeTraceTimeline,
   RuntimeValidationRunResponse,
   RuntimeUsage,
   SceneConfig,
@@ -2576,6 +2578,7 @@ function SystemValidationPanel({
   const [runtimeSteps, setRuntimeSteps] = useState<RuntimeStep[]>([]);
   const [runtimeLifecycleEvents, setRuntimeLifecycleEvents] = useState<RuntimeLifecycleEvent[]>([]);
   const [runtimeTraces, setRuntimeTraces] = useState<RuntimeTrace[]>([]);
+  const [runtimeTimeline, setRuntimeTimeline] = useState<RuntimeTraceTimeline | null>(null);
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage[]>([]);
   const [runtimeProjections, setRuntimeProjections] = useState<RuntimeProjectionCandidate[]>([]);
   const [runtimeCheckpoints, setRuntimeCheckpoints] = useState<RuntimeCheckpointReadout[]>([]);
@@ -2724,17 +2727,19 @@ function SystemValidationPanel({
         setRuntimeSteps([]);
         setRuntimeLifecycleEvents([]);
         setRuntimeTraces([]);
+        setRuntimeTimeline(null);
         setRuntimeUsage([]);
         setRuntimeProjections([]);
         setRuntimeCheckpoints([]);
         setRuntimeReadError("");
         return;
       }
-      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextUsage, nextProjections, nextCheckpoints] = await Promise.all([
+      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextTimeline, nextUsage, nextProjections, nextCheckpoints] = await Promise.all([
         loadRuntimeRun(nextRunID),
         loadRuntimeSteps(nextRunID),
         loadRuntimeLifecycleEvents(nextRunID),
         loadRuntimeTraces(nextRunID),
+        loadRuntimeTimeline(nextRunID),
         loadRuntimeUsage(nextRunID),
         loadRuntimeProjectionCandidates(nextRunID),
         loadRuntimeCheckpoints(nextRunID)
@@ -2743,6 +2748,7 @@ function SystemValidationPanel({
       setRuntimeSteps(nextSteps.items ?? []);
       setRuntimeLifecycleEvents(nextLifecycle.items ?? []);
       setRuntimeTraces(nextTraces.items ?? []);
+      setRuntimeTimeline(nextTimeline);
       setRuntimeUsage(nextUsage.items ?? []);
       setRuntimeProjections(nextProjections.items ?? []);
       setRuntimeCheckpoints(nextCheckpoints.items ?? []);
@@ -2758,6 +2764,7 @@ function SystemValidationPanel({
       setRuntimeSteps([]);
       setRuntimeLifecycleEvents([]);
       setRuntimeTraces([]);
+      setRuntimeTimeline(null);
       setRuntimeUsage([]);
       setRuntimeProjections([]);
       setRuntimeCheckpoints([]);
@@ -3385,16 +3392,24 @@ function SystemValidationPanel({
                 <span>{summarizeRuntimeCheckpoints(runtimeCheckpoints)}</span>
               </div>
             </div>
-            <div className="runtime-timeline">
-              {runtimeSteps.map((step) => (
-                <div className="runtime-timeline-row" key={step.id}>
-                  <span className="runtime-sequence">{step.sequence}</span>
-                  <div>
-                    <strong>{step.name || step.step_type || step.id}</strong>
-                    <span>{step.status} · {step.step_type || "step"} · {runtimeStepLifecycleCount(runtimeLifecycleEvents, step.id)} events</span>
-                  </div>
-                  <small>{formatRuntimeTime(step.updated_at || step.created_at)}</small>
+            <div className="runtime-record-list" data-testid="runtime-trace-timeline">
+              <div className="section-header">
+                <div>
+                  <h3>Agent Trace Timeline</h3>
+                  <p className="section-help">按时间投影 loop step、model、tool、governance、usage 与 delivery；详情只包含安全字段。</p>
                 </div>
+                <span className="muted">{runtimeTimeline?.summary.item_count ?? 0} items · {runtimeTimeline?.summary.failure_count ?? 0} failures</span>
+              </div>
+              {(runtimeTimeline?.items ?? []).map((item) => (
+                <details className="runtime-record-row runtime-timeline-detail" key={item.id}>
+                  <summary>
+                    <span className="status-label">{item.kind}</span>
+                    <strong>{item.summary}</strong>
+                    <span>{item.status || "recorded"} · {item.source}{item.duration_ms !== undefined ? ` · ${item.duration_ms} ms` : ""}</span>
+                    <small>{formatRuntimeTime(item.timestamp)}</small>
+                  </summary>
+                  <pre className="debug-pre">{formatMaybeJSON({ step_id: item.step_id, error: item.error, detail: item.detail })}</pre>
+                </details>
               ))}
             </div>
             {runtimeCheckpoints.length > 0 ? (

@@ -28,6 +28,10 @@
   - 暴露应用拥有 memory write/query 与 context asset resolve/assemble HTTP 合约。
 - `external_memory_test.go`
   - 验证 ownership isolation、摘要资产解析和压缩响应形状。
+- `trace_timeline.go`
+  - 将既有 runtime step、lifecycle、trace、usage 和 projection 安全投影为 app-facing / Control Plane 共用的统一时间线。
+- `trace_timeline_test.go`
+  - 验证时间顺序、model/tool/governance 分类、失败信息和路由注册，不创建重复 trace store。
 - `control_plane.go`
   - 暴露控制面 bootstrap、scene/skill/runtime-config、remote tool registry 接口和控制面 CORS 处理。
 - `remote_tools_test.go`

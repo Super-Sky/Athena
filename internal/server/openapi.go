@@ -303,6 +303,19 @@ func buildOpenAPIPaths() map[string]any {
 				},
 			},
 		},
+		"/api/agent/runs/{runID}/timeline": map[string]any{
+			"get": map[string]any{
+				"tags":        []string{"agent-runs"},
+				"summary":     "读取一次 Agent Run 的统一 trace 时间线",
+				"operationId": "getAgentRunTimeline",
+				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"responses": map[string]any{
+					"200": jsonResponse("Agent Run timeline", "AgentRunTimelineResponse"),
+					"404": jsonResponse("Agent Run 不存在", "ErrorResponse"),
+					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
+				},
+			},
+		},
 		"/api/memory/write": map[string]any{
 			"post": map[string]any{
 				"tags":        []string{"memory"},
@@ -586,6 +599,17 @@ func buildOpenAPIPaths() map[string]any {
 				),
 				"responses": map[string]any{
 					"200": jsonResponse("runtime trace 列表", "RuntimeTraceListResponse"),
+				},
+			},
+		},
+		"/api/control-plane/runtime/runs/{runID}/timeline": map[string]any{
+			"get": map[string]any{
+				"tags":        []string{"control-plane"},
+				"summary":     "读取 runtime run 的统一 trace 时间线",
+				"operationId": "getControlPlaneRuntimeTimeline",
+				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"responses": map[string]any{
+					"200": jsonResponse("runtime trace timeline", "AgentRunTimelineResponse"),
 				},
 			},
 		},
@@ -1526,6 +1550,30 @@ func buildOpenAPISchemas() map[string]any {
 			"checkpoints": arraySchema(refSchema("RuntimeCheckpointReadout")),
 			"summary":     refSchema("AgentRunTraceSummary"),
 		}, []string{"run", "steps", "events", "traces", "usage", "projections", "checkpoints", "summary"}),
+		"AgentRunTimelineItem": objectSchema(map[string]any{
+			"id":          stringSchema("Stable projected item ID.", "trace:trace_001"),
+			"kind":        stringSchema("Projected category such as loop_step, model_call, tool_call, governance, usage, or delivery.", "tool_call"),
+			"timestamp":   dateTimeSchema("Source record timestamp.", "2026-07-12T09:00:00Z"),
+			"duration_ms": map[string]any{"type": "integer", "format": "int64"},
+			"status":      map[string]any{"type": "string"},
+			"source":      map[string]any{"type": "string"},
+			"summary":     map[string]any{"type": "string"},
+			"step_id":     map[string]any{"type": "string"},
+			"error":       map[string]any{"type": "object", "additionalProperties": true},
+			"detail":      map[string]any{"type": "object", "additionalProperties": true, "description": "Safe labels, redacted payload, and metadata only."},
+		}, []string{"id", "kind", "timestamp", "source", "summary"}),
+		"AgentRunTimelineSummary": objectSchema(map[string]any{
+			"run_id":        map[string]any{"type": "string"},
+			"item_count":    map[string]any{"type": "integer", "format": "int32"},
+			"failure_count": map[string]any{"type": "integer", "format": "int32"},
+			"started_at":    map[string]any{"type": "string", "format": "date-time"},
+			"completed_at":  map[string]any{"type": "string", "format": "date-time"},
+		}, []string{"run_id", "item_count", "failure_count"}),
+		"AgentRunTimelineResponse": objectSchema(map[string]any{
+			"run":     refSchema("RuntimeRun"),
+			"items":   arraySchema(refSchema("AgentRunTimelineItem")),
+			"summary": refSchema("AgentRunTimelineSummary"),
+		}, []string{"run", "items", "summary"}),
 		"RuntimeScenarioRequest": objectSchema(map[string]any{
 			"task_type":             stringSchema("通用 runtime task type；场景化值仅为兼容或未来注册式语义。", "chat"),
 			"task_subtype":          stringSchema("可选任务子类型。", "direct_response"),

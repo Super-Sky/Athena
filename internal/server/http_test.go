@@ -1438,6 +1438,12 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/traces"]; !ok {
 		t.Fatalf("openapi spec missing runtime traces path: %#v", paths)
 	}
+	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/timeline"]; !ok {
+		t.Fatalf("openapi spec missing runtime timeline path: %#v", paths)
+	}
+	if _, ok := paths["/api/agent/runs/{runID}/timeline"]; !ok {
+		t.Fatalf("openapi spec missing agent timeline path: %#v", paths)
+	}
 	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/checkpoints"]; !ok {
 		t.Fatalf("openapi spec missing runtime checkpoints path: %#v", paths)
 	}

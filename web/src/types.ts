@@ -144,6 +144,31 @@ export type RuntimeTrace = {
   created_at: string;
 };
 
+export type RuntimeTraceTimelineItem = {
+  id: string;
+  kind: string;
+  timestamp: string;
+  duration_ms?: number;
+  status?: string;
+  source: string;
+  summary: string;
+  step_id?: string;
+  error?: Record<string, unknown>;
+  detail?: Record<string, unknown>;
+};
+
+export type RuntimeTraceTimeline = {
+  run: RuntimeRun;
+  items: RuntimeTraceTimelineItem[];
+  summary: {
+    run_id: string;
+    item_count: number;
+    failure_count: number;
+    started_at?: string;
+    completed_at?: string;
+  };
+};
+
 export type RuntimeUsage = {
   id: string;
   run_id: string;

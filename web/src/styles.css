@@ -955,6 +955,21 @@ code {
   background: #ffffff;
 }
 
+.runtime-timeline-detail summary {
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  list-style: none;
+}
+
+.runtime-timeline-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.runtime-timeline-detail .debug-pre {
+  margin: 10px 0 0;
+}
+
 .runtime-timeline-row {
   border-radius: 8px;
   padding: 12px;

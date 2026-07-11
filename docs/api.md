@@ -49,6 +49,7 @@ API 语义按以下边界理解：
 - `GET /api/control-plane/runtime/runs/:runID/steps`
 - `GET /api/control-plane/runtime/runs/:runID/lifecycle`
 - `GET /api/control-plane/runtime/runs/:runID/traces`
+- `GET /api/control-plane/runtime/runs/:runID/timeline`
 - `GET /api/control-plane/runtime/runs/:runID/usage`
 - `GET /api/control-plane/runtime/runs/:runID/projections`
 - `GET /api/control-plane/runtime/runs/:runID/checkpoints`
@@ -147,6 +148,9 @@ Agent Run API 当前暴露：
 - `GET /api/agent/runs/:runID/trace`
   - 返回该 run 的 `RuntimeRun`、`RuntimeStep`、`RuntimeLifecycleEvent`、`RuntimeTrace`、`Usage`、`ProjectionCandidate`、checkpoint safe readouts 和聚合 summary。
   - Returns the full safe trace timeline assembled from runtime persistence.
+- `GET /api/agent/runs/:runID/timeline`
+  - 将现有的 step、lifecycle、trace、usage 和 projection records 依时间投影为一条业务应用可直接展示的列表；每条 entry 包含 timestamp、duration、status、source、error 和安全 detail。
+  - Projects existing persisted records into one ordered, app-readable timeline. It does not create a duplicate trace store and never returns raw prompts, tool arguments, tool results, or business payloads.
 
 Agent Run API 边界：
 
@@ -156,6 +160,8 @@ Agent Run API 边界：
 - Raw tool arguments/results are available to the synchronous caller, while persisted traces use a redacted correlation timeline.
 - 省略或传入 `task_type=agent_run` 时，当前内部 runtime task type 映射到已注册 `chat`，并把 `agent_run.v1` 契约写入 app context / input payload；未来注册式 task type 可以显式传入其他 `task_type`。
 - If runtime persistence is not configured, read/trace endpoints return `503`; create responses may still complete but cannot expose a persisted trace.
+
+Control Plane additionally exposes `GET /api/control-plane/runtime/runs/:runID/timeline` behind its existing authentication boundary. The Admin UI renders this same projection as expandable safe-detail rows for model, tool, governance, context, loop, usage, and delivery investigation.
 
 ## 应用拥有的 Memory / Context API
 

@@ -88,6 +88,18 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 覆盖 HTTP ownership isolation、resolve/assemble 和无效 ownership 测试。
 - [ ] 为生产部署增加可配置的 durable persistence adapter；当前线程安全 in-process store 仅用于 local/demo MVP。
 
+## Agent Trace Timeline Checklist
+
+- canonical issue: `Super-Sky/Athena#11`
+- branch: `codex/agent-trace-timeline-issue-11`
+- base branch: `codex/external-memory-issue-10`
+- current state: `ready_for_delivery`
+
+- [x] 复用 persisted step、lifecycle、trace、usage 与 projection records，按时间投影统一 timeline。
+- [x] 每条 timeline entry 返回 timestamp、duration、status、source、error metadata 与安全 detail，不复制 raw payload。
+- [x] 提供 app-facing 与 Control Plane read API，并让后台展示可展开 step/detail 列表。
+- [x] 覆盖时间顺序、model/tool/governance 分类、失败 detail、路由与 OpenAPI 测试。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
