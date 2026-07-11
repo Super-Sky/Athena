@@ -157,6 +157,17 @@ Agent Run API 边界：
 - 省略或传入 `task_type=agent_run` 时，当前内部 runtime task type 映射到已注册 `chat`，并把 `agent_run.v1` 契约写入 app context / input payload；未来注册式 task type 可以显式传入其他 `task_type`。
 - If runtime persistence is not configured, read/trace endpoints return `503`; create responses may still complete but cannot expose a persisted trace.
 
+## 应用拥有的 Memory / Context API
+
+Athena 提供四条通用 API，供业务应用保存安全摘要、按归属读取摘要，并组装为可注入的上下文资产：
+
+- `POST /api/memory/write` 写入 `app_id + owner_id + scope` 三元组下的版本化摘要；必填字段为 `kind` 与 `summary`，可附带应用定义的 `schema_version` 和字符串元数据。
+- `POST /api/memory/query` 只能按完整的 `app_id + owner_id + scope` 查询。响应返回安全的 `memory_query` trace，不会跨 owner 或 scope 合并结果。
+- `POST /api/context-assets/resolve` 将查询结果转成只读 `memory_view` 资产，`source_kind=app_memory`，可直接作为 `context_assets` 注入。
+- `POST /api/context-assets/assemble` 将应用记忆摘要与调用方传入的通用 assets 组装成 `UsageTrace`、effective views 和 `external_context_compression.v1` 统计形状。
+
+The contract deliberately accepts summaries rather than domain records. `app_id`, `owner_id`, and `scope` are mandatory on every read and write; the response trace records only the operation and record IDs. Athena core does not create fund, portfolio, trade, or other business tables. The MVP store is process-local and is therefore suitable for local/demo wiring; an application must use its own durable business store until a configured persistence adapter is introduced.
+
 Validation MCP 当前暴露：
 
 - `GET /api/control-plane/validation-mcp/server` 返回内置 `athena-validation-mcp` server 描述、轻量 transport 和已摄取 tool schemas。

@@ -33,24 +33,25 @@ import (
 // Service is the app-layer orchestrator that bridges transport, session rules, fast path hooks, and runtime execution.
 // Service 是 app 层的总编排器，负责衔接 transport、session 规则、fast path 挂点与 runtime 执行。
 type Service struct {
-	Config        config.Config
-	Policy        policy.CapabilityPolicy
-	SessionStore  session.Store
-	ModelStore    model.Store
-	ModelProvider model.Provider
-	ToolCatalog   *tools.Catalog
-	SkillStore    skills.Store
-	PackageStore  skills.PackageStore
-	SkillLoader   skills.Loader
-	ControlPlane  *controlplane.Manager
-	Observability *observability.Manager
-	Runtime       *runtime.Service
-	RuntimeStore  runtime.RuntimePersistenceStore
-	ValidationMCP *validationmcp.Server
-	FastPath      FastPathEvaluator
-	requestSlots  chan struct{}
-	remoteToolMu  sync.Mutex
-	remoteTools   map[string]struct{}
+	Config         config.Config
+	Policy         policy.CapabilityPolicy
+	SessionStore   session.Store
+	ModelStore     model.Store
+	ModelProvider  model.Provider
+	ToolCatalog    *tools.Catalog
+	SkillStore     skills.Store
+	PackageStore   skills.PackageStore
+	SkillLoader    skills.Loader
+	ControlPlane   *controlplane.Manager
+	Observability  *observability.Manager
+	Runtime        *runtime.Service
+	RuntimeStore   runtime.RuntimePersistenceStore
+	ExternalMemory *memory.ExternalStore
+	ValidationMCP  *validationmcp.Server
+	FastPath       FastPathEvaluator
+	requestSlots   chan struct{}
+	remoteToolMu   sync.Mutex
+	remoteTools    map[string]struct{}
 }
 
 // ChatRequest is the app-layer request contract before runtime normalization.
@@ -234,23 +235,24 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 	}
 
 	service := &Service{
-		Config:        cfg,
-		Policy:        p,
-		SessionStore:  sessionStore,
-		ModelStore:    modelStore,
-		ModelProvider: provider,
-		ToolCatalog:   toolCatalog,
-		SkillStore:    skillStore,
-		PackageStore:  packageStore,
-		SkillLoader:   skillLoader,
-		ControlPlane:  controlPlane,
-		Observability: obs,
-		Runtime:       rt,
-		RuntimeStore:  runtimeStore,
-		ValidationMCP: validationmcp.NewServer(),
-		FastPath:      NoopFastPathEvaluator{},
-		requestSlots:  make(chan struct{}, cfg.Runtime.MaxConcurrentRequests),
-		remoteTools:   make(map[string]struct{}),
+		Config:         cfg,
+		Policy:         p,
+		SessionStore:   sessionStore,
+		ModelStore:     modelStore,
+		ModelProvider:  provider,
+		ToolCatalog:    toolCatalog,
+		SkillStore:     skillStore,
+		PackageStore:   packageStore,
+		SkillLoader:    skillLoader,
+		ControlPlane:   controlPlane,
+		Observability:  obs,
+		Runtime:        rt,
+		RuntimeStore:   runtimeStore,
+		ExternalMemory: memory.NewExternalStore(),
+		ValidationMCP:  validationmcp.NewServer(),
+		FastPath:       NoopFastPathEvaluator{},
+		requestSlots:   make(chan struct{}, cfg.Runtime.MaxConcurrentRequests),
+		remoteTools:    make(map[string]struct{}),
 	}
 	if err := service.reloadRemoteToolCatalog(context.Background()); err != nil {
 		panic(fmt.Errorf("restore remote tool catalog failed: %w", err))

@@ -16,7 +16,7 @@ v2.1.0 只接受能强化通用 agent runtime foundation，或能证明 foundati
 - `Enhancement`: scenario packages, app-specific skills, app knowledge, provider adapters.
 - `Application / Business Truth`: business evidence, formal business object state, and app-owned rules.
 
-Supplement、Compaction、Memory、Context ownership、Capability Studio、external MCP registry、cleanup jobs 和业务 evidence ownership 继续保持 deferred，除非后续 issue 明确拉入。
+Supplement、Compaction、Capability Studio、external MCP registry、cleanup jobs 和业务 evidence ownership 继续保持 deferred，除非后续 issue 明确拉入。Issue `#10` 已明确拉入 scoped memory / context ownership API；它只保存应用摘要，业务 evidence ownership 仍保持 deferred。
 
 ## Batch 2 Checklist
 
@@ -74,6 +74,19 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 为表达式边界、时区、schema mismatch、畸形 schema 和 runtime declaration admission 补齐测试。
 - [x] 全仓测试、内置工具 race、benchmark 与 Agent Run integration 测试通过；app package race 仍暴露既有 `scene.SetSourcesRoot` 测试初始化竞争，单独跟踪。
 - [ ] 补齐受限 HTTP/search/file Enhancement 方案，不在 Core 工具切片中实现。
+
+## External Memory and Context Asset Checklist
+
+- canonical issue: `Super-Sky/Athena#10`
+- branch: `codex/external-memory-issue-10`
+- base branch: `codex/builtin-tools-issue-14`
+- current state: `ready_for_delivery`
+
+- [x] 提供带 `app_id + owner_id + scope` ownership 三元组的应用摘要 write/query API。
+- [x] 将作用域摘要解析为只读 `app_memory` / `memory_view` assets，并返回操作 trace。
+- [x] 组装 effective views 与 `external_context_compression.v1` summary 形状，不引入业务领域表。
+- [x] 覆盖 HTTP ownership isolation、resolve/assemble 和无效 ownership 测试。
+- [ ] 为生产部署增加可配置的 durable persistence adapter；当前线程安全 in-process store 仅用于 local/demo MVP。
 
 ## Acceptance Gates
 
