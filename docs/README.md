@@ -13,6 +13,7 @@ Recommended reading order:
 7. `云端部署与交付.md`
 8. `platform-依赖与增强.md`
 9. `当前能力总览.md`
+10. `local-docker-runtime.zh-CN.md` / `local-docker-runtime.en-US.md`
 
 Notes:
 

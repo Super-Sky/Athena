@@ -1,0 +1,42 @@
+# Docker Runtime Profile / Docker 运行 Profile
+
+## Background / 背景
+
+Issue `Super-Sky/Athena#12` introduces a local Docker Compose profile for Athena as the generic Agent Runtime consumed by business applications. It provides infrastructure only and never introduces fund-specific tables or business objects into Athena core.
+
+Issue `Super-Sky/Athena#12` 为作为业务应用通用 Agent Runtime 的 Athena 提供本地 Docker Compose profile。它只提供基础设施，不会把基金专属表或业务对象引入 Athena core。
+
+## Runtime Shape / 运行形态
+
+`deploy/docker-compose.runtime.yml` contains:
+
+- `postgres`: Athena session/model/runtime persistence dependency.
+- `redis`: cache, rate-limit, and async-work topology dependency; not business truth.
+- `athena-api`: waits for PostgreSQL and Redis, runs migration, then starts the API healthcheck.
+- `athena-web`: optional `control-plane` profile, enabled only when the Web UI is needed.
+
+`deploy/docker-compose.runtime.yml` 包含 PostgreSQL、Redis、Athena API 和可选 Control Plane Web。API 在两个依赖健康后先执行迁移再启动；Redis 只预留给缓存、限流和异步任务，不保存业务真相。
+
+## Integration Contract / 对接契约
+
+An app on the Compose network uses `ATHENA_BASE_URL=http://athena-api:8080`. A host-run app uses `ATHENA_EXTERNAL_BASE_URL` (default `http://127.0.0.1:8080`). `ATHENA_AUTH_TOKEN` remains optional and is supplied only when Athena enables authentication middleware.
+
+同一 Compose 网络的应用使用 `ATHENA_BASE_URL=http://athena-api:8080`；宿主机应用使用 `ATHENA_EXTERNAL_BASE_URL`（默认 `http://127.0.0.1:8080`）。只有 Athena 启用认证 middleware 时才设置可选 `ATHENA_AUTH_TOKEN`，不得提交 token。
+
+## Verification / 验证
+
+```bash
+bash -n scripts/smoke_runtime_compose.sh
+docker compose --env-file deploy/athena.runtime.env.example -f deploy/docker-compose.runtime.yml config
+ATHENA_RUNTIME_ENV_FILE=deploy/athena.runtime.env.example ./scripts/smoke_runtime_compose.sh
+```
+
+The static configuration and smoke-script checks pass. A real `docker compose up --build -d` attempt is currently blocked because the local Docker daemon is not running; it must be rerun after Docker Desktop is available.
+
+静态配置和 smoke script 校验已通过。真实 `docker compose up --build -d` 当前因本机 Docker daemon 未运行而受阻；Docker Desktop 可用后必须重新执行。
+
+## Skill Decision / Skill 结论
+
+No feature-specific skill is added. `repo-task-delivery`, `doc-index-sync`, `feature-doc-skill-sync`, and the local runtime documents cover the recurring deployment checks.
+
+当前不新增 feature 专属 skill。`repo-task-delivery`、`doc-index-sync`、`feature-doc-skill-sync` 与本地运行文档已覆盖重复部署检查。

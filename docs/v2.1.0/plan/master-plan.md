@@ -100,6 +100,19 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 提供 app-facing 与 Control Plane read API，并让后台展示可展开 step/detail 列表。
 - [x] 覆盖时间顺序、model/tool/governance 分类、失败 detail、路由与 OpenAPI 测试。
 
+## Docker Runtime Profile Checklist
+
+- canonical issue: `Super-Sky/Athena#12`
+- branch: `codex/docker-runtime-profile-issue-12`
+- base branch: `codex/agent-trace-timeline-issue-11`
+- current state: `implementing`
+
+- [x] 新增 Athena API、PostgreSQL、Redis 与可选 Control Plane Web 的 local Compose profile。
+- [x] 为数据库、缓存、API 与 Web 定义 healthcheck 和 `depends_on` readiness。
+- [x] 提供业务应用的内部/外部 Athena base URL 与可选 token 环境契约。
+- [x] 提供可重复的 Compose config / 可选 live health smoke 脚本和中英文启动文档。
+- [ ] 在 Docker daemon 恢复后完成真实 `docker compose up`、API health 和 Postgres/Redis readiness smoke；当前本机 daemon 未运行。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
