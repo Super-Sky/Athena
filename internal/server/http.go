@@ -395,6 +395,18 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.GET("/api/agent/runs/:runID/trace", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleGetAgentRunTrace(ctx, c, cfg, application)
 	})
+	h.POST("/api/memory/write", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleWriteExternalMemory(ctx, c, application)
+	})
+	h.POST("/api/memory/query", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleQueryExternalMemory(ctx, c, application)
+	})
+	h.POST("/api/context-assets/resolve", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleResolveExternalContextAssets(ctx, c, application)
+	})
+	h.POST("/api/context-assets/assemble", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleAssembleExternalContextAssets(ctx, c, application)
+	})
 	h.OPTIONS("/api/control-plane/*path", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleControlPlaneOptions(ctx, c, cfg)
 	})

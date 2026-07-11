@@ -29,6 +29,8 @@
   - 拼装 direct respond 富交付 read model，包括 summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果。
 - `direct_respond_rich_delivery_test.go`
   - 验证 direct respond 富交付 read model 的上下文资产附加行为。
+- `external_memory.go`
+  - 封装应用拥有摘要 memory 的 app-layer write/query 门面，不暴露领域持久化细节。
 - `errors.go`
   - 定义 app 层对外暴露的稳定错误类型。
 - `fast_path.go`
@@ -83,6 +85,7 @@
 - `ListRuntimeRuns`
 - `OpenChatSession`
 - `ListRemoteTools / UpsertRemoteTool / DeleteRemoteTool`
+- `WriteExternalMemory / QueryExternalMemory`
 
 ## 关键依赖
 

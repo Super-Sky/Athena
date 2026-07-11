@@ -44,6 +44,10 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - canonical transcript 继续承担 call/result/error trace；remote observer 补充 origin、attempt、duration、decision ID、status、error code 与 generic metric。
   - Business tool implementations and domain data remain app-owned.
   - `internal/tools/builtin.go` 注册 calculator、current_time 和 JSON Schema subset validator；三者使用 existing catalog、governance 和 transcript 主链，不读网络、文件或业务数据。
+- 应用拥有的 memory/context API 位于 `internal/memory/external.go`、`internal/app/external_memory.go` 和 `internal/server/external_memory.go`：
+  - `POST /api/memory/write` / `query` 强制 `app_id + owner_id + scope`，仅保存通用版本化摘要和操作 trace。
+  - `resolve` 将摘要转换为只读 `app_memory` / `memory_view` context asset；`assemble` 输出 usage trace、effective views 及 `external_context_compression.v1` 统计。
+  - 当前默认实现是线程安全进程内 store，用于本地 MVP / 演示；它不会替代业务应用的 PostgreSQL 真相库，也不创建基金、持仓、交易等领域表。
 - Eino Graph runtime foundation：
   - 默认 chat/direct respond runtime 主链通过 `runtime.NewEinoGraphTurnExecutor` 包装现有 Eino ADK turn executor
   - 默认 turn agent 内部已使用 graph-native ChatModel / ToolsNode loop，并通过 Eino local state 保存 ReAct 消息历史
