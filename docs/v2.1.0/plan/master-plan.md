@@ -4,7 +4,7 @@
 
 - canonical issue: `Super-Sky/Athena#1`
 - title: `v2.1.0 RuntimeContract foundation 收口与 Batch 2 计划冻结`
-- current state: `implementing`
+- current state: `completed`
 - branch: `codex/v2.1-runtime-contract-batch2-issue-1`
 
 ## Scope Guard
@@ -111,7 +111,7 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 为数据库、缓存、API 与 Web 定义 healthcheck 和 `depends_on` readiness。
 - [x] 提供业务应用的内部/外部 Athena base URL 与可选 token 环境契约。
 - [x] 提供可重复的 Compose config / 可选 live health smoke 脚本和中英文启动文档。
-- [ ] 在 Docker daemon 恢复后完成真实 `docker compose up`、API health 和 Postgres/Redis readiness smoke；当前本机 daemon 未运行。
+- [x] 已完成真实 `docker compose up`、API health 和 PostgreSQL/Redis readiness smoke：迁移后 API、PostgreSQL、Redis 均为 healthy；首次 Athena 镜像构建约 259 秒，后续可复用缓存。
 
 ## Acceptance Gates
 

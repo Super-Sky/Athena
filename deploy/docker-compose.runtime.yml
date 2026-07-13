@@ -43,7 +43,7 @@ services:
       DB_NAME: ${POSTGRES_DB:-athena}
       DB_USERNAME: ${POSTGRES_USER:-athena}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-athena-local-change-me}
-      DB_CONFIG: "sslmode=disable search_path=athena client_encoding=UTF8"
+      DB_CONFIG: "sslmode=disable client_encoding=UTF8"
       DB_MAX_IDLE_CONNS: "10"
       DB_MAX_OPEN_CONNS: "70"
       DB_CONN_MAX_LIFETIME_SECONDS: "300"
@@ -55,7 +55,8 @@ services:
       REMOTE_TOOL_MAX_RESPONSE_BYTES: "1048576"
       SHARED_ROOT_DIR: /srv/shared
       OBSERVABILITY_LOG_LEVEL: ${OBSERVABILITY_LOG_LEVEL:-info}
-    command: ["/bin/sh", "-lc", "/app/athena migrate && exec /app/athena api-server"]
+    entrypoint: ["/bin/sh", "-lc"]
+    command: ["/app/athena migrate && exec /app/athena api-server"]
     ports:
       - "${ATHENA_HTTP_PORT:-8080}:8080"
     volumes:

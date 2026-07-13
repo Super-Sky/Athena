@@ -23,7 +23,7 @@ docker compose --env-file deploy/athena.runtime.env -f deploy/docker-compose.run
 
 - `postgres`: `pg_isready`.
 - `redis`: `redis-cli ping`.
-- `athena-api`: runs `/app/athena migrate` before `/app/athena healthcheck`.
+- `athena-api`: runs `/app/athena migrate`, starts `api-server`, and probes it through `/app/athena healthcheck`.
 - `athena-web`: optional profile, checks the Nginx root path.
 
 The API starts only after PostgreSQL and Redis are healthy. A migration failure is not hidden as a healthy service.

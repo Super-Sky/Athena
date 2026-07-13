@@ -23,7 +23,7 @@ docker compose --env-file deploy/athena.runtime.env -f deploy/docker-compose.run
 
 - `postgres`：`pg_isready`。
 - `redis`：`redis-cli ping`。
-- `athena-api`：先执行 `/app/athena migrate`，再使用 `/app/athena healthcheck`。
+- `athena-api`：先执行 `/app/athena migrate`，启动 `api-server`，再由 `/app/athena healthcheck` 探测服务。
 - `athena-web`：可选 profile，检查 Nginx 根路径。
 
 API 只有在 PostgreSQL 与 Redis 健康后才启动；迁移失败不会被掩盖成健康状态。

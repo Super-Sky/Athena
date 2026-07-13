@@ -31,9 +31,9 @@ docker compose --env-file deploy/athena.runtime.env.example -f deploy/docker-com
 ATHENA_RUNTIME_ENV_FILE=deploy/athena.runtime.env.example ./scripts/smoke_runtime_compose.sh
 ```
 
-The static configuration and smoke-script checks pass. A real `docker compose up --build -d` attempt is currently blocked because the local Docker daemon is not running; it must be rerun after Docker Desktop is available.
+Static configuration and the live Compose smoke pass. The validated profile starts PostgreSQL, Redis, and Athena API; migration completes before the API health check returns successfully. The first local Athena image build took about 259 seconds with limited BuildKit output, while later runs can reuse cache.
 
-静态配置和 smoke script 校验已通过。真实 `docker compose up --build -d` 当前因本机 Docker daemon 未运行而受阻；Docker Desktop 可用后必须重新执行。
+静态配置和实时 Compose smoke 均已通过。已验证 profile 会启动 PostgreSQL、Redis 和 Athena API；迁移完成后 API health check 成功返回。首次本机 Athena 镜像构建约耗时 259 秒，BuildKit 中间输出有限；后续运行可复用缓存。
 
 ## Skill Decision / Skill 结论
 
