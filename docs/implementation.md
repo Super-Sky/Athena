@@ -115,7 +115,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `System Validation` 页面支持 contract foundation readout，能展示 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer 和 foundation capability surface
   - `System Validation` 页面支持 foundation JSON 编辑与保存，可直接调用 runtime contract/task type/hook binding 控制面写接口并回读验证
   - `System Validation` 页面支持按时间展开 Agent Trace Timeline，显示 loop/model/tool/governance/usage/delivery 的安全详情，不显示 raw prompt、tool args/result 或业务载荷
-  - runtime foundation snapshot 会在服务启动和 `SyncSystemResources` 后自动同步；新的 runtime validation run 会带出 `runtime_hook_binding` traces 与 `runtime_hook` usage
+  - runtime foundation snapshot 会在服务启动和 `SyncSystemResources` 后自动同步，并默认注册 chat / Agent Run 公共入口使用的 `chat` task type 及 validator contract；新的 runtime validation run 会带出 `runtime_hook_binding` traces 与 `runtime_hook` usage
   - `Release Readiness` 页面使用 bootstrap、system resources、provider/model 和 OpenAPI 数据汇总 v2.0.0 成品门禁，并把 gate 标记为 ready / warning / blocked；页面可直接触发 runtime validation 并展示 run / step / MCP / sandbox 结果
 
 ## 当前 system truth 模型

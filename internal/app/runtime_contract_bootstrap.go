@@ -87,7 +87,25 @@ var runtimeValidationHookSeeds = []runtimeFoundationHookSeed{
 	},
 }
 
+// registeredTaskTypeValidatorSeeds defines the generic task types that must be executable after foundation bootstrap.
+// registeredTaskTypeValidatorSeeds 定义 foundation bootstrap 后必须可执行的通用任务类型。
 var registeredTaskTypeValidatorSeeds = []registeredTaskTypeValidatorSeed{
+	{
+		id:          "athena.task_type.chat.v1",
+		typeKey:     runtimetask.InputKindChat,
+		displayName: "Chat",
+		description: "Register the default conversational task boundary used by chat and Agent Run entrypoints.",
+		scene:       "default",
+		aliases:     []any{"agent_run"},
+		properties: map[string]any{
+			"workspace_id":    map[string]any{"type": "string"},
+			"main_session_id": map[string]any{"type": "string"},
+			"query":           map[string]any{"type": "string"},
+			"input_payload":   map[string]any{"type": "object"},
+			"global_context":  map[string]any{"type": "object"},
+			"app_context":     map[string]any{"type": "object"},
+		},
+	},
 	{
 		id:          "athena.task_type.inspection_task.v1",
 		typeKey:     runtimetask.InputKindInspectionTask,

@@ -112,6 +112,9 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 提供业务应用的内部/外部 Athena base URL 与可选 token 环境契约。
 - [x] 提供可重复的 Compose config / 可选 live health smoke 脚本和中英文启动文档。
 - [x] 已完成真实 `docker compose up`、API health 和 PostgreSQL/Redis readiness smoke：迁移后 API、PostgreSQL、Redis 均为 healthy；首次 Athena 镜像构建约 259 秒，后续可复用缓存。
+- [x] foundation bootstrap 默认注册通用 `chat` task type 及 validator contract，保证 PostgreSQL runtime store 下的默认 Agent Run 可执行。
+- [x] 隔离双服务 Compose smoke 已完成 Agent Run、基金助手远程 `account_overview` tool 调用与 trace 回读。
+- [ ] Docker Desktop 升级后的常驻演示栈与 Browser UI smoke 待本机管理员授权完成后复验；不影响已通过的隔离 Compose 证据。
 
 ## Acceptance Gates
 

@@ -23,6 +23,10 @@ An app on the Compose network uses `ATHENA_BASE_URL=http://athena-api:8080`. A h
 
 同一 Compose 网络的应用使用 `ATHENA_BASE_URL=http://athena-api:8080`；宿主机应用使用 `ATHENA_EXTERNAL_BASE_URL`（默认 `http://127.0.0.1:8080`）。只有 Athena 启用认证 middleware 时才设置可选 `ATHENA_AUTH_TOKEN`，不得提交 token。
 
+The runtime foundation bootstrap also registers the generic `chat` task type and its validator contract. This keeps the default `/api/agent/runs` task type executable when PostgreSQL persistence is enabled; it does not add any business-specific runtime contract.
+
+runtime foundation bootstrap 还会注册通用 `chat` task type 及其 validator contract，保证启用 PostgreSQL persistence 后 `/api/agent/runs` 的默认任务类型可执行；该 contract 不包含任何业务领域语义。
+
 ## Verification / 验证
 
 ```bash
@@ -31,9 +35,9 @@ docker compose --env-file deploy/athena.runtime.env.example -f deploy/docker-com
 ATHENA_RUNTIME_ENV_FILE=deploy/athena.runtime.env.example ./scripts/smoke_runtime_compose.sh
 ```
 
-Static configuration and the live Compose smoke pass. The validated profile starts PostgreSQL, Redis, and Athena API; migration completes before the API health check returns successfully. The first local Athena image build took about 259 seconds with limited BuildKit output, while later runs can reuse cache.
+Static configuration and the live Compose smoke pass. The validated profile starts PostgreSQL, Redis, and Athena API; migration completes before the API health check returns successfully. An isolated dual-service smoke also completed an Agent Run and called the fund assistant's remote `account_overview` tool. The first local Athena image build took about 259 seconds with limited BuildKit output, while later runs can reuse cache.
 
-静态配置和实时 Compose smoke 均已通过。已验证 profile 会启动 PostgreSQL、Redis 和 Athena API；迁移完成后 API health check 成功返回。首次本机 Athena 镜像构建约耗时 259 秒，BuildKit 中间输出有限；后续运行可复用缓存。
+静态配置和实时 Compose smoke 均已通过。已验证 profile 会启动 PostgreSQL、Redis 和 Athena API；迁移完成后 API health check 成功返回。隔离双服务 smoke 还完成了一次 Agent Run，并调用基金助手提供的远程 `account_overview` tool。首次本机 Athena 镜像构建约耗时 259 秒，BuildKit 中间输出有限；后续运行可复用缓存。
 
 ## Skill Decision / Skill 结论
 
