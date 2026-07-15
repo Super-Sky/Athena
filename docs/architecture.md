@@ -338,7 +338,7 @@ Athena 内核不再直接定义某一个业务领域。领域能力应该通过�
   - System Validation、验证型 MCP server、deterministic validation flow，用于证明 core 能力闭环真实工作。
   - 当前已落地的 `athena-validation-mcp` 是 Validation layer 的轻量 control-plane HTTP adapter，用于验证 tool schema ingestion、governance decision、safe result 和 redacted trace；它不定义标准 MCP transport，也不承接业务 truth。
 - 当前 deterministic validation flow 已通过 `/api/control-plane/runtime/validation-runs` 串起 Eino Graph、runtime persistence、tool governance、Validation MCP、`external_sandbox_ref`、trace、usage 和 projection。
-- Control Plane 额外通过 `GET /api/control-plane/runtime/contracts/foundation` 展示 Athena-owned RuntimeContract、TaskTypeRegistry、HookBinding 和 active System Truth pointer，并通过 `PUT /api/control-plane/runtime/contracts/{contractID}`、`PUT /api/control-plane/runtime/task-types/{typeKey}`、`PUT /api/control-plane/runtime/hook-bindings/{bindingID}` 提供最小 foundation write path；这些对象会在启动阶段和 `SyncSystemResources` 之后按 active truth 自动补齐，是 core truth，不是业务 evidence 或 Eino private payload。
+- Control Plane 额外通过 `GET /api/control-plane/runtime/contracts/foundation` 展示 Athena-owned RuntimeContract、TaskTypeRegistry、HookBinding 和 active System Truth pointer，并通过 `PUT /api/control-plane/runtime/contracts/{contractID}`、`PUT /api/control-plane/runtime/task-types/{typeKey}`、`PUT /api/control-plane/runtime/hook-bindings/{bindingID}` 提供最小 foundation write path；这些对象会在启动阶段和 `SyncSystemResources` 之后按 active truth 自动补齐，其中 `chat` 作为 chat / Agent Run 公共入口的默认注册任务类型随 foundation 一同初始化；这些记录是 core truth，不是业务 evidence 或 Eino private payload。
 - Enhancement Layer
   - 场景包、应用 skill、应用知识库、provider adapter、业务 workflow、应用 runtime 判断逻辑。
 - Application / Business Truth

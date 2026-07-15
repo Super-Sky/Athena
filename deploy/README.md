@@ -20,8 +20,12 @@
 
 - `docker-compose.cloud.yml`
   - 单仓云端 Docker Compose 部署样例，包含 PostgreSQL、Athena API 和可选的 Web 控制台。
+- `docker-compose.runtime.yml`
+  - 本地业务应用 runtime Compose profile，包含 PostgreSQL、Redis、Athena API 与可选 Control Plane Web。
 - `athena.env.example`
   - Compose 和二进制部署共用的环境变量模板。
+- `athena.runtime.env.example`
+  - 本地 runtime profile 的端口、依赖、业务应用连接和认证变量模板。
 - `systemd/athena.service.example`
   - 二进制部署时的 systemd 服务定义模板。
 - `bin/README.md`
@@ -30,7 +34,10 @@
 ## 对外入口
 
 - `docs/云端部署与交付.md`
+- `docs/local-docker-runtime.zh-CN.md`
+- `docs/local-docker-runtime.en-US.md`
 - `scripts/build_release_bundle.sh`
+- `scripts/smoke_runtime_compose.sh`
 - `scripts/deploy_cloud.sh`
 
 ## 关键依赖

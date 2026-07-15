@@ -405,6 +405,7 @@ Athena 当前会优先消费 summary，再决定是否返回：
 - `GET /api/control-plane/runtime/contracts/foundation`
   - 返回 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer、System Truth source / draft / compile 摘要和 store capability surface
   - foundation records 会在服务启动和 `POST /api/system-resources/sync` 后按 active truth 自动补齐
+  - bootstrap 默认注册 `chat` 及其 validator contract，保证 `/api/chat/*` 与 `/api/agent/runs` 在 PostgreSQL runtime store 下开箱可执行
 - `PUT /api/control-plane/runtime/contracts/:contractID`
   - 按稳定 `contractID` 创建或更新一条 `RuntimeContract`
   - payload 会经过 runtime contract 安全校验（status 枚举、credential-like plaintext 拦截）

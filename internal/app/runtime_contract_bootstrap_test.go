@@ -32,6 +32,17 @@ func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 	if !ok || taskType.DefaultContractID != runtimeValidationContractID {
 		t.Fatalf("task type = %#v, want default contract %q", taskType, runtimeValidationContractID)
 	}
+	chatTaskType, ok := store.taskTypesByKey["chat"]
+	if !ok {
+		t.Fatal("task type registry missing chat, the default Agent Run task type must be executable after bootstrap")
+	}
+	chatContractID := registeredTaskTypeValidatorContractID("chat")
+	if chatTaskType.DefaultContractID != chatContractID {
+		t.Fatalf("chat default contract = %q, want %q", chatTaskType.DefaultContractID, chatContractID)
+	}
+	if chatContract, ok := store.contracts[chatContractID]; !ok || chatContract.TaskType != "chat" {
+		t.Fatalf("chat contract = %#v, want registered chat validator contract", chatContract)
+	}
 	if len(store.hooks) != len(runtimeValidationHookSeeds) {
 		t.Fatalf("hooks len = %d, want %d", len(store.hooks), len(runtimeValidationHookSeeds))
 	}
