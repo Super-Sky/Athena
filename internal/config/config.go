@@ -4,6 +4,7 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -37,6 +38,7 @@ type Config struct {
 	Model           ModelConfig           `yaml:"model"`
 	Runtime         RuntimeConfig         `yaml:"runtime"`
 	RemoteTools     RemoteToolsConfig     `yaml:"remote_tools"`
+	AppAuth         AppAuthConfig         `yaml:"app_auth"`
 	ControlPlane    ControlPlaneConfig    `yaml:"control_plane"`
 	System          SystemConfig          `yaml:"system"`
 	PlatformContext PlatformContextConfig `yaml:"platform_context"`
@@ -44,6 +46,28 @@ type Config struct {
 	Database        DatabaseConfig        `yaml:"database"`
 	Security        SecurityConfig        `yaml:"security"`
 	Observability   ObservabilityConfig   `yaml:"observability"`
+}
+
+// AppAuthConfig controls authenticated application access to app-facing Agent Run APIs.
+// AppAuthConfig 控制业务应用对 Agent Run API 的认证访问。
+type AppAuthConfig struct {
+	Required   bool                    `yaml:"required" json:"required"`
+	Identities []AppAuthIdentityConfig `yaml:"identities" json:"identities"`
+}
+
+// AppAuthIdentityConfig binds one application token to explicit workspace/application-instance scopes.
+// AppAuthIdentityConfig 把一个应用 token 绑定到明确的 workspace/application-instance 范围。
+type AppAuthIdentityConfig struct {
+	AppID  string               `yaml:"app_id" json:"app_id"`
+	Token  string               `yaml:"token" json:"-"`
+	Scopes []AppAuthScopeConfig `yaml:"scopes" json:"scopes"`
+}
+
+// AppAuthScopeConfig grants one application access to explicit instances in one workspace.
+// AppAuthScopeConfig 授予应用访问某个 workspace 下明确实例的权限。
+type AppAuthScopeConfig struct {
+	WorkspaceID    string   `yaml:"workspace_id" json:"workspace_id"`
+	AppInstanceIDs []string `yaml:"app_instance_ids" json:"app_instance_ids"`
 }
 
 // ServerConfig groups HTTP server settings.
@@ -166,6 +190,9 @@ func LoadFromEnv() (Config, error) {
 			AllowedOrigins:   envStringSlice("REMOTE_TOOL_ALLOWED_ORIGINS"),
 			MaxResponseBytes: envInt64("REMOTE_TOOL_MAX_RESPONSE_BYTES", 1<<20),
 		},
+		AppAuth: AppAuthConfig{
+			Required: envBool("APP_AUTH_REQUIRED", false),
+		},
 		ControlPlane: ControlPlaneConfig{
 			StorePath:         defaultString(strings.TrimSpace(os.Getenv("CONTROL_PLANE_STORE_PATH")), filepath.Join(defaultConfigDir, "controlplane", "overrides.json")),
 			AllowedOrigins:    envStringSlice("CONTROL_PLANE_ALLOWED_ORIGINS"),
@@ -216,12 +243,36 @@ func LoadFromEnv() (Config, error) {
 	}
 
 	applyEnvOverrides(&cfg)
+	if raw := strings.TrimSpace(os.Getenv("APP_AUTH_IDENTITIES_JSON")); raw != "" {
+		identities, err := parseAppAuthIdentitiesJSON(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse APP_AUTH_IDENTITIES_JSON failed: %w", err)
+		}
+		cfg.AppAuth.Identities = identities
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 
 	return cfg, nil
+}
+
+func parseAppAuthIdentitiesJSON(raw string) ([]AppAuthIdentityConfig, error) {
+	type identityJSON struct {
+		AppID  string               `json:"app_id"`
+		Token  string               `json:"token"`
+		Scopes []AppAuthScopeConfig `json:"scopes"`
+	}
+	var encoded []identityJSON
+	if err := json.Unmarshal([]byte(raw), &encoded); err != nil {
+		return nil, err
+	}
+	identities := make([]AppAuthIdentityConfig, 0, len(encoded))
+	for _, item := range encoded {
+		identities = append(identities, AppAuthIdentityConfig{AppID: item.AppID, Token: item.Token, Scopes: item.Scopes})
+	}
+	return identities, nil
 }
 
 // loadConfigFiles merges base and APP_ENV-specific yaml files into one config struct.
@@ -284,6 +335,7 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.RemoteTools.AllowedOrigins = values
 	}
 	cfg.RemoteTools.MaxResponseBytes = envInt64("REMOTE_TOOL_MAX_RESPONSE_BYTES", cfg.RemoteTools.MaxResponseBytes)
+	cfg.AppAuth.Required = envBool("APP_AUTH_REQUIRED", cfg.AppAuth.Required)
 	cfg.ControlPlane.StorePath = defaultString(strings.TrimSpace(os.Getenv("CONTROL_PLANE_STORE_PATH")), cfg.ControlPlane.StorePath)
 	if values := envStringSlice("CONTROL_PLANE_ALLOWED_ORIGINS"); len(values) > 0 {
 		cfg.ControlPlane.AllowedOrigins = values
@@ -344,6 +396,9 @@ func (c Config) Validate() error {
 	}
 	if c.RemoteTools.MaxResponseBytes < 0 {
 		return fmt.Errorf("REMOTE_TOOL_MAX_RESPONSE_BYTES must be greater than or equal to 0")
+	}
+	if err := validateAppAuthConfig(c.AppAuth); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.ControlPlane.StorePath) == "" {
 		return fmt.Errorf("CONTROL_PLANE_STORE_PATH must not be empty")
@@ -415,6 +470,48 @@ func (c Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func validateAppAuthConfig(cfg AppAuthConfig) error {
+	if cfg.Required && len(cfg.Identities) == 0 {
+		return fmt.Errorf("APP_AUTH_IDENTITIES_JSON must configure at least one identity when APP_AUTH_REQUIRED=true")
+	}
+	appIDs := make(map[string]struct{}, len(cfg.Identities))
+	tokens := make(map[string]struct{}, len(cfg.Identities))
+	for _, identity := range cfg.Identities {
+		appID := strings.TrimSpace(identity.AppID)
+		token := strings.TrimSpace(identity.Token)
+		if appID == "" || token == "" || len(identity.Scopes) == 0 {
+			return fmt.Errorf("each app auth identity requires app_id, token, and at least one scope")
+		}
+		if _, exists := appIDs[appID]; exists {
+			return fmt.Errorf("duplicate app auth app_id %q", appID)
+		}
+		if _, exists := tokens[token]; exists {
+			return fmt.Errorf("app auth tokens must be unique")
+		}
+		appIDs[appID] = struct{}{}
+		tokens[token] = struct{}{}
+		scopes := make(map[string]struct{}, len(identity.Scopes))
+		for _, scope := range identity.Scopes {
+			workspaceID := strings.TrimSpace(scope.WorkspaceID)
+			if workspaceID == "" || len(scope.AppInstanceIDs) == 0 {
+				return fmt.Errorf("app auth scopes require workspace_id and at least one app_instance_id")
+			}
+			for _, instanceID := range scope.AppInstanceIDs {
+				instanceID = strings.TrimSpace(instanceID)
+				if instanceID == "" {
+					return fmt.Errorf("app auth scope app_instance_id must not be empty")
+				}
+				key := workspaceID + "\x00" + instanceID
+				if _, exists := scopes[key]; exists {
+					return fmt.Errorf("duplicate app auth scope for workspace %q and app instance %q", workspaceID, instanceID)
+				}
+				scopes[key] = struct{}{}
+			}
+		}
+	}
 	return nil
 }
 

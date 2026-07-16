@@ -218,6 +218,10 @@ func handleCreateAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg c
 		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := applyAgentRunIdentityScope(ctx, &req); err != nil {
+		writeAppAuthError(c, err)
+		return
+	}
 	if strings.TrimSpace(agentRunGoal(req.Goal, req.Query)) == "" && req.Supplement == nil {
 		c.JSON(consts.StatusBadRequest, map[string]string{"error": "goal is required unless supplement is provided"})
 		return
@@ -247,7 +251,8 @@ func handleResumeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg c
 		c.JSON(consts.StatusBadRequest, map[string]string{"error": "goal is required unless supplement is provided"})
 		return
 	}
-	if _, err := readAgentRunTrace(ctx, application, originalRunID); err != nil {
+	originalReadout, err := readAgentRunTrace(ctx, application, originalRunID)
+	if err != nil {
 		writeAgentRunReadError(c, err)
 		return
 	}
@@ -272,6 +277,8 @@ func handleResumeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg c
 		DisabledAssetTypes:     append([]string(nil), resumeReq.DisabledAssetTypes...),
 		AssetPriorityOverrides: cloneIntMap(resumeReq.AssetPriorityOverrides),
 		ResumedFromRunID:       originalRunID,
+		WorkspaceID:            originalReadout.Run.WorkspaceID,
+		AppInstanceID:          originalReadout.Run.AppInstanceID,
 	}
 	response, status := executeAgentRun(ctx, c, cfg, application, requestID, startReq, agentRunExecutionOptions{Source: agentRunSourceResume, ResumedFromRunID: originalRunID})
 	c.JSON(status, response)
@@ -569,7 +576,14 @@ func readAgentRunTrace(ctx context.Context, application *appcore.Service, runID 
 		return agentRunTraceReadout{}, err
 	}
 	if !ok {
+		if _, authenticated := appRequestIdentity(ctx); authenticated {
+			return agentRunTraceReadout{}, errAgentRunNotFound
+		}
 		return agentRunTraceReadout{}, fmt.Errorf("runtime run %q not found", runID)
+	}
+	runDTO := runtimeRunDTOFromRuntime(run)
+	if err := authorizeAgentRunForRequest(ctx, runDTO); err != nil {
+		return agentRunTraceReadout{}, err
 	}
 	steps, err := application.ListRuntimeSteps(ctx, runID)
 	if err != nil {
@@ -596,13 +610,18 @@ func readAgentRunTrace(ctx context.Context, application *appcore.Service, runID 
 		return agentRunTraceReadout{}, err
 	}
 	readout := agentRunTraceReadout{
-		Run:         runtimeRunDTOFromRuntime(run),
+		Run:         runDTO,
 		Steps:       runtimeStepDTOs(steps),
 		Events:      runtimeLifecycleEventDTOs(events),
 		Traces:      runtimeTraceDTOs(traces),
 		Usage:       runtimeUsageDTOs(usage),
 		Projections: runtimeProjectionCandidateDTOs(projections),
 		Checkpoints: runtimeCheckpointReadoutDTOs(checkpoints),
+	}
+	if _, appFacing := appRequestIdentity(ctx); appFacing {
+		for index := range readout.Projections {
+			readout.Projections[index].SemanticPayload = nil
+		}
 	}
 	readout.Summary = agentRunTraceSummaryFromReadout(readout)
 	return readout, nil
@@ -1160,6 +1179,10 @@ func agentRunOpenErrorStatus(err error) int {
 func writeAgentRunReadError(c *hertzapp.RequestContext, err error) {
 	if errors.Is(err, appcore.ErrRuntimeStoreNotConfigured) {
 		c.JSON(consts.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+	if errors.Is(err, errAgentRunNotFound) {
+		c.JSON(consts.StatusNotFound, map[string]string{"error": "resource_not_found"})
 		return
 	}
 	if strings.Contains(err.Error(), "not found") {

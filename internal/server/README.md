@@ -24,6 +24,10 @@
   - 暴露面向业务应用的 Agent Run API，转换 OpenAI-compatible tool contracts，并把 goal-first 请求映射到通用 app/runtime 主链和 runtime persistence trace readout。
 - `agent_runs_test.go`
   - 验证 Agent Run 请求解析、tool schema / choice 错误、call/result message 映射以及 create/read/trace/resume/cancel 路由。
+- `app_auth.go`
+  - 使用独立 app token 和精确 workspace/app-instance scope 保护全部 app-facing Agent Run 路由，并统一资源越权响应。
+- `app_auth_test.go`
+  - 验证身份缺失、scope 注入/冲突、跨 workspace/app-instance 隔离、同形 404、灰度开关和 trace redaction。
 - `external_memory.go`
   - 暴露应用拥有 memory write/query 与 context asset resolve/assemble HTTP 合约。
 - `external_memory_test.go`
@@ -38,6 +42,8 @@
   - 验证 remote tool 注册、HTTP 执行、治理/trace、重启恢复、删除和 origin 拒绝闭环。
 - `openapi.go`
   - 生成和暴露 OpenAPI 文档。
+- `runtime_read.go`
+  - 将 runtime persistence records 转换为 Control Plane 和 Agent Run 共用 DTO，并递归脱敏凭据型 metadata/payload 键。
 - `request.go`
   - 定义和处理 transport 层请求结构辅助逻辑。
 - `respond.go`

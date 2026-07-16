@@ -715,7 +715,7 @@ func runtimeRunDTOFromRuntime(item runtime.TaskRun) runtimeRunDTO {
 		IdempotencyScope: item.IdempotencyScope,
 		IdempotencyKey:   item.IdempotencyKey,
 		RetentionPolicy:  item.RetentionPolicy,
-		Metadata:         item.Metadata,
+		Metadata:         safeRuntimeMap(item.Metadata),
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 		StartedAt:        item.StartedAt,
@@ -739,7 +739,7 @@ func runtimeStepDTOFromRuntime(item runtime.TaskStep) runtimeStepDTO {
 		StepType:    item.StepType,
 		Name:        item.Name,
 		Status:      item.Status,
-		Metadata:    item.Metadata,
+		Metadata:    safeRuntimeMap(item.Metadata),
 		CreatedAt:   item.CreatedAt,
 		UpdatedAt:   item.UpdatedAt,
 		StartedAt:   item.StartedAt,
@@ -766,7 +766,7 @@ func runtimeLifecycleEventDTOFromRuntime(item runtime.TaskRunLifecycleEvent) run
 		FromStatus:  item.FromStatus,
 		ToStatus:    item.ToStatus,
 		Reason:      item.Reason,
-		Metadata:    item.Metadata,
+		Metadata:    safeRuntimeMap(item.Metadata),
 		OccurredAt:  item.OccurredAt,
 	}
 }
@@ -786,9 +786,9 @@ func runtimeTraceDTOFromRuntime(item runtime.RuntimeTrace) runtimeTraceDTO {
 		StepID:          item.StepID,
 		TraceType:       item.TraceType,
 		Summary:         item.Summary,
-		SafeLabels:      item.SafeLabels,
-		RedactedPayload: item.RedactedPayload,
-		Metadata:        item.Metadata,
+		SafeLabels:      safeRuntimeStringMap(item.SafeLabels),
+		RedactedPayload: safeRuntimeMap(item.RedactedPayload),
+		Metadata:        safeRuntimeMap(item.Metadata),
 		CreatedAt:       item.CreatedAt,
 	}
 }
@@ -813,7 +813,7 @@ func runtimeUsageDTOFromRuntime(item runtime.Usage) runtimeUsageDTO {
 		Amount:       item.Amount,
 		Cost:         item.Cost,
 		Currency:     item.Currency,
-		Metadata:     item.Metadata,
+		Metadata:     safeRuntimeMap(item.Metadata),
 		CreatedAt:    item.CreatedAt,
 	}
 }
@@ -835,14 +835,91 @@ func runtimeProjectionCandidateDTOFromRuntime(item runtime.ProjectionCandidate) 
 		Status:                item.Status,
 		Summary:               item.Summary,
 		SchemaVersion:         item.SchemaVersion,
-		RedactedPayload:       item.RedactedPayload,
-		SemanticPayload:       item.SemanticPayload,
-		ArtifactRefs:          item.ArtifactRefs,
-		UIHints:               item.UIHints,
-		MaterializationTarget: item.MaterializationTarget,
-		Metadata:              item.Metadata,
+		RedactedPayload:       safeRuntimeMap(item.RedactedPayload),
+		SemanticPayload:       safeRuntimeMap(item.SemanticPayload),
+		ArtifactRefs:          safeRuntimeMap(item.ArtifactRefs),
+		UIHints:               safeRuntimeMap(item.UIHints),
+		MaterializationTarget: safeRuntimeMap(item.MaterializationTarget),
+		Metadata:              safeRuntimeMap(item.Metadata),
 		CreatedAt:             item.CreatedAt,
 	}
+}
+
+func safeRuntimeMap(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(input))
+	for key, value := range input {
+		if runtimeMetadataKeySensitive(key) {
+			result[key] = "[redacted]"
+			continue
+		}
+		result[key] = safeRuntimeValue(value)
+	}
+	return result
+}
+
+func safeRuntimeStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(input))
+	for key, value := range input {
+		if runtimeMetadataKeySensitive(key) {
+			result[key] = "[redacted]"
+		} else {
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func safeRuntimeValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return safeRuntimeMap(typed)
+	case map[string]string:
+		return safeRuntimeStringMap(typed)
+	case []any:
+		result := make([]any, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, safeRuntimeValue(item))
+		}
+		return result
+	case []map[string]any:
+		result := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, safeRuntimeMap(item))
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+func runtimeMetadataKeySensitive(key string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("-", "_", " ", "_").Replace(strings.TrimSpace(key)))
+	for _, safeSuffix := range []string{"_present", "_configured", "_masked", "_count", "_sha256"} {
+		if strings.HasSuffix(normalized, safeSuffix) {
+			return false
+		}
+	}
+	if normalized == "headers" || strings.HasSuffix(normalized, "_headers") {
+		return true
+	}
+	if normalized == "token" || strings.HasSuffix(normalized, "_token") || normalized == "cookie" || strings.HasSuffix(normalized, "_cookie") {
+		return true
+	}
+	for _, fragment := range []string{
+		"authorization", "credential", "password", "secret", "api_key", "apikey", "access_token",
+		"refresh_token", "resume_token", "session_cookie", "raw_prompt", "raw_payload", "raw_input", "raw_output",
+	} {
+		if strings.Contains(normalized, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func runtimeCheckpointReadoutDTOs(items []appcore.RuntimeCheckpointReadout) []runtimeCheckpointReadoutDTO {

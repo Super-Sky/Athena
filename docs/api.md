@@ -154,6 +154,10 @@ Agent Run API 当前暴露：
   - 顶层可选 `run_manifest` 是 TaskRun 创建时冻结的 `agent_run_manifest.v1`，并通过 `manifest_status` 区分 `complete`、`partial`、`legacy_unavailable`、`unsupported_schema` 与 `invalid`。历史 run 不会从当前配置重建版本。
   - The optional top-level `run_manifest` is frozen with TaskRun creation. It contains revision IDs/versions/sources and SHA-256 values only; `manifest_status=legacy_unavailable` preserves backward compatibility without read-time reconstruction.
 
+启用 `APP_AUTH_REQUIRED=true` 后，上述六条路由都要求 `X-Athena-App-Token`、`X-Athena-App-ID`、`X-Athena-Workspace-ID` 和 `X-Athena-App-Instance-ID`。Token 与精确 scope 由 `APP_AUTH_IDENTITIES_JSON` 绑定；无效身份返回 `401`，scope 外、跨租户、不存在或无归属历史 run 统一返回同形 `404`。应用 token 使用专用 header，不会进入 Platform Context 的 `Authorization` 转发链。
+
+With `APP_AUTH_REQUIRED=true`, all six routes require the dedicated app token, app ID, workspace ID, and app-instance ID headers. The configured identity grants exact scope pairs. Invalid identities return `401`; out-of-scope, cross-tenant, nonexistent, and unowned legacy runs share the same generic `404` response.
+
 Agent Run API 边界：
 
 - Athena core 不接管业务对象、业务证据或业务状态；业务仓仍通过 `context_assets`、`global_context`、`app_context` 和 `input_payload` 注入应用语义。
@@ -165,7 +169,7 @@ Agent Run API 边界：
 
 Control Plane additionally exposes `GET /api/control-plane/runtime/runs/:runID/timeline` behind its existing authentication boundary. The Admin UI renders this same projection as expandable safe-detail rows for model, tool, governance, context, loop, usage, and delivery investigation.
 
-Production deployments must protect app-facing run read endpoints with an upstream authenticated application boundary until Athena's app identity plus workspace/app-instance authorization gate is implemented. Knowledge of a `run_id` must not be treated as authorization.
+Production deployments must set `APP_AUTH_REQUIRED=true` and configure scoped identities. `false` is a deliberate gray mode only. Existing authenticated Control Plane sessions are system administrators; app identity headers do not replace Control Plane login.
 
 ## 应用拥有的 Memory / Context API
 

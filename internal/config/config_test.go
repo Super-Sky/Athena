@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -98,6 +100,66 @@ func TestConfigValidateAcceptsMemorySessionStore(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidateRequiresScopedAppIdentityWhenAppAuthIsRequired(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.AppAuth.Required = true
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "APP_AUTH_IDENTITIES_JSON") {
+		t.Fatalf("Validate() error = %v, want missing app identity error", err)
+	}
+
+	cfg.AppAuth.Identities = []AppAuthIdentityConfig{{
+		AppID: "fund-assistant", Token: "fund-secret",
+		Scopes: []AppAuthScopeConfig{{WorkspaceID: "workspace-a", AppInstanceIDs: []string{"fund-web"}}},
+	}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want valid scoped app identity", err)
+	}
+}
+
+func TestConfigValidateRejectsDuplicateAppAuthScope(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.AppAuth.Identities = []AppAuthIdentityConfig{{
+		AppID: "fund-assistant", Token: "fund-secret",
+		Scopes: []AppAuthScopeConfig{{WorkspaceID: "workspace-a", AppInstanceIDs: []string{"fund-web", "fund-web"}}},
+	}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate app auth scope") {
+		t.Fatalf("Validate() error = %v, want duplicate scope error", err)
+	}
+}
+
+func TestParseAppAuthIdentitiesJSONKeepsTokenOutOfSerializedConfig(t *testing.T) {
+	identities, err := parseAppAuthIdentitiesJSON(`[{"app_id":"fund-assistant","token":"private-token","scopes":[{"workspace_id":"workspace-a","app_instance_ids":["fund-web"]}]}]`)
+	if err != nil || len(identities) != 1 || identities[0].Token != "private-token" {
+		t.Fatalf("parse identities = %#v error=%v", identities, err)
+	}
+	payload, err := json.Marshal(AppAuthConfig{Required: true, Identities: identities})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "private-token") {
+		t.Fatalf("serialized app auth config leaks token: %s", payload)
+	}
+}
+
+func validMemoryConfigForAppAuthTest(t *testing.T) Config {
+	t.Helper()
+	return Config{
+		Server: ServerConfig{HTTPPort: 8080},
+		Model:  ModelConfig{StoreDriver: "memory"},
+		Runtime: RuntimeConfig{
+			MaxConcurrentRequests: 1, MaxConcurrentTools: 1, RequestTimeoutSeconds: 1,
+			DeferredQueueLimit: 1, ClosedTokenTTLSecs: 1, SkillPackageRevisionLimit: 1,
+		},
+		ControlPlane: ControlPlaneConfig{StorePath: filepath.Join("config", "controlplane", "overrides.json")},
+		System: SystemConfig{
+			TruthDir: filepath.Join("config", "system", "truth"), ActiveStateDir: filepath.Join("output", "system-state"),
+			CompiledAssetsDir: filepath.Join("output", "system-assets"),
+		},
+		Session:  SessionConfig{Driver: "memory", PostgresUpdateRetries: 1},
+		Database: DatabaseConfig{DBPort: 5432, MaxIdleConns: 1, MaxOpenConns: 1, ConnMaxLifetime: 1},
 	}
 }
 

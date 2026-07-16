@@ -381,22 +381,22 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 		handleChatRespond(ctx, c, cfg, application)
 	})
 	h.POST("/api/agent/runs", func(ctx context.Context, c *hertzapp.RequestContext) {
-		handleCreateAgentRun(ctx, c, cfg, application)
+		withAppAuth(handleCreateAgentRun)(ctx, c, cfg, application)
 	})
 	h.GET("/api/agent/runs/:runID", func(ctx context.Context, c *hertzapp.RequestContext) {
-		handleGetAgentRun(ctx, c, cfg, application)
+		withAppAuth(handleGetAgentRun)(ctx, c, cfg, application)
 	})
 	h.POST("/api/agent/runs/:runID/resume", func(ctx context.Context, c *hertzapp.RequestContext) {
-		handleResumeAgentRun(ctx, c, cfg, application)
+		withAppAuth(handleResumeAgentRun)(ctx, c, cfg, application)
 	})
 	h.POST("/api/agent/runs/:runID/cancel", func(ctx context.Context, c *hertzapp.RequestContext) {
-		handleCancelAgentRun(ctx, c, cfg, application)
+		withAppAuth(handleCancelAgentRun)(ctx, c, cfg, application)
 	})
 	h.GET("/api/agent/runs/:runID/trace", func(ctx context.Context, c *hertzapp.RequestContext) {
-		handleGetAgentRunTrace(ctx, c, cfg, application)
+		withAppAuth(handleGetAgentRunTrace)(ctx, c, cfg, application)
 	})
 	h.GET("/api/agent/runs/:runID/timeline", func(ctx context.Context, c *hertzapp.RequestContext) {
-		handleGetAgentRunTimeline(ctx, c, cfg, application)
+		withAppAuth(handleGetAgentRunTimeline)(ctx, c, cfg, application)
 	})
 	h.POST("/api/memory/write", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleWriteExternalMemory(ctx, c, application)
