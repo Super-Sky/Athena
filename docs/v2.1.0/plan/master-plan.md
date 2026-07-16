@@ -4,7 +4,7 @@
 
 - canonical issue: `Super-Sky/Athena#1`
 - title: `v2.1.0 RuntimeContract foundation 收口与 Batch 2 计划冻结`
-- current state: `implementing`
+- current state: `ready_for_delivery`
 - branch: `codex/v2.1-runtime-contract-batch2-issue-1`
 
 ## Scope Guard
@@ -100,7 +100,8 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 提供 app-facing 与 Control Plane read API，并让后台展示可展开 step/detail 列表。
 - [x] 覆盖时间顺序、model/tool/governance 分类、失败 detail、路由与 OpenAPI 测试。
 - [x] 将运行观测提升为一级导航，提供 run 列表、统一时间线、请求/返回/影响/性能安全检查器和移动端紧凑导航。
-- [ ] 将 model/provider、prompt、skill、tool schema、policy、context 与 evaluator revision 收敛为稳定、不可变的 run manifest 顶层契约；当前 UI 仅在 metadata 已存在时展示，否则明确标记未记录。
+- [x] 将 model/provider、最终 assembled prompt、skill、tool schema、policy、context、实际使用的 evaluator 与 runtime contract revision 收敛为 `agent_run_manifest.v1` 不可变顶层契约；旧 run 返回 `legacy_unavailable`，不按当前配置反推。
+- [ ] 为 app-facing run/read/trace/timeline API 增加 app identity 和 `(run_id, workspace_id, app_instance_id)` 授权，越权读取统一返回 `404`；该项是生产暴露前的安全门禁。
 
 ## Acceptance Gates
 

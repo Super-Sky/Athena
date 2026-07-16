@@ -401,6 +401,41 @@ func TestEinoTurnExecutorPrepareUsesRequestedModelWithoutFallback(t *testing.T) 
 	}
 }
 
+func TestEinoTurnExecutorFreezesToolRevisionFromExecutionSnapshot(t *testing.T) {
+	provider := &recordingModelProvider{}
+	definitions, err := tools.DemoDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calculator := definitions["calculator"]
+	resolverRef := NewRunRevisionRef("tool", "calculator", "", "resolver_snapshot", map[string]any{"description": "old definition"})
+	calculator.Description = "execution snapshot definition"
+	executor := EinoTurnExecutor{
+		ModelProvider: provider,
+		ToolProvider: func(context.Context) map[string]tools.Definition {
+			return map[string]tools.Definition{"calculator": calculator}
+		},
+		Observability: observability.NewNoopManager(),
+	}
+	spec := &ExecutionSpec{
+		Skill: SkillSpec{PrimarySkill: "analysis", Guidance: "calculate"},
+		Tools: ToolSpec{
+			AllowedTools: []string{"calculator"}, Sources: map[string]string{"calculator": "dynamic_catalog"},
+			RevisionRefs: []RunRevisionRef{resolverRef},
+		},
+		Model: buildModelSpec(&model.Selection{Primary: model.ChatConfig{ProviderID: "provider", ModelRecordID: "model", ProviderModelID: "model"}}),
+	}
+	if _, err := executor.Prepare(context.Background(), RuntimeState{RequestID: "req-tool-revision", SessionID: "sess-tool-revision", Turn: 1}, spec, nil); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if len(spec.Tools.RevisionRefs) != 1 || spec.Tools.RevisionRefs[0].ContentSHA256 == resolverRef.ContentSHA256 {
+		t.Fatalf("tool refs = %#v, want execution snapshot revision", spec.Tools.RevisionRefs)
+	}
+	if spec.Tools.RevisionRefs[0].Source != "dynamic_catalog" {
+		t.Fatalf("tool source = %q, want dynamic_catalog", spec.Tools.RevisionRefs[0].Source)
+	}
+}
+
 func TestEinoTurnExecutorPrepareFallsBackAndPreservesRequestedModel(t *testing.T) {
 	provider := &recordingModelProvider{
 		fail: map[string]error{"model-primary": context.DeadlineExceeded},

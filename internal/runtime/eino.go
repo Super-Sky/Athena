@@ -113,13 +113,30 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		toolDefinitions = e.ToolProvider(ctx)
 	}
 	selectedTools := make([]tool.BaseTool, 0, len(spec.Tools.AllowedTools))
+	actualToolRefs := make([]RunRevisionRef, 0, len(spec.Tools.AllowedTools))
+	declarationsByName := make(map[string]ToolDefinition, len(spec.Tools.Declarations))
+	for _, declaration := range spec.Tools.Declarations {
+		declarationsByName[strings.TrimSpace(declaration.Function.Name)] = declaration
+	}
 	for _, toolName := range spec.Tools.AllowedTools {
 		def, ok := toolDefinitions[toolName]
 		if !ok {
 			continue
 		}
+		info, err := def.BaseTool.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve tool %q schema: %w", toolName, err)
+		}
+		if declaration, declared := declarationsByName[toolName]; declared {
+			info, err = graphNativeToolInfoFromDefinition(declaration)
+			if err != nil {
+				return nil, fmt.Errorf("resolve declared tool %q schema: %w", toolName, err)
+			}
+		}
+		actualToolRefs = append(actualToolRefs, actualRunToolRevisionRef(toolName, spec.Tools.Sources[toolName], def, info))
 		selectedTools = append(selectedTools, def.BaseTool)
 	}
+	spec.Tools.RevisionRefs = actualToolRefs
 
 	instruction := spec.Skill.Guidance
 	if instruction == "" {
@@ -151,6 +168,8 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 	if spec.Inference.Goal != "" {
 		instruction += fmt.Sprintf("\nCurrent goal: %s", spec.Inference.Goal)
 	}
+	promptRef := NewRunRevisionRef("prompt", "assembled_runtime_prompt", RunManifestSchemaVersion, "eino_turn_executor", instruction)
+	spec.Metadata.ManifestRefs.Prompt = &promptRef
 
 	callbackRecorder := NewRuntimeCallbackRecorder(RuntimeCallbackRecorderConfig{
 		ProviderName: spec.Model.Executed.ProviderName,
@@ -242,6 +261,32 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		ToolTranscript:   toolTranscript,
 		CheckpointRef:    &checkpointRef,
 	}, nil
+}
+
+func actualRunToolRevisionRef(toolName, source string, definition tools.Definition, info *einomessage.ToolInfo) RunRevisionRef {
+	var parameters any
+	if info != nil && info.ParamsOneOf != nil {
+		if schema, err := info.ParamsOneOf.ToJSONSchema(); err == nil {
+			parameters = schema
+		}
+	}
+	payload := map[string]any{
+		"implementation_type": fmt.Sprintf("%T", definition.BaseTool),
+		"definition": map[string]any{
+			"name": definition.Name, "description": definition.Description,
+			"required_inputs": append([]string(nil), definition.RequiredInputs...),
+			"tool_scope":      definition.ToolScope, "requires_confirmation": definition.RequiresConfirmation,
+			"side_effect_level": definition.SideEffectLevel,
+		},
+	}
+	actualName := strings.TrimSpace(toolName)
+	if info != nil {
+		actualName = firstNonEmptyRunManifestValue(info.Name, actualName)
+		payload["model_binding"] = map[string]any{
+			"name": info.Name, "description": info.Desc, "extra": info.Extra, "parameters": parameters,
+		}
+	}
+	return NewRunRevisionRef("tool", actualName, "", source, payload)
 }
 
 func (e EinoTurnExecutor) newChatModelWithRetry(ctx context.Context, cfg model.ChatConfig, maxRetry int) (einomodel.ToolCallingChatModel, int, error) {

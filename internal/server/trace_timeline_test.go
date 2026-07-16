@@ -3,6 +3,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"moss/internal/config"
+	"moss/internal/runtime"
 )
 
 func TestProjectAgentTraceTimelineOrdersAndClassifiesRecords(t *testing.T) {
@@ -53,6 +55,49 @@ func TestProjectAgentTraceTimelineOrdersAndClassifiesRecords(t *testing.T) {
 func TestTimelineErrorDoesNotMarkNormalStatusAsFailure(t *testing.T) {
 	if value := timelineError("recorded", map[string]any{"error": "historical metadata"}); value != nil {
 		t.Fatalf("timelineError(recorded) = %#v, want nil", value)
+	}
+}
+
+func TestRunManifestProjectionUsesPersistedManifestAndRemovesMetadataDuplicate(t *testing.T) {
+	manifest := runtime.BuildRunManifest(&runtime.ExecutionSpec{
+		Skill: runtime.SkillSpec{PrimarySkill: "analysis", Guidance: "private prompt", RevisionRefs: []runtime.RunRevisionRef{
+			runtime.NewRunRevisionRef("skill", "analysis", "v1", "registry", "private skill"),
+		}},
+		Model: runtime.ModelSpec{Requested: runtime.ModelEndpoint{ProviderID: "provider", ProviderModelID: "model"}},
+	}, time.Date(2026, time.July, 16, 8, 0, 0, 0, time.UTC))
+	persisted, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persistedMap map[string]any
+	if err := json.Unmarshal(persisted, &persistedMap); err != nil {
+		t.Fatal(err)
+	}
+
+	projected, status := runManifestFromMetadata(map[string]any{"run_manifest": persistedMap})
+	if status != manifest.Status || projected == nil || projected.ManifestSHA256 != manifest.ManifestSHA256 {
+		t.Fatalf("projected=%#v status=%q, want persisted manifest", projected, status)
+	}
+	metadata := metadataWithoutRunManifest(map[string]any{"run_manifest": persistedMap, "writer": "graph"})
+	if _, exists := metadata["run_manifest"]; exists || metadata["writer"] != "graph" {
+		t.Fatalf("metadata = %#v, want manifest removed and other fields retained", metadata)
+	}
+}
+
+func TestRunManifestProjectionMarksLegacyRunUnavailable(t *testing.T) {
+	manifest, status := runManifestFromMetadata(map[string]any{"writer": "legacy"})
+	if manifest != nil || status != "legacy_unavailable" {
+		t.Fatalf("manifest=%#v status=%q, want legacy_unavailable", manifest, status)
+	}
+}
+
+func TestRunManifestProjectionRejectsUnknownSchemaWithoutCurrentConfigInference(t *testing.T) {
+	manifest, status := runManifestFromMetadata(map[string]any{"run_manifest": map[string]any{
+		"schema_version":  "agent_run_manifest.v99",
+		"manifest_sha256": "future-digest",
+	}})
+	if manifest != nil || status != "unsupported_schema" {
+		t.Fatalf("manifest=%#v status=%q, want unsupported_schema", manifest, status)
 	}
 }
 

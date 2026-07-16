@@ -864,7 +864,7 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
               <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output"])} />
               <InspectorSection title="影响与状态" value={observabilitySection(selectedItem, ["impact", "state_delta", "decision", "candidate_kind", "from_status", "to_status", "error"])} />
               <InspectorSection title="性能与用量" value={observabilityPerformance(selectedItem)} />
-              <InspectorSection title="运行版本清单" value={observabilityManifest(timeline?.run)} />
+              <InspectorSection title="运行版本清单" value={observabilityManifest(timeline)} />
               <details className="raw-safe-detail"><summary>完整安全记录</summary><pre>{formatMaybeJSON(selectedItem.detail ?? {})}</pre></details>
             </div>
           ) : <div className="observability-empty">选择一个步骤查看详情</div>}
@@ -913,15 +913,9 @@ function observabilityPerformance(item: RuntimeTraceTimelineItem) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
-function observabilityManifest(run?: RuntimeRun) {
-  if (!run) return null;
-  const metadata = run.metadata ?? {};
-  const keys = ["run_manifest", "model_revision", "provider_revision", "prompt_revision", "skill_revision", "tool_schema_revision", "governance_policy_revision", "context_revision", "evaluator_revision"];
-  const result: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (metadata[key] !== undefined) result[key] = metadata[key];
-  }
-  return Object.keys(result).length > 0 ? result : null;
+function observabilityManifest(timeline?: RuntimeTraceTimeline | null) {
+	if (!timeline) return null;
+	return timeline.run_manifest ?? { status: timeline.manifest_status };
 }
 
 function runtimeElapsedMilliseconds(start?: string, end?: string) {

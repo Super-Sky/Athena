@@ -151,6 +151,8 @@ Agent Run API 当前暴露：
 - `GET /api/agent/runs/:runID/timeline`
   - 将现有的 step、lifecycle、trace、usage 和 projection records 依时间投影为一条业务应用可直接展示的列表；每条 entry 包含 timestamp、duration、status、source、error 和安全 detail。
   - Projects existing persisted records into one ordered, app-readable timeline. It does not create a duplicate trace store and never returns raw prompts, tool arguments, tool results, or business payloads.
+  - 顶层可选 `run_manifest` 是 TaskRun 创建时冻结的 `agent_run_manifest.v1`，并通过 `manifest_status` 区分 `complete`、`partial`、`legacy_unavailable`、`unsupported_schema` 与 `invalid`。历史 run 不会从当前配置重建版本。
+  - The optional top-level `run_manifest` is frozen with TaskRun creation. It contains revision IDs/versions/sources and SHA-256 values only; `manifest_status=legacy_unavailable` preserves backward compatibility without read-time reconstruction.
 
 Agent Run API 边界：
 
@@ -162,6 +164,8 @@ Agent Run API 边界：
 - If runtime persistence is not configured, read/trace endpoints return `503`; create responses may still complete but cannot expose a persisted trace.
 
 Control Plane additionally exposes `GET /api/control-plane/runtime/runs/:runID/timeline` behind its existing authentication boundary. The Admin UI renders this same projection as expandable safe-detail rows for model, tool, governance, context, loop, usage, and delivery investigation.
+
+Production deployments must protect app-facing run read endpoints with an upstream authenticated application boundary until Athena's app identity plus workspace/app-instance authorization gate is implemented. Knowledge of a `run_id` must not be treated as authorization.
 
 ## 应用拥有的 Memory / Context API
 

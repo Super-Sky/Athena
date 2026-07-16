@@ -115,6 +115,13 @@ func TestEinoGraphFoundationProjectsMinimalPersistence(t *testing.T) {
 	if _, ok := frame.RecordSet.Run.Metadata["callback_events"]; !ok {
 		t.Fatalf("run metadata = %#v, want callback_events projection", frame.RecordSet.Run.Metadata)
 	}
+	manifest, ok := frame.RecordSet.Run.Metadata["run_manifest"].(RunManifest)
+	if !ok || manifest.SchemaVersion != RunManifestSchemaVersion || manifest.ManifestSHA256 == "" {
+		t.Fatalf("run manifest = %#v, want frozen typed manifest", frame.RecordSet.Run.Metadata["run_manifest"])
+	}
+	if !manifest.CapturedAt.Equal(time.Date(2026, 5, 6, 8, 0, 0, 0, time.UTC)) {
+		t.Fatalf("manifest captured_at = %s, want graph clock", manifest.CapturedAt)
+	}
 	if len(frame.RecordSet.Events) < 2 {
 		t.Fatalf("events = %d, want run and step lifecycle events", len(frame.RecordSet.Events))
 	}

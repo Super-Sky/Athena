@@ -70,6 +70,10 @@
   - 实现 PostgreSQL 版 runtime persistence store、RuntimeContract store、checkpoint store 与 migration model。
 - `persistence_writer.go`
   - 提供内部 deterministic writer，用于写入最小 runtime persistence record set。
+- `run_manifest.go`
+  - 定义 `agent_run_manifest.v1`、规范 SHA-256 revision refs，并在不保留 Prompt、tool、context 或策略原文的前提下冻结执行版本。
+- `run_manifest_test.go`
+  - 验证 manifest 摘要确定性、版本变化可检测、核心引用缺失状态和敏感原文不落入清单。
 - `terminal_projector.go`
   - 将 runner 最终输出、失败终态、graph callback 摘要、model/tool callback 摘要和 generic usage 安全投影到 Phase 1 runtime persistence objects。
 - `results.go`

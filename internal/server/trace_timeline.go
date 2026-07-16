@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	appcore "moss/internal/app"
 	"moss/internal/config"
+	"moss/internal/runtime"
 )
 
 // agentTraceTimelineItem is a stable, app-readable view over existing safe runtime records.
@@ -40,9 +42,11 @@ type agentTraceTimelineSummary struct {
 }
 
 type agentTraceTimelineResponse struct {
-	Run     runtimeRunDTO             `json:"run"`
-	Items   []agentTraceTimelineItem  `json:"items"`
-	Summary agentTraceTimelineSummary `json:"summary"`
+	Run            runtimeRunDTO             `json:"run"`
+	Items          []agentTraceTimelineItem  `json:"items"`
+	Summary        agentTraceTimelineSummary `json:"summary"`
+	RunManifest    *runtime.RunManifest      `json:"run_manifest,omitempty"`
+	ManifestStatus string                    `json:"manifest_status"`
 }
 
 // handleGetAgentRunTimeline exposes a business-app-readable safe trace timeline.
@@ -73,9 +77,13 @@ func loadAgentRunTimeline(ctx context.Context, application *appcore.Service, run
 		return agentTraceTimelineResponse{}, err
 	}
 	items := projectAgentTraceTimeline(readout)
+	manifest, manifestStatus := runManifestFromMetadata(readout.Run.Metadata)
+	readout.Run.Metadata = metadataWithoutRunManifest(readout.Run.Metadata)
 	return agentTraceTimelineResponse{
-		Run:   readout.Run,
-		Items: items,
+		Run:            readout.Run,
+		Items:          items,
+		RunManifest:    manifest,
+		ManifestStatus: manifestStatus,
 		Summary: agentTraceTimelineSummary{
 			RunID:        readout.Run.ID,
 			ItemCount:    len(items),
@@ -84,6 +92,47 @@ func loadAgentRunTimeline(ctx context.Context, application *appcore.Service, run
 			CompletedAt:  readout.Run.CompletedAt,
 		},
 	}, nil
+}
+
+func runManifestFromMetadata(metadata map[string]any) (*runtime.RunManifest, string) {
+	value, ok := metadata["run_manifest"]
+	if !ok || value == nil {
+		return nil, "legacy_unavailable"
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, "invalid"
+	}
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil || strings.TrimSpace(envelope.SchemaVersion) == "" {
+		return nil, "invalid"
+	}
+	if envelope.SchemaVersion != runtime.RunManifestSchemaVersion {
+		return nil, "unsupported_schema"
+	}
+	var manifest runtime.RunManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		return nil, "invalid"
+	}
+	if !runtime.ValidRunManifestDigest(manifest) {
+		return nil, "invalid"
+	}
+	return &manifest, manifest.Status
+}
+
+func metadataWithoutRunManifest(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		if key != "run_manifest" {
+			result[key] = value
+		}
+	}
+	return result
 }
 
 func projectAgentTraceTimeline(readout agentRunTraceReadout) []agentTraceTimelineItem {

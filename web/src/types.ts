@@ -157,9 +157,36 @@ export type RuntimeTraceTimelineItem = {
   detail?: Record<string, unknown>;
 };
 
+export type RuntimeRunRevisionRef = {
+  kind: string;
+  id: string;
+  version?: string;
+  content_sha256?: string;
+  source?: string;
+};
+
+export type RuntimeRunManifest = {
+  schema_version: string;
+  status: string;
+  captured_at: string;
+  manifest_sha256: string;
+  model?: RuntimeRunRevisionRef;
+  prompt?: RuntimeRunRevisionRef;
+  skills?: RuntimeRunRevisionRef[];
+  tools?: RuntimeRunRevisionRef[];
+  governance?: RuntimeRunRevisionRef[];
+  context_assets?: RuntimeRunRevisionRef[];
+  evaluators?: RuntimeRunRevisionRef[];
+  system_truth?: RuntimeRunRevisionRef[];
+  runtime_contract?: RuntimeRunRevisionRef;
+  missing?: string[];
+};
+
 export type RuntimeTraceTimeline = {
   run: RuntimeRun;
   items: RuntimeTraceTimelineItem[];
+  run_manifest?: RuntimeRunManifest;
+  manifest_status: "complete" | "partial" | "legacy_unavailable" | "unsupported_schema" | "invalid";
   summary: {
     run_id: string;
     item_count: number;
