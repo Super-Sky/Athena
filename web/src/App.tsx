@@ -860,9 +860,9 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
           {selectedItem ? (
             <div className="inspector-content">
               <div className="inspector-heading"><strong>{selectedItem.summary}</strong><span>{selectedItem.status || "recorded"} · {formatRuntimeTime(selectedItem.timestamp)}</span></div>
-              <InspectorSection title="发送内容" value={observabilitySection(selectedItem, ["request", "input", "arguments", "messages", "redacted_input"])} />
-              <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output"])} />
-              <InspectorSection title="影响与状态" value={observabilitySection(selectedItem, ["impact", "state_delta", "decision", "candidate_kind", "from_status", "to_status", "error"])} />
+              <InspectorSection title="发送内容" value={observabilitySection(selectedItem, ["request", "input", "arguments", "messages", "redacted_input", "input_count", "input_runes"])} />
+              <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output", "output_runes", "tool_call_count"])} />
+              <InspectorSection title="影响与状态" value={observabilityImpact(selectedItem)} />
               <InspectorSection title="性能与用量" value={observabilityPerformance(selectedItem)} />
               <InspectorSection title="运行版本清单" value={observabilityManifest(timeline)} />
               <details className="raw-safe-detail"><summary>完整安全记录</summary><pre>{formatMaybeJSON(selectedItem.detail ?? {})}</pre></details>
@@ -903,12 +903,22 @@ function observabilitySection(item: RuntimeTraceTimelineItem, keys: string[]) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
+function observabilityImpact(item: RuntimeTraceTimelineItem) {
+  const result = observabilitySection(item, ["impact", "state_delta", "decision", "candidate_kind", "from_status", "to_status", "error"]) ?? {};
+  const safeError = asRecord(item.error)?.error_summary;
+  if (typeof safeError === "string" && safeError.trim() !== "") result.error_summary = safeError;
+  return Object.keys(result).length > 0 ? result : null;
+}
+
 function observabilityPerformance(item: RuntimeTraceTimelineItem) {
   const detail = item.detail ?? {};
   const result: Record<string, unknown> = {};
   if (item.duration_ms !== undefined) result.duration_ms = item.duration_ms;
-  for (const key of ["amount", "unit", "cost", "currency", "resource_type", "resource_name", "provider"]) {
-    if (detail[key] !== undefined) result[key] = detail[key];
+  const sources = [detail, asRecord(detail.redacted_payload), asRecord(detail.metadata)].filter(Boolean) as Record<string, unknown>[];
+  for (const source of sources) {
+    for (const key of ["amount", "unit", "cost", "currency", "resource_type", "resource_name", "provider", "prompt_tokens", "completion_tokens", "total_tokens", "cached_tokens", "reasoning_tokens"]) {
+      if (source[key] !== undefined) result[key] = source[key];
+    }
   }
   return Object.keys(result).length > 0 ? result : null;
 }

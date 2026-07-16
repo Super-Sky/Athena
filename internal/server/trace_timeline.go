@@ -175,15 +175,17 @@ func projectAgentTraceTimeline(readout agentRunTraceReadout) []agentTraceTimelin
 		})
 	}
 	for _, trace := range readout.Traces {
+		status := timelineTraceRecordStatus(trace)
 		items = append(items, agentTraceTimelineItem{
-			ID:        "trace:" + trace.ID,
-			Kind:      timelineTraceKind(trace.TraceType),
-			Timestamp: trace.CreatedAt,
-			Status:    timelineTraceStatus(trace.Metadata),
-			Source:    timelineTraceSource(trace),
-			Summary:   trace.Summary,
-			StepID:    trace.StepID,
-			Error:     timelineError(timelineTraceStatus(trace.Metadata), trace.Metadata),
+			ID:         "trace:" + trace.ID,
+			Kind:       timelineTraceKind(trace.TraceType),
+			Timestamp:  trace.CreatedAt,
+			DurationMS: timelineTraceDurationMilliseconds(trace.RedactedPayload),
+			Status:     status,
+			Source:     timelineTraceSource(trace),
+			Summary:    trace.Summary,
+			StepID:     trace.StepID,
+			Error:      timelineTraceError(trace, status),
 			Detail: map[string]any{
 				"trace_type":       trace.TraceType,
 				"safe_labels":      trace.SafeLabels,
@@ -297,6 +299,53 @@ func timelineTraceStatus(metadata map[string]any) string {
 		}
 	}
 	return "recorded"
+}
+
+func timelineTraceRecordStatus(trace runtimeTraceDTO) string {
+	if trace.SafeLabels != nil {
+		if status := strings.TrimSpace(trace.SafeLabels["status"]); status != "" {
+			return strings.ToLower(status)
+		}
+	}
+	return timelineTraceStatus(trace.Metadata)
+}
+
+func timelineTraceDurationMilliseconds(payload map[string]any) *int64 {
+	if payload == nil {
+		return nil
+	}
+	var value int64
+	switch duration := payload["duration_ms"].(type) {
+	case int:
+		value = int64(duration)
+	case int64:
+		value = duration
+	case float64:
+		value = int64(duration)
+	case json.Number:
+		parsed, err := duration.Int64()
+		if err != nil {
+			return nil
+		}
+		value = parsed
+	default:
+		return nil
+	}
+	if value < 0 {
+		return nil
+	}
+	return &value
+}
+
+func timelineTraceError(trace runtimeTraceDTO, status string) map[string]any {
+	result := timelineError(status, trace.Metadata)
+	if result == nil {
+		return nil
+	}
+	if summary, ok := trace.RedactedPayload["error_summary"].(string); ok && strings.TrimSpace(summary) != "" {
+		result["error_summary"] = strings.TrimSpace(summary)
+	}
+	return result
 }
 
 func timelineError(status string, metadata map[string]any) map[string]any {

@@ -102,6 +102,7 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 将运行观测提升为一级导航，提供 run 列表、统一时间线、请求/返回/影响/性能安全检查器和移动端紧凑导航。
 - [x] 将 model/provider、最终 assembled prompt、skill、tool schema、policy、context、实际使用的 evaluator 与 runtime contract revision 收敛为 `agent_run_manifest.v1` 不可变顶层契约；旧 run 返回 `legacy_unavailable`，不按当前配置反推。
 - [x] issue #26 为全部 app-facing Agent Run 路由增加独立 app token、精确 `(workspace_id, app_instance_id)` scope、权威 create/resume ownership 与同形跨租户 `404`；双入口 DTO 同步递归脱敏。
+- [x] 将 Eino model callback 的真实状态、耗时、输入/输出计数、tool call 数量与 Token 安全摘要投影到后台检查器，不暴露原始 Prompt 或模型响应。
 
 ## Goal-driven Execution Controls Checklist
 
@@ -171,6 +172,7 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-07-09 全仓验证通过：`env -u APP_ENV go test ./...`；fake business service 测试覆盖注册、执行、redaction、deny、timeout、retry、correlation、response budget、redirect、restore 与 delete。
 - 2026-07-10 issue #14 开始增加确定性 Core 工具包：calculator、IANA timezone current_time 与 fail-closed JSON Schema subset validator；不引入网络、文件、凭据或业务对象。
 - 2026-07-10 issue #14 验证通过：`go test ./...`、`go test -race ./internal/tools`、calculator benchmark（约 `1893 ns/op`、`0 B/op`、`0 allocs/op`）及 Agent Run tool call ID/governance integration tests。`go test -race ./internal/tools ./internal/app ./internal/runtime` 仍报告 `scene.SetSourcesRoot` 的既有 app 测试初始化竞争，未由本工具切片引入。
+- 2026-07-16 issue #11 model callback 安全观测通过：`go test ./...`、server 聚焦 race、Web production build 与真实 PostgreSQL Agent Run Browser 验收；模型步骤显示 success、130 ms、输入/输出计数和 18/9/27 Token，页面无横向溢出且不展示原始 Prompt/response。`go vet ./...` 仍仅报告既有 `EinoGraphFoundation contains sync.Mutex` 值传递告警。
 
 ## Next Iteration Plan
 

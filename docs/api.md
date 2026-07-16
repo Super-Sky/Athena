@@ -153,6 +153,8 @@ Agent Run API 当前暴露：
 - `GET /api/agent/runs/:runID/timeline`
   - 将现有的 step、lifecycle、trace、usage 和 projection records 依时间投影为一条业务应用可直接展示的列表；每条 entry 包含 timestamp、duration、status、source、error 和安全 detail。
   - Projects existing persisted records into one ordered, app-readable timeline. It does not create a duplicate trace store and never returns raw prompts, tool arguments, tool results, or business payloads.
+  - 模型回调 detail 仅返回输入/输出计数、tool call 数量、状态、耗时、Token 与脱敏错误摘要；不会返回原始 Prompt 或模型响应。
+  - Model callback detail contains only safe counts, status, duration, token usage, and a redacted error summary; raw prompts and model responses are excluded.
   - 顶层可选 `run_manifest` 是 TaskRun 创建时冻结的 `agent_run_manifest.v1`，并通过 `manifest_status` 区分 `complete`、`partial`、`legacy_unavailable`、`unsupported_schema` 与 `invalid`。历史 run 不会从当前配置重建版本。
   - The optional top-level `run_manifest` is frozen with TaskRun creation. It contains revision IDs/versions/sources and SHA-256 values only; `manifest_status=legacy_unavailable` preserves backward compatibility without read-time reconstruction.
 
