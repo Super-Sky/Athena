@@ -236,7 +236,7 @@ detail 读取当前会在进入 runtime 前尝试同轮预取，并把结果回�
 
 ## 当前 RuntimeTask 边界
 
-当前 app 层会把 chat/direct respond 等入口归一化为通用 `RuntimeTask` 后再进入 runtime。`inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 保留为 legacy-compatible / future registered semantics；Phase 0 不把这些场景字段作为 core 必填规则，也不实现完整注册式 task type validator。
+当前 app 层会把 chat/direct respond 等入口归一化为通用 `RuntimeTask` 后再进入 runtime。Runtime foundation 会幂等注册默认 `chat` validator contract，确保 PostgreSQL strict resolution 下 app-facing Agent Run 不需要手工 seed。`inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 保留为 legacy-compatible / future registered semantics；Phase 0 不把这些场景字段作为 core 必填规则，也不实现完整注册式 task type validator。
 
 `/api/runtime/respond` 是 generic direct respond adapter，复用同一 app/runtime 主路径，不代表独立的场景专属 runtime。旧的 `RuntimeScenarioRequest` / `RuntimeScenarioResponse` judgment 流程保留在 `/api/runtime/scenario/respond` 兼容入口，用于承接既有 mosi/OpenClaw 类场景包。
 

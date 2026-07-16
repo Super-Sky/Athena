@@ -103,6 +103,19 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 将 model/provider、最终 assembled prompt、skill、tool schema、policy、context、实际使用的 evaluator 与 runtime contract revision 收敛为 `agent_run_manifest.v1` 不可变顶层契约；旧 run 返回 `legacy_unavailable`，不按当前配置反推。
 - [x] issue #26 为全部 app-facing Agent Run 路由增加独立 app token、精确 `(workspace_id, app_instance_id)` scope、权威 create/resume ownership 与同形跨租户 `404`；双入口 DTO 同步递归脱敏。
 
+## Goal-driven Execution Controls Checklist
+
+- canonical issue: `Super-Sky/Athena#22`
+- branch: `codex/agent-run-contract-issue-22`
+- base branch: `codex/agent-run-read-auth-issue-26`
+- current state: `implementing`
+
+- [x] 在 foundation 中幂等注册默认 `chat` task type 与 active validator contract，修复 PostgreSQL strict resolution 下默认 Agent Run 返回 `unsupported_task_type`。
+- [x] 用受认证 app identity 发起省略 `task_type` 的真实 PostgreSQL Agent Run，并验证 run ownership、immutable manifest 与授权 timeline。
+- [ ] 定义并落实 success criteria evaluation、budget、deadline 与完整 stop-reason taxonomy。
+- [ ] 接入 Redis-backed enqueue、idempotency lock、retry/backoff、cancel 与 checkpoint/resume contract。
+- [ ] 补齐异步 HTTP/SSE、OpenAPI、Docker env、Redis 故障降级和系统回归测试。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：

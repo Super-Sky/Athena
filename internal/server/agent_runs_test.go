@@ -226,9 +226,19 @@ func TestAgentRunEndpointsCreateReadTraceAndCancel(t *testing.T) {
 	}
 }
 
+func TestAgentRunRuntimeTaskTypeDefaultsToRegisteredChat(t *testing.T) {
+	t.Parallel()
+
+	for _, taskType := range []string{"", agentRunContractTaskType} {
+		req := agentRunStartRequest{TaskType: taskType}
+		if got := agentRunRuntimeTaskType(req); got != defaultAgentRunRuntimeTaskType {
+			t.Fatalf("agentRunRuntimeTaskType(%q) = %q, want %q", taskType, got, defaultAgentRunRuntimeTaskType)
+		}
+	}
+}
+
 func newAgentRunHTTPServer(t *testing.T, store runtime.RuntimePersistenceStore) *HTTPServer {
 	t.Helper()
-	seedAgentRunRuntimeContract(t, store)
 	cfg := config.Config{
 		Server: config.ServerConfig{HTTPPort: 8080},
 		ControlPlane: config.ControlPlaneConfig{
@@ -247,37 +257,6 @@ func newAgentRunHTTPServer(t *testing.T, store runtime.RuntimePersistenceStore) 
 	application := appcore.NewServiceWithRuntimeStore(cfg, nil, nil, nil, store)
 	application.FastPath = &agentRunTestFastPath{store: store}
 	return NewHTTPServer(cfg, application)
-}
-
-func seedAgentRunRuntimeContract(t *testing.T, store runtime.RuntimePersistenceStore) {
-	t.Helper()
-	registry, ok := store.(interface {
-		CreateRuntimeContract(context.Context, runtime.RuntimeContract) (runtime.RuntimeContract, error)
-		CreateTaskTypeRegistration(context.Context, runtime.TaskTypeRegistration) (runtime.TaskTypeRegistration, error)
-	})
-	if !ok {
-		return
-	}
-	ctx := context.Background()
-	contractID := "contract-chat-agent-run-test"
-	if _, err := registry.CreateRuntimeContract(ctx, runtime.RuntimeContract{
-		ID:       contractID,
-		Name:     "Chat Runtime Contract",
-		Version:  "v1",
-		Status:   runtime.RuntimeContractStatusActive,
-		TaskType: "chat",
-	}); err != nil {
-		t.Fatalf("seed runtime contract failed: %v", err)
-	}
-	if _, err := registry.CreateTaskTypeRegistration(ctx, runtime.TaskTypeRegistration{
-		ID:                "task-type-chat-agent-run-test",
-		TypeKey:           "chat",
-		DisplayName:       "Chat",
-		Status:            runtime.TaskTypeStatusActive,
-		DefaultContractID: contractID,
-	}); err != nil {
-		t.Fatalf("seed task type registration failed: %v", err)
-	}
 }
 
 func newAgentRunJSONRequestContext(body string) *hertzapp.RequestContext {
