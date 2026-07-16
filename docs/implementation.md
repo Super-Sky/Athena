@@ -33,6 +33,8 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - app 层负责 `result_summary / content_cards / right_panel_view / score_delta / delivery_profile`
   - app 层负责 workflow、automation、context assets、execution governance 和 base capability 兼容结果拼装
 - 面向业务应用的 Agent Run API 已接入 `internal/server/agent_runs.go`：
+	- `internal/server/app_auth.go` 使用独立 `X-Athena-App-Token` 和精确 workspace/app-instance scope 包装六条 Agent Run 路由；授权发生在读取子 trace records 前，create/resume 使用认证 scope 作为权威 ownership
+	- `internal/server/runtime_read.go` 对 app/Control Plane 共用 DTO 执行递归 credential-key redaction；app-facing full trace 不返回 projection semantic payload
   - `POST /api/agent/runs` 以 `goal / success_criteria / constraints / budget / context_assets / tools / memory_scope / governance_refs` 创建一次目标驱动 run
   - OpenAI-compatible function schemas 与 `tool_choice` 会在 transport 校验后转换为 `runtime.ToolDefinition` 和 canonical model policy；非法 schema、重复名称和错误 choice 会在执行前拒绝
   - `ToolCallTranscript` 从 Eino model / ToolsNode loop 采集多轮调用、稳定 ID、结果、错误与 timing，并投影为有序 `messages`、顶层 `tool_calls / tool_results` 和脱敏 runtime trace

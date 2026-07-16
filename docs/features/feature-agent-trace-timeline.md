@@ -38,11 +38,11 @@ The timeline response exposes the manifest once at top level with `manifest_stat
 
 timeline 响应只在顶层返回一次清单，并同时返回 `manifest_status`。历史 run 保持可读并标记为 `legacy_unavailable`；服务端不会用当前配置反推历史版本。后台只消费这份 typed 顶层契约，不再从 run metadata 猜测版本字段。
 
-## Known Gap / 已知缺口
+## Authorization / 授权
 
-The app-facing Agent Run read endpoints still need an authenticated app identity and `(run_id, workspace_id, app_instance_id)` authorization boundary. Until that gate lands, production exposure of app-facing trace endpoints must be disabled or protected by an upstream gateway. Control Plane authentication remains required for the admin endpoint.
+Issue `#26` adds authenticated app identity and exact workspace/app-instance authorization to all Agent Run routes. Missing and cross-tenant runs share one generic 404 response, and authorization completes before child trace records are read. Control Plane authentication remains required and currently represents system-admin access.
 
-面向应用的 Agent Run 读取端点仍需补齐 app identity，以及 `(run_id, workspace_id, app_instance_id)` 授权边界。在该门禁落地前，生产环境必须关闭 app-facing trace 端点或由上游网关保护；后台端点继续强制 Control Plane 登录认证。
+Issue `#26` 已为全部 Agent Run 路由加入 app identity 与精确 workspace/app-instance 授权。不存在与跨租户 run 共用通用 404，且授权在读取子 trace records 前完成。后台继续强制 Control Plane 登录，当前登录身份定义为 system-admin。
 
 ## Verification / 验证
 

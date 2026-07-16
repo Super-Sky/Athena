@@ -121,6 +121,9 @@ func buildOpenAPISpec(cfg config.Config) map[string]any {
 		"paths": buildOpenAPIPaths(),
 		"components": map[string]any{
 			"schemas": buildOpenAPISchemas(),
+			"securitySchemes": map[string]any{
+				"AppToken": map[string]any{"type": "apiKey", "in": "header", "name": appAuthHeaderToken},
+			},
 		},
 	}
 }
@@ -240,10 +243,14 @@ func buildOpenAPIPaths() map[string]any {
 				"tags":        []string{"agent-runs"},
 				"summary":     "创建一次目标驱动 Agent Run",
 				"operationId": "createAgentRun",
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters":  agentRunAuthHeaderParameters(),
 				"requestBody": jsonRequest("AgentRunCreateRequest", true),
 				"responses": map[string]any{
 					"201": jsonResponse("Agent Run 创建结果", "AgentRunResponse"),
 					"400": jsonResponse("错误请求", "ErrorResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
+					"403": jsonResponse("请求 scope 与应用身份不一致", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
 				},
 			},
@@ -253,9 +260,11 @@ func buildOpenAPIPaths() map[string]any {
 				"tags":        []string{"agent-runs"},
 				"summary":     "读取一次 Agent Run 状态",
 				"operationId": "getAgentRun",
-				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters":  append(pathIDParameter("runID", "runtime run ID"), agentRunAuthHeaderParameters()...),
 				"responses": map[string]any{
 					"200": jsonResponse("Agent Run 状态", "AgentRunResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("Agent Run 不存在", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
 				},
@@ -266,11 +275,13 @@ func buildOpenAPIPaths() map[string]any {
 				"tags":        []string{"agent-runs"},
 				"summary":     "基于原 run 发起一次补数续跑",
 				"operationId": "resumeAgentRun",
-				"parameters":  pathIDParameter("runID", "原 runtime run ID"),
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters":  append(pathIDParameter("runID", "原 runtime run ID"), agentRunAuthHeaderParameters()...),
 				"requestBody": jsonRequest("AgentRunResumeRequest", true),
 				"responses": map[string]any{
 					"201": jsonResponse("Agent Run 续跑结果", "AgentRunResponse"),
 					"400": jsonResponse("错误请求", "ErrorResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("原 Agent Run 不存在", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
 				},
@@ -281,10 +292,12 @@ func buildOpenAPIPaths() map[string]any {
 				"tags":        []string{"agent-runs"},
 				"summary":     "请求取消一次 Agent Run",
 				"operationId": "cancelAgentRun",
-				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters":  append(pathIDParameter("runID", "runtime run ID"), agentRunAuthHeaderParameters()...),
 				"requestBody": jsonRequest("AgentRunCancelRequest", false),
 				"responses": map[string]any{
 					"409": jsonResponse("当前同步 MVP 不支持取消或 run 已终态", "AgentRunResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("Agent Run 不存在", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
 				},
@@ -295,9 +308,11 @@ func buildOpenAPIPaths() map[string]any {
 				"tags":        []string{"agent-runs"},
 				"summary":     "读取一次 Agent Run 的 trace 时间线",
 				"operationId": "getAgentRunTrace",
-				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters":  append(pathIDParameter("runID", "runtime run ID"), agentRunAuthHeaderParameters()...),
 				"responses": map[string]any{
 					"200": jsonResponse("Agent Run trace", "AgentRunTraceResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("Agent Run 不存在", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
 				},
@@ -308,9 +323,11 @@ func buildOpenAPIPaths() map[string]any {
 				"tags":        []string{"agent-runs"},
 				"summary":     "读取一次 Agent Run 的统一 trace 时间线",
 				"operationId": "getAgentRunTimeline",
-				"parameters":  pathIDParameter("runID", "runtime run ID"),
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters":  append(pathIDParameter("runID", "runtime run ID"), agentRunAuthHeaderParameters()...),
 				"responses": map[string]any{
 					"200": jsonResponse("Agent Run timeline", "AgentRunTimelineResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("Agent Run 不存在", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
 				},
@@ -2498,6 +2515,14 @@ func pathIDParameter(name, description string) []map[string]any {
 			"type": "string",
 		},
 	}}
+}
+
+func agentRunAuthHeaderParameters() []map[string]any {
+	return []map[string]any{
+		{"name": appAuthHeaderAppID, "in": "header", "required": true, "description": "Authenticated application ID.", "schema": map[string]any{"type": "string"}},
+		{"name": appAuthHeaderWorkspaceID, "in": "header", "required": true, "description": "Authorized workspace scope.", "schema": map[string]any{"type": "string"}},
+		{"name": appAuthHeaderAppInstanceID, "in": "header", "required": true, "description": "Authorized application-instance scope.", "schema": map[string]any{"type": "string"}},
+	}
 }
 
 func queryStringParameter(name, description string) map[string]any {

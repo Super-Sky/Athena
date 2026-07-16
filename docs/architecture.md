@@ -105,6 +105,10 @@ Transport 只处理协议，不承载领域推理。
 
 This API is an app-facing runtime entrypoint, not a business-domain API. It accepts goal, criteria, constraints, budget, context assets, memory scope, governance refs and declarative tool inputs, then maps them into the generic app/runtime path. Domain objects remain owned by the host application.
 
+App-facing Agent Run routes optionally enter through `internal/server/app_auth.go`. When enabled, a dedicated app token authenticates one configured identity and exact workspace/app-instance pair. The authenticated scope becomes authoritative on create/resume, and run ownership is checked immediately after loading TaskRun but before any step/trace/usage/projection child records. This keeps missing and cross-tenant resources indistinguishable while leaving authenticated Control Plane sessions as system-admin reads.
+
+面向应用的 Agent Run 路由可先经过 `internal/server/app_auth.go`。门禁开启时，专用 app token 会认证一个已配置身份及精确 workspace/app-instance 组合；该 scope 在 create/resume 中成为权威归属。读取时会在加载 TaskRun 后、读取任何 step/trace/usage/projection 子记录前完成 ownership 校验，使不存在与跨租户资源不可区分，同时保留已认证 Control Plane session 的 system-admin 读取能力。
+
 The timeline endpoint is a read projection over Athena-owned runtime records. It merges loop steps, lifecycle events, callback/tool traces, usage and delivery projections by timestamp, preserving only safe labels, redacted payloads and metadata for the admin detail view. It does not become a second event store or a host application's business audit log.
 
 `agent_run_manifest.v1` is captured once at the Eino persistence boundary and stored with the immutable TaskRun metadata envelope. The read projection exposes that persisted typed value once at timeline top level; it does not join current registries or configuration during reads. Raw prompt, tool payload, provider headers, context content and policy bodies are represented only by canonical SHA-256 references.

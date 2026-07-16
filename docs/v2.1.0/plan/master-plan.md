@@ -101,7 +101,7 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 覆盖时间顺序、model/tool/governance 分类、失败 detail、路由与 OpenAPI 测试。
 - [x] 将运行观测提升为一级导航，提供 run 列表、统一时间线、请求/返回/影响/性能安全检查器和移动端紧凑导航。
 - [x] 将 model/provider、最终 assembled prompt、skill、tool schema、policy、context、实际使用的 evaluator 与 runtime contract revision 收敛为 `agent_run_manifest.v1` 不可变顶层契约；旧 run 返回 `legacy_unavailable`，不按当前配置反推。
-- [ ] 为 app-facing run/read/trace/timeline API 增加 app identity 和 `(run_id, workspace_id, app_instance_id)` 授权，越权读取统一返回 `404`；该项是生产暴露前的安全门禁。
+- [x] issue #26 为全部 app-facing Agent Run 路由增加独立 app token、精确 `(workspace_id, app_instance_id)` scope、权威 create/resume ownership 与同形跨租户 `404`；双入口 DTO 同步递归脱敏。
 
 ## Acceptance Gates
 

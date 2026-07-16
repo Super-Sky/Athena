@@ -1266,6 +1266,10 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatalf("openapi spec missing schemas: %#v", components)
 	}
+	securitySchemes, ok := components["securitySchemes"].(map[string]any)
+	if !ok || securitySchemes["AppToken"] == nil {
+		t.Fatalf("openapi spec missing AppToken security scheme: %#v", components)
+	}
 	createProviderSchema, ok := schemas["CreateModelProviderRequest"].(map[string]any)
 	if !ok {
 		t.Fatalf("openapi spec missing CreateModelProviderRequest: %#v", schemas)
