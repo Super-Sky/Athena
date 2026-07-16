@@ -20,9 +20,15 @@ Issue `Super-Sky/Athena#11` 将 Athena Agent Run 组织成业务应用和 Contro
 
 `internal/server/trace_timeline.go` 调用既有 Agent Run trace 读取边界，在内存中投影记录，并按源时间戳、再按 ID 稳定排序。不引入新表、writer 或业务审计库。只有持久化起止时间都有效时才计算 step duration。
 
-The Control Plane console fetches the protected endpoint and renders expandable rows. The visible detail intentionally excludes raw model prompts, raw tool arguments/results, credentials, and business-domain payloads.
+The Control Plane exposes `运行观测` as a first-level navigation view. It combines a run browser, ordered timeline, safe step inspector, and summary counters for elapsed time, model calls, skill/tool calls, usage, and failures. The inspector separates allowlisted request, response, impact/state, performance, and run-manifest fields; absent persisted fields render as not recorded instead of being inferred.
 
-Control Plane 控制台读取受保护端点并渲染可展开行。可见 detail 有意排除原始模型 prompt、原始工具参数/结果、凭据和业务领域载荷。
+Control Plane 将 `运行观测` 提升为一级导航页，组合 run 列表、有序时间线、安全步骤检查器，以及总耗时、模型调用、skill/tool、usage 和失败计数。检查器分开展示白名单请求、返回、影响/状态、性能与 run manifest；未持久化字段明确显示为未记录，不由前端推断。可见 detail 继续排除原始模型隐式推理、凭据和未脱敏业务载荷。
+
+## Known Gap / 已知缺口
+
+The timeline API already exposes safe `detail`, but immutable run-manifest revision references are not yet guaranteed as a stable top-level contract. The UI reads revision fields when present in run metadata and otherwise marks them as not recorded. Completing the manifest persistence and contract remains part of issue `#11`.
+
+时间线 API 已暴露安全 `detail`，但不可变 run manifest 的版本引用还没有成为稳定顶层契约。界面会读取 run metadata 中已经存在的版本字段，缺失时显示“本次未记录”。manifest 持久化与契约补齐仍属于 issue `#11`。
 
 ## Verification / 验证
 
@@ -31,7 +37,7 @@ go test ./internal/server -run 'TestProjectAgentTraceTimeline|TestTimelineError|
 cd web && npm ci && npm run build
 ```
 
-The test covers timestamp ordering, loop/model/tool/governance/usage classification, duration, safe failure detail, and both route registrations. The UI build confirms the typed client and expandable detail panel compile.
+The test covers timestamp ordering, loop/model/tool/governance/usage classification, duration, safe failure detail, and both route registrations. The UI build confirms the typed client and three-pane inspector compile. Browser smoke verifies the first-level navigation and confirms no horizontal page overflow at 1280px and 390px widths.
 
 测试覆盖时间排序、loop/model/tool/governance/usage 分类、duration、安全失败详情和两条路由注册。UI build 确认 typed client 与可展开详情面板能够编译。
 

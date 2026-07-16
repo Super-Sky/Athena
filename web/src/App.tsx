@@ -100,6 +100,7 @@ import type {
   RuntimeTaskTypeUpsertInput,
   RuntimeTrace,
   RuntimeTraceTimeline,
+  RuntimeTraceTimelineItem,
   RuntimeValidationRunResponse,
   RuntimeUsage,
   SceneConfig,
@@ -133,7 +134,7 @@ const SwaggerUI = lazy(async () => {
   return import("swagger-ui-react");
 });
 
-type TabKey = "overview" | "release-readiness" | "scenes" | "skills" | "tools" | "system-resources" | "system-validation" | "models" | "governance" | "versions" | "api-debug" | "swagger";
+type TabKey = "overview" | "observability" | "release-readiness" | "scenes" | "skills" | "tools" | "system-resources" | "system-validation" | "models" | "governance" | "versions" | "api-debug" | "swagger";
 type AuthPhase = "loading" | "ready" | "unauthenticated";
 
 type ProviderDraft = {
@@ -229,6 +230,7 @@ type ReleaseReadinessCheck = {
 
 const tabs: { key: TabKey; label: string; description: string }[] = [
   { key: "overview", label: "概览", description: "运行态指标与 truth dir 状态" },
+  { key: "observability", label: "运行观测", description: "逐步检查模型、skill、tool、影响与性能" },
   { key: "release-readiness", label: "Release Readiness", description: "v2.0.0 成品门禁、阻塞项和下一步入口" },
   { key: "scenes", label: "场景", description: "编辑场景匹配、默认技能和建议问题" },
   { key: "skills", label: "Skills", description: "维护技能指导、工具引用和开关" },
@@ -618,6 +620,7 @@ export default function App() {
           <>
         {data === null ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-grid"><span /><span /><span /></span></section> : null}
         {data && activeTab === "overview" ? <OverviewPanel data={data} providers={providers} truthDir={authStatus?.truth_dir} systemResources={systemResources} /> : null}
+        {data && activeTab === "observability" ? <ObservabilityPanel onError={setError} onStatus={setStatus} /> : null}
         {data && activeTab === "release-readiness" ? (
           <ReleaseReadinessPanel
             apiEndpoints={apiEndpoints}
@@ -753,6 +756,178 @@ function OverviewPanel({
       </div>
     </section>
   );
+}
+
+function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) => void; onStatus: (value: string) => void }) {
+  const [runs, setRuns] = useState<RuntimeRun[]>([]);
+  const [timeline, setTimeline] = useState<RuntimeTraceTimeline | null>(null);
+  const [selectedRunID, setSelectedRunID] = useState("");
+  const [selectedItemID, setSelectedItemID] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const selectedItem = timeline?.items.find((item) => item.id === selectedItemID) ?? timeline?.items[0] ?? null;
+  const duration = runtimeElapsedMilliseconds(timeline?.summary.started_at, timeline?.summary.completed_at);
+  const modelCalls = timeline?.items.filter((item) => item.kind === "model_call") ?? [];
+  const toolCalls = timeline?.items.filter((item) => item.kind === "tool_call") ?? [];
+  const skillCalls = timeline?.items.filter((item) => item.kind === "skill") ?? [];
+  const usageItems = timeline?.items.filter((item) => item.kind === "usage") ?? [];
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadRuntimeRuns(40)
+      .then((response) => {
+        if (cancelled) return null;
+        const items = response.items ?? [];
+        setRuns(items);
+        const runID = selectedRunID || items[0]?.id || "";
+        setSelectedRunID(runID);
+        return runID ? loadRuntimeTimeline(runID) : null;
+      })
+      .then((response) => {
+        if (cancelled || !response) return;
+        setTimeline(response);
+        setSelectedItemID(response.items[0]?.id ?? "");
+        onError("");
+        onStatus(`已读取 ${response.summary.item_count} 条安全 trace`);
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) onError(cause.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function selectRun(runID: string) {
+    setLoading(true);
+    try {
+      const response = await loadRuntimeTimeline(runID);
+      setSelectedRunID(runID);
+      setTimeline(response);
+      setSelectedItemID(response.items[0]?.id ?? "");
+      onError("");
+      onStatus(`已切换到 run ${runID}`);
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="observability-page" data-testid="observability-page">
+      <div className="observability-summary">
+        <div><span>总耗时</span><strong>{duration === null ? "未记录" : `${duration} ms`}</strong></div>
+        <div><span>模型调用</span><strong>{modelCalls.length}</strong></div>
+        <div><span>Skill / Tool</span><strong>{skillCalls.length} / {toolCalls.length}</strong></div>
+        <div><span>Usage</span><strong>{usageItems.length}</strong></div>
+        <div className={timeline?.summary.failure_count ? "is-error" : "is-ok"}><span>失败</span><strong>{timeline?.summary.failure_count ?? 0}</strong></div>
+      </div>
+
+      <div className="observability-grid">
+        <aside className="run-browser">
+          <div className="observability-panel-title"><div><h3>Runs</h3><span>{runs.length} 条</span></div><span>{loading ? "同步中" : "实时记录"}</span></div>
+          <div className="run-browser-list">
+            {runs.map((run) => (
+              <button className={run.id === selectedRunID ? "run-browser-item active" : "run-browser-item"} key={run.id} onClick={() => selectRun(run.id)} type="button">
+                <span><i className={`run-status-dot ${run.status}`} />{run.status}</span>
+                <strong>{run.task_type || run.scene || run.task_id || run.id}</strong>
+                <small>{formatRuntimeTime(run.created_at)}</small>
+              </button>
+            ))}
+            {!loading && runs.length === 0 ? <div className="observability-empty">暂无运行记录</div> : null}
+          </div>
+        </aside>
+
+        <div className="trace-browser">
+          <div className="observability-panel-title"><div><h3>执行时间线</h3><span>{timeline?.run.id ?? "未选择 run"}</span></div><span>{timeline?.summary.item_count ?? 0} 步</span></div>
+          <div className="trace-browser-list">
+            {(timeline?.items ?? []).map((item, index) => (
+              <button className={item.id === selectedItem?.id ? "trace-browser-item active" : "trace-browser-item"} key={item.id} onClick={() => setSelectedItemID(item.id)} type="button">
+                <span className="trace-index">{String(index + 1).padStart(2, "0")}</span>
+                <span className={`trace-kind ${item.kind}`}>{observabilityKindLabel(item.kind)}</span>
+                <span className="trace-browser-copy"><strong>{item.summary}</strong><small>{item.source} · {item.status || "recorded"}</small></span>
+                <span className="trace-duration">{item.duration_ms === undefined ? "-" : `${item.duration_ms} ms`}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <aside className="trace-inspector">
+          <div className="observability-panel-title"><div><h3>步骤详情</h3><span>安全字段 · 已脱敏</span></div><span>{selectedItem ? observabilityKindLabel(selectedItem.kind) : "-"}</span></div>
+          {selectedItem ? (
+            <div className="inspector-content">
+              <div className="inspector-heading"><strong>{selectedItem.summary}</strong><span>{selectedItem.status || "recorded"} · {formatRuntimeTime(selectedItem.timestamp)}</span></div>
+              <InspectorSection title="发送内容" value={observabilitySection(selectedItem, ["request", "input", "arguments", "messages", "redacted_input"])} />
+              <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output"])} />
+              <InspectorSection title="影响与状态" value={observabilitySection(selectedItem, ["impact", "state_delta", "decision", "candidate_kind", "from_status", "to_status", "error"])} />
+              <InspectorSection title="性能与用量" value={observabilityPerformance(selectedItem)} />
+              <InspectorSection title="运行版本清单" value={observabilityManifest(timeline?.run)} />
+              <details className="raw-safe-detail"><summary>完整安全记录</summary><pre>{formatMaybeJSON(selectedItem.detail ?? {})}</pre></details>
+            </div>
+          ) : <div className="observability-empty">选择一个步骤查看详情</div>}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function InspectorSection({ title, value }: { title: string; value: unknown }) {
+  return (
+    <section className="inspector-section">
+      <span>{title}</span>
+      {value === null || value === undefined ? <p>本次未记录</p> : <pre>{formatMaybeJSON(value)}</pre>}
+    </section>
+  );
+}
+
+function observabilityKindLabel(kind: string) {
+  const labels: Record<string, string> = {
+    delivery: "交付", governance: "治理", lifecycle: "状态", loop_step: "步骤", memory: "记忆",
+    model_call: "模型", skill: "Skill", tool_call: "Tool", usage: "用量"
+  };
+  return labels[kind] ?? kind;
+}
+
+function observabilitySection(item: RuntimeTraceTimelineItem, keys: string[]) {
+  const detail = item.detail ?? {};
+  const nested = [detail, asRecord(detail.redacted_payload), asRecord(detail.metadata), item.error].filter(Boolean) as Record<string, unknown>[];
+  const result: Record<string, unknown> = {};
+  for (const source of nested) {
+    for (const key of keys) {
+      if (source[key] !== undefined) result[key] = source[key];
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function observabilityPerformance(item: RuntimeTraceTimelineItem) {
+  const detail = item.detail ?? {};
+  const result: Record<string, unknown> = {};
+  if (item.duration_ms !== undefined) result.duration_ms = item.duration_ms;
+  for (const key of ["amount", "unit", "cost", "currency", "resource_type", "resource_name", "provider"]) {
+    if (detail[key] !== undefined) result[key] = detail[key];
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function observabilityManifest(run?: RuntimeRun) {
+  if (!run) return null;
+  const metadata = run.metadata ?? {};
+  const keys = ["run_manifest", "model_revision", "provider_revision", "prompt_revision", "skill_revision", "tool_schema_revision", "governance_policy_revision", "context_revision", "evaluator_revision"];
+  const result: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (metadata[key] !== undefined) result[key] = metadata[key];
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function runtimeElapsedMilliseconds(start?: string, end?: string) {
+  if (!start || !end) return null;
+  const value = new Date(end).getTime() - new Date(start).getTime();
+  return value >= 0 ? value : null;
 }
 
 function ReleaseReadinessPanel({

@@ -93,12 +93,14 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - canonical issue: `Super-Sky/Athena#11`
 - branch: `codex/agent-trace-timeline-issue-11`
 - base branch: `codex/external-memory-issue-10`
-- current state: `ready_for_delivery`
+- current state: `implementing`
 
 - [x] 复用 persisted step、lifecycle、trace、usage 与 projection records，按时间投影统一 timeline。
 - [x] 每条 timeline entry 返回 timestamp、duration、status、source、error metadata 与安全 detail，不复制 raw payload。
 - [x] 提供 app-facing 与 Control Plane read API，并让后台展示可展开 step/detail 列表。
 - [x] 覆盖时间顺序、model/tool/governance 分类、失败 detail、路由与 OpenAPI 测试。
+- [x] 将运行观测提升为一级导航，提供 run 列表、统一时间线、请求/返回/影响/性能安全检查器和移动端紧凑导航。
+- [ ] 将 model/provider、prompt、skill、tool schema、policy、context 与 evaluator revision 收敛为稳定、不可变的 run manifest 顶层契约；当前 UI 仅在 metadata 已存在时展示，否则明确标记未记录。
 
 ## Acceptance Gates
 
