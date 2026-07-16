@@ -133,6 +133,7 @@ The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in tra
 - system truth、system resource、版本快照、审计和回滚
 - tool governance effective policy 与 decision log 的控制面验收视图
 - app-owned remote tool registration、配置版本与重启恢复
+- remote tool outbound identity 的 reference-only 持久化与 network-boundary secret resolution；credential value 不进入 Control Plane、runtime trace 或 API read model
 - 最小登录、锁定状态和控制台 contract
 
 它不负责：
