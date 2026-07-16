@@ -24,6 +24,10 @@ The Control Plane exposes `运行观测` as a first-level navigation view. It co
 
 Control Plane 将 `运行观测` 提升为一级导航页，组合 run 列表、有序时间线、安全步骤检查器，以及总耗时、模型调用、skill/tool、usage 和失败计数。检查器分开展示白名单请求、返回、影响/状态、性能与 run manifest；未持久化字段明确显示为未记录，不由前端推断。可见 detail 继续排除原始模型隐式推理、凭据和未脱敏业务载荷。
 
+Model callback entries expose only persisted safe summaries: input/output counts, tool-call count, callback status, duration, token usage, and a redacted error summary when the callback fails. Raw prompts, model responses, credentials, provider headers, and hidden reasoning never enter the timeline contract.
+
+模型回调条目只展示已持久化的安全摘要：输入/输出计数、tool call 数量、回调状态、耗时、Token 用量，以及失败时的脱敏错误摘要。原始 Prompt、模型返回、凭据、provider header 和隐式推理都不会进入 timeline 契约。
+
 ## Immutable Run Manifest / 不可变运行清单
 
 At the Eino persistence node, Athena freezes `agent_run_manifest.v1` together with the newly created `TaskRun`. It records the executed model/provider, final assembled system-instruction digest, resolved skill and tool-schema digests, model/runtime governance references, context-asset references, evaluator references when used, system-truth references, and the runtime-contract revision. The manifest stores safe IDs, versions, sources, and SHA-256 values only; it never stores raw prompts, tool arguments/results, provider headers, context content, or policy bodies.
@@ -51,7 +55,7 @@ go test ./internal/runtime ./internal/server -count=1
 cd web && npm ci && npm run build
 ```
 
-Tests cover deterministic/redaction-safe manifest hashing, Eino persistence capture, legacy compatibility, timestamp ordering, classification, duration, safe failure detail, and route registration. The UI build confirms the typed client and three-pane inspector compile. Browser smoke verifies the first-level navigation and confirms no horizontal page overflow at 1280px and 390px widths.
+Tests cover deterministic/redaction-safe manifest hashing, Eino persistence capture, legacy compatibility, timestamp ordering, classification, callback status/duration, safe model summaries, safe failure detail, and route registration. The UI build confirms the typed client and three-pane inspector compile. Browser smoke verifies the first-level navigation and confirms no horizontal page overflow at 1280px and 390px widths.
 
 The 100-tool manifest benchmark on the local Intel development machine measured 177-229 us/op, about 27.1 KB/op, and 41 allocations/op across three isolated runs. Manifest construction is one write-time operation and performs no per-reference database reads.
 
