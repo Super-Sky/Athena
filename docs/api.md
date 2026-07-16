@@ -191,11 +191,11 @@ Runtime validation trigger 当前会把 Phase 1-5 串成一条 deterministic val
 
 ## Remote business tool registry
 
-`/api/control-plane/remote-tools` 允许独立业务服务把 HTTP tool 实现注册进 Athena live catalog。注册内容不保存 credentials；`endpoint` 必须命中 `REMOTE_TOOL_ALLOWED_ORIGINS` 的 exact origin，schema 根节点必须为 object，`timeout_ms` 范围为 `1..30000`，`retry_max_attempts` 范围为 `0..3`。带副作用且非幂等的工具禁止重试。
+`/api/control-plane/remote-tools` 允许独立业务服务把 HTTP tool 实现注册进 Athena live catalog。注册内容不保存 credential value；可选 `auth` 只包含 `type=bearer|header`、`secret_ref` 和 header 模式下的 `X-* header_name`。`secret_ref` 是不带 user info/query/fragment 的 provider reference，MVP runtime 支持 `env://VARIABLE_NAME`。`endpoint` 必须命中 `REMOTE_TOOL_ALLOWED_ORIGINS` 的 exact origin，schema 根节点必须为 object，`timeout_ms` 范围为 `1..30000`，`retry_max_attempts` 范围为 `0..3`。带副作用且非幂等的工具禁止重试。
 
 Callback 使用 `remote_tool_execution.v1`。请求包含 `request_id`、`tool_call_id`、`registration_id`、`app_id`、`tool_name`、JSON object `arguments`、`attempt` 和安全 metadata。响应必须回传相同 ID，并返回 `status=ok` + `content`，或标准化 `error.code/message/retryable`。
 
-Athena 禁止 callback redirect，并在任何网络请求前执行 tool governance。Raw arguments/results 只在当前执行链内流转；持久化 trace 与 generic metric 只记录 origin、attempt、duration、decision ID、status 和 normalized error code 等安全元数据。
+Athena 禁止 callback redirect，并在任何网络请求前执行 tool governance。治理通过后，credential 仅在 HTTP 边界解析和注入；missing/revoked/expired/invalid secret 均 fail closed。Raw arguments/results 与 credential value 只在当前执行链内流转；持久化 trace 与 generic metric 只记录 origin、attempt、duration、decision ID、status、auth type、secret reference、auth result 和 normalized error code 等安全元数据。
 
 ## V1 协议补充
 

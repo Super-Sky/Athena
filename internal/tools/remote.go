@@ -42,6 +42,7 @@ type RemoteRegistration struct {
 	Description      string         `json:"description,omitempty"`
 	Parameters       map[string]any `json:"parameters,omitempty"`
 	Endpoint         string         `json:"endpoint"`
+	Auth             *RemoteAuth    `json:"auth,omitempty"`
 	ToolScope        string         `json:"tool_scope,omitempty"`
 	Operation        string         `json:"operation,omitempty"`
 	RiskLevel        string         `json:"risk_level,omitempty"`
@@ -55,6 +56,26 @@ type RemoteRegistration struct {
 	CreatedAt        string         `json:"created_at,omitempty"`
 	UpdatedAt        string         `json:"updated_at,omitempty"`
 }
+
+// RemoteAuth declares how Athena authenticates one outbound callback without storing the credential.
+// RemoteAuth 声明 Athena 如何鉴权一次出站回调，但不保存凭据本身。
+type RemoteAuth struct {
+	Type       string `json:"type"`
+	SecretRef  string `json:"secret_ref"`
+	HeaderName string `json:"header_name,omitempty"`
+}
+
+// RemoteResolvedSecret is the short-lived runtime value returned by a secret provider.
+// RemoteResolvedSecret 是 secret provider 在运行时返回的短生命周期值。
+type RemoteResolvedSecret struct {
+	Value     string
+	ExpiresAt time.Time
+	Revoked   bool
+}
+
+// RemoteSecretResolver resolves an opaque secret reference immediately before network I/O.
+// RemoteSecretResolver 在网络 I/O 前即时解析不透明的 secret reference。
+type RemoteSecretResolver func(context.Context, string) (RemoteResolvedSecret, error)
 
 // RemoteExecutionRequest is sent to the registered business application endpoint.
 // RemoteExecutionRequest 会发送到已注册的业务应用 endpoint。
@@ -139,6 +160,9 @@ type RemoteInvocationEvent struct {
 	DurationMS       int64
 	DecisionID       string
 	GovernanceResult string
+	AuthType         string
+	SecretRef        string
+	AuthResult       string
 	ErrorCode        string
 }
 
@@ -153,15 +177,17 @@ type RemoteToolOptions struct {
 	MaxResponseBytes int64
 	HTTPClient       *http.Client
 	Evaluate         RemoteGovernanceEvaluator
+	ResolveSecret    RemoteSecretResolver
 	Observe          RemoteInvocationObserver
 }
 
 type remoteTool struct {
-	registration RemoteRegistration
-	maxResponse  int64
-	client       *http.Client
-	evaluate     RemoteGovernanceEvaluator
-	observe      RemoteInvocationObserver
+	registration  RemoteRegistration
+	maxResponse   int64
+	client        *http.Client
+	evaluate      RemoteGovernanceEvaluator
+	resolveSecret RemoteSecretResolver
+	observe       RemoteInvocationObserver
 }
 
 // NewRemoteDefinition validates one registration and creates an executable catalog definition.
@@ -184,11 +210,12 @@ func NewRemoteDefinition(registration RemoteRegistration, options RemoteToolOpti
 		return http.ErrUseLastResponse
 	}
 	baseTool := &remoteTool{
-		registration: registration,
-		maxResponse:  maxResponse,
-		client:       &safeClient,
-		evaluate:     options.Evaluate,
-		observe:      options.Observe,
+		registration:  registration,
+		maxResponse:   maxResponse,
+		client:        &safeClient,
+		evaluate:      options.Evaluate,
+		resolveSecret: options.ResolveSecret,
+		observe:       options.Observe,
 	}
 	return Definition{
 		Name:                 registration.Name,
@@ -233,6 +260,9 @@ func ValidateRemoteRegistration(registration RemoteRegistration, allowedOrigins 
 	if registration.RetryMaxAttempts > 0 && !registration.Idempotent && !strings.EqualFold(registration.SideEffectLevel, "none") {
 		return fmt.Errorf("non-idempotent side-effecting remote tool %q cannot enable retries", registration.Name)
 	}
+	if err := validateRemoteAuth(registration.Auth); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -247,6 +277,13 @@ func normalizeRemoteRegistration(registration RemoteRegistration) RemoteRegistra
 	registration.RiskLevel = strings.TrimSpace(registration.RiskLevel)
 	registration.SideEffectLevel = strings.TrimSpace(registration.SideEffectLevel)
 	registration.SandboxRef = strings.TrimSpace(registration.SandboxRef)
+	if registration.Auth != nil {
+		auth := *registration.Auth
+		auth.Type = strings.ToLower(strings.TrimSpace(auth.Type))
+		auth.SecretRef = strings.TrimSpace(auth.SecretRef)
+		auth.HeaderName = http.CanonicalHeaderKey(strings.TrimSpace(auth.HeaderName))
+		registration.Auth = &auth
+	}
 	if registration.TimeoutMS <= 0 {
 		registration.TimeoutMS = defaultRemoteToolTimeoutMS
 	}
@@ -339,7 +376,7 @@ func (t *remoteTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		startedAt := time.Now()
-		content, retryable, invokeErr := t.invokeOnce(ctx, callID, argumentPayload, attempt, decision)
+		content, retryable, authResult, invokeErr := t.invokeOnce(ctx, callID, argumentPayload, attempt, decision)
 		event := RemoteInvocationEvent{
 			ToolCallID:       callID,
 			RegistrationID:   t.registration.RegistrationID,
@@ -351,6 +388,9 @@ func (t *remoteTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 			DurationMS:       time.Since(startedAt).Milliseconds(),
 			DecisionID:       decision.DecisionID,
 			GovernanceResult: decision.Decision,
+			AuthType:         remoteAuthType(t.registration.Auth),
+			SecretRef:        remoteSecretRef(t.registration.Auth),
+			AuthResult:       authResult,
 		}
 		if invokeErr == nil {
 			t.emit(ctx, event)
@@ -373,9 +413,10 @@ func (t *remoteTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	return "", lastErr
 }
 
-func (t *remoteTool) invokeOnce(ctx context.Context, callID string, arguments json.RawMessage, attempt int, decision RemoteGovernanceDecision) (string, bool, error) {
+func (t *remoteTool) invokeOnce(ctx context.Context, callID string, arguments json.RawMessage, attempt int, decision RemoteGovernanceDecision) (string, bool, string, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(t.registration.TimeoutMS)*time.Millisecond)
 	defer cancel()
+	authResult := "not_attempted"
 	requestID := "remote_req_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	requestPayload, err := json.Marshal(RemoteExecutionRequest{
 		ContractVersion: RemoteToolContractVersion,
@@ -392,42 +433,50 @@ func (t *remoteTool) invokeOnce(ctx context.Context, callID string, arguments js
 		},
 	})
 	if err != nil {
-		return "", false, &RemoteExecutionError{Code: "request_encode_failed", Message: err.Error()}
+		return "", false, authResult, &RemoteExecutionError{Code: "request_encode_failed", Message: err.Error()}
 	}
 	request, err := http.NewRequestWithContext(timeoutCtx, http.MethodPost, t.registration.Endpoint, bytes.NewReader(requestPayload))
 	if err != nil {
-		return "", false, &RemoteExecutionError{Code: "request_build_failed", Message: err.Error()}
+		return "", false, authResult, &RemoteExecutionError{Code: "request_build_failed", Message: err.Error()}
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+	headerName, headerValue, resolvedAuthResult, authErr := t.resolveRemoteAuth(timeoutCtx)
+	authResult = resolvedAuthResult
+	if authErr != nil {
+		return "", false, authResult, authErr
+	}
+	if headerName != "" {
+		request.Header.Set(headerName, headerValue)
+	}
 	response, err := t.client.Do(request)
 	if err != nil {
 		code := "remote_network_error"
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
 			code = "remote_timeout"
 		}
-		return "", true, &RemoteExecutionError{Code: code, Message: err.Error(), Retryable: true}
+		return "", true, authResult, &RemoteExecutionError{Code: code, Message: err.Error(), Retryable: true}
 	}
 	defer response.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, t.maxResponse+1))
 	if err != nil {
-		return "", true, &RemoteExecutionError{Code: "response_read_failed", Message: err.Error(), Retryable: true}
+		return "", true, authResult, &RemoteExecutionError{Code: "response_read_failed", Message: err.Error(), Retryable: true}
 	}
 	if int64(len(payload)) > t.maxResponse {
-		return "", false, &RemoteExecutionError{Code: "response_too_large", Message: "remote tool response exceeded the configured limit"}
+		return "", false, authResult, &RemoteExecutionError{Code: "response_too_large", Message: "remote tool response exceeded the configured limit"}
 	}
 	var result RemoteExecutionResponse
 	if err := json.Unmarshal(payload, &result); err != nil {
-		return "", response.StatusCode >= http.StatusInternalServerError, &RemoteExecutionError{Code: "invalid_remote_response", Message: err.Error(), Retryable: response.StatusCode >= http.StatusInternalServerError}
+		return "", response.StatusCode >= http.StatusInternalServerError, authResult, &RemoteExecutionError{Code: "invalid_remote_response", Message: err.Error(), Retryable: response.StatusCode >= http.StatusInternalServerError}
 	}
 	if strings.TrimSpace(result.ContractVersion) != RemoteToolContractVersion {
-		return "", false, &RemoteExecutionError{Code: "contract_version_mismatch", Message: "remote tool response contract_version mismatch"}
+		return "", false, authResult, &RemoteExecutionError{Code: "contract_version_mismatch", Message: "remote tool response contract_version mismatch"}
 	}
 	if strings.TrimSpace(result.ToolCallID) != callID {
-		return "", false, &RemoteExecutionError{Code: "tool_call_id_mismatch", Message: "remote tool response tool_call_id mismatch"}
+		return "", false, authResult, &RemoteExecutionError{Code: "tool_call_id_mismatch", Message: "remote tool response tool_call_id mismatch"}
 	}
 	if strings.TrimSpace(result.RequestID) != requestID {
-		return "", false, &RemoteExecutionError{Code: "request_id_mismatch", Message: "remote tool response request_id mismatch"}
+		return "", false, authResult, &RemoteExecutionError{Code: "request_id_mismatch", Message: "remote tool response request_id mismatch"}
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices || !strings.EqualFold(strings.TrimSpace(result.Status), "ok") {
 		if result.Error == nil {
@@ -437,9 +486,42 @@ func (t *remoteTool) invokeOnce(ctx context.Context, callID string, arguments js
 				Retryable: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError,
 			}
 		}
-		return "", result.Error.Retryable, result.Error
+		return "", result.Error.Retryable, authResult, result.Error
 	}
-	return result.Content, false, nil
+	return result.Content, false, authResult, nil
+}
+
+func (t *remoteTool) resolveRemoteAuth(ctx context.Context) (string, string, string, error) {
+	if t.registration.Auth == nil {
+		return "", "", "not_configured", nil
+	}
+	if t.resolveSecret == nil {
+		return "", "", "unavailable", remoteAuthError("remote_auth_secret_unavailable", "remote authentication secret is unavailable")
+	}
+	secret, err := t.resolveSecret(ctx, t.registration.Auth.SecretRef)
+	if err != nil {
+		return "", "", "unavailable", remoteAuthError("remote_auth_secret_unavailable", "remote authentication secret is unavailable")
+	}
+	if secret.Revoked {
+		return "", "", "revoked", remoteAuthError("remote_auth_secret_revoked", "remote authentication secret is revoked")
+	}
+	if !secret.ExpiresAt.IsZero() && !time.Now().Before(secret.ExpiresAt) {
+		return "", "", "expired", remoteAuthError("remote_auth_secret_expired", "remote authentication secret is expired")
+	}
+	if strings.TrimSpace(secret.Value) == "" {
+		return "", "", "unavailable", remoteAuthError("remote_auth_secret_unavailable", "remote authentication secret is unavailable")
+	}
+	if !validRemoteHeaderValue(secret.Value) {
+		return "", "", "invalid", remoteAuthError("remote_auth_secret_invalid", "remote authentication secret is invalid")
+	}
+	if t.registration.Auth.Type == "bearer" {
+		return "Authorization", "Bearer " + secret.Value, "injected", nil
+	}
+	return t.registration.Auth.HeaderName, secret.Value, "injected", nil
+}
+
+func remoteAuthError(code, message string) *RemoteExecutionError {
+	return &RemoteExecutionError{Code: code, Message: message}
 }
 
 func (t *remoteTool) emit(ctx context.Context, event RemoteInvocationEvent) {
@@ -458,8 +540,92 @@ func (t *remoteTool) emitPreflight(ctx context.Context, callID string, decision 
 		Status:           "error",
 		DecisionID:       decision.DecisionID,
 		GovernanceResult: decision.Decision,
+		AuthType:         remoteAuthType(t.registration.Auth),
+		SecretRef:        remoteSecretRef(t.registration.Auth),
+		AuthResult:       "not_attempted",
 		ErrorCode:        errorCode,
 	})
+}
+
+func validateRemoteAuth(auth *RemoteAuth) error {
+	if auth == nil {
+		return nil
+	}
+	if auth.SecretRef == "" {
+		return fmt.Errorf("remote tool auth secret_ref is required")
+	}
+	if len(auth.SecretRef) > 256 {
+		return fmt.Errorf("remote tool auth secret_ref exceeds 256 characters")
+	}
+	parsedRef, err := url.Parse(auth.SecretRef)
+	if err != nil || parsedRef.Scheme == "" || parsedRef.Host == "" || parsedRef.User != nil || parsedRef.RawQuery != "" || parsedRef.Fragment != "" {
+		return fmt.Errorf("remote tool auth secret_ref must be an opaque provider reference without user info, query, or fragment")
+	}
+	if strings.EqualFold(parsedRef.Scheme, "env") && (parsedRef.Path != "" || parsedRef.Port() != "" || !validRemoteEnvName(parsedRef.Host)) {
+		return fmt.Errorf("remote tool env secret_ref must use env://UPPER_CASE_VARIABLE_NAME")
+	}
+	switch auth.Type {
+	case "bearer":
+		if auth.HeaderName != "" {
+			return fmt.Errorf("remote tool bearer auth cannot set header_name")
+		}
+	case "header":
+		if !validRemoteAuthHeaderName(auth.HeaderName) {
+			return fmt.Errorf("remote tool header auth requires a valid X-* header_name")
+		}
+	default:
+		return fmt.Errorf("remote tool auth type must be bearer or header")
+	}
+	return nil
+}
+
+func validRemoteEnvName(value string) bool {
+	if value == "" || !((value[0] >= 'A' && value[0] <= 'Z') || value[0] == '_') {
+		return false
+	}
+	for index := 1; index < len(value); index++ {
+		if (value[index] >= 'A' && value[index] <= 'Z') || (value[index] >= '0' && value[index] <= '9') || value[index] == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validRemoteAuthHeaderName(value string) bool {
+	if len(value) <= 2 || !strings.EqualFold(value[:2], "X-") {
+		return false
+	}
+	for index := 2; index < len(value); index++ {
+		if (value[index] >= 'a' && value[index] <= 'z') || (value[index] >= 'A' && value[index] <= 'Z') || (value[index] >= '0' && value[index] <= '9') || value[index] == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validRemoteHeaderValue(value string) bool {
+	for index := 0; index < len(value); index++ {
+		if value[index] < 32 || value[index] == 127 {
+			return false
+		}
+	}
+	return true
+}
+
+func remoteAuthType(auth *RemoteAuth) string {
+	if auth == nil {
+		return "none"
+	}
+	return auth.Type
+}
+
+func remoteSecretRef(auth *RemoteAuth) string {
+	if auth == nil {
+		return ""
+	}
+	return auth.SecretRef
 }
 
 func parseRemoteArguments(raw string) (map[string]any, []string, error) {

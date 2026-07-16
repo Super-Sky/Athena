@@ -116,6 +116,21 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 隔离双服务 Compose smoke 已完成 Agent Run、基金助手远程 `account_overview` tool 调用与 trace 回读。
 - [ ] Docker Desktop 升级后的常驻演示栈与 Browser UI smoke 待本机管理员授权完成后复验；不影响已通过的隔离 Compose 证据。
 
+## Remote Tool Outbound Authentication Checklist
+
+- canonical issue: `Super-Sky/Athena#24`
+- branch: `codex/remote-tool-auth-issue-24`
+- base branch: `codex/remote-tool-registry-issue-9`
+- current state: `ready_for_delivery`
+
+- [x] 为 remote registration 增加业务中立的 `bearer|header + secret_ref` 契约，不持久化 credential value。
+- [x] 增加 per-invocation `env://` secret resolver，并支持即时轮换、撤销与 RFC3339 过期状态。
+- [x] 仅在 outbound HTTP boundary 注入 Authorization 或安全 `X-*` header。
+- [x] missing/revoked/expired/invalid secret 在触网前 fail closed，并返回稳定 normalized error。
+- [x] trace 只记录 auth type、secret reference、safe result 和 error code，不记录 credential value。
+- [x] 覆盖 valid callback、wrong callback rejection、rotation、revocation、expiration、restart restoration 和 API/trace no-leak 测试。
+- [x] 同步 OpenAPI、API/架构/实现/能力总览、feature 文档、模块索引和真实场景测试。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
@@ -170,6 +185,7 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - 2026-07-09 全仓验证通过：`env -u APP_ENV go test ./...`；fake business service 测试覆盖注册、执行、redaction、deny、timeout、retry、correlation、response budget、redirect、restore 与 delete。
 - 2026-07-10 issue #14 开始增加确定性 Core 工具包：calculator、IANA timezone current_time 与 fail-closed JSON Schema subset validator；不引入网络、文件、凭据或业务对象。
 - 2026-07-10 issue #14 验证通过：`go test ./...`、`go test -race ./internal/tools`、calculator benchmark（约 `1893 ns/op`、`0 B/op`、`0 allocs/op`）及 Agent Run tool call ID/governance integration tests。`go test -race ./internal/tools ./internal/app ./internal/runtime` 仍报告 `scene.SetSourcesRoot` 的既有 app 测试初始化竞争，未由本工具切片引入。
+- 2026-07-16 issue #24 已完成 remote tool outbound authentication：注册只保存 secret reference，env resolver 按调用解析，HTTP 边界注入 bearer/custom header，并覆盖 rotation/revocation/expiration/restart/no-leak。
 
 ## Next Iteration Plan
 

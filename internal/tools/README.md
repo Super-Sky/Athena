@@ -27,9 +27,9 @@
 - `catalog_test.go`
   - 验证动态目录的注册、替换、删除与并发快照。
 - `remote.go`
-  - 定义 app-owned remote tool 注册、HTTP execution envelope、治理前置、网络约束、重试和标准化错误。
+  - 定义 app-owned remote tool 注册、reference-only 鉴权、HTTP execution envelope、治理前置、网络约束、重试和标准化错误。
 - `remote_test.go`
-  - 用 fake HTTP service 验证治理、脱敏、关联、超时、重试、响应预算与 redirect 防护。
+  - 用 fake HTTP service 验证鉴权注入和拒绝、治理、脱敏、关联、超时、重试、响应预算与 redirect 防护。
 - `registry.go`
   - 提供 tool registry 入口、稳定元数据和控制面可消费的定义列表。
 
@@ -49,6 +49,6 @@
 ## 维护提示
 
 - 新 tool 加入时，优先看 registry 和 middleware 是否需要同步调整。
-- Remote tool endpoint 必须命中显式 origin allowlist；注册中不得保存凭证。
+- Remote tool endpoint 必须命中显式 origin allowlist；注册中只允许保存 secret reference，不得保存 credential value。
 - 若 tool 元数据被控制面消费，应同步维护 scope、side effect、confirmation 和 schema summary 字段。
 - 内置 JSON Schema 校验只支持 `docs/features/feature-builtin-tools.md` 记录的子集；新增关键字前必须先补 fail-closed 契约和测试。

@@ -19,6 +19,7 @@ func remoteToolOptions(service *Service) tools.RemoteToolOptions {
 	return tools.RemoteToolOptions{
 		AllowedOrigins:   append([]string(nil), service.Config.RemoteTools.AllowedOrigins...),
 		MaxResponseBytes: service.Config.RemoteTools.MaxResponseBytes,
+		ResolveSecret:    resolveRemoteToolSecret,
 		Evaluate: func(ctx context.Context, request tools.RemoteGovernanceRequest) (tools.RemoteGovernanceDecision, error) {
 			if service.ControlPlane == nil {
 				return tools.RemoteGovernanceDecision{Decision: "allow"}, nil
@@ -59,6 +60,9 @@ func remoteToolOptions(service *Service) tools.RemoteToolOptions {
 				"status":            event.Status,
 				"decision_id":       event.DecisionID,
 				"governance_result": event.GovernanceResult,
+				"auth_type":         event.AuthType,
+				"secret_ref":        event.SecretRef,
+				"auth_result":       event.AuthResult,
 				"error_code":        event.ErrorCode,
 			}
 			service.Observability.Trace(ctx, "remote_tool_invocation", attrs)
@@ -92,6 +96,9 @@ func (s *Service) UpsertRemoteTool(ctx context.Context, name string, input tools
 	_, managed := s.remoteTools[name]
 	if _, exists := s.ToolCatalog.Get(name); exists && !managed {
 		return tools.RemoteRegistration{}, fmt.Errorf("remote tool %q conflicts with a built-in tool", name)
+	}
+	if err := validateRemoteToolSecretProvider(input.Auth); err != nil {
+		return tools.RemoteRegistration{}, err
 	}
 	definition, err := tools.NewRemoteDefinition(input, remoteToolOptions(s))
 	if err != nil {
@@ -144,6 +151,9 @@ func (s *Service) reloadRemoteToolCatalog(ctx context.Context) error {
 	for _, registration := range registrations {
 		if !registration.Enabled {
 			continue
+		}
+		if err := validateRemoteToolSecretProvider(registration.Auth); err != nil {
+			return fmt.Errorf("restore remote tool %q failed: %w", registration.Name, err)
 		}
 		definition, err := tools.NewRemoteDefinition(registration, remoteToolOptions(s))
 		if err != nil {

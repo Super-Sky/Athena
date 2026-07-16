@@ -65,6 +65,158 @@ func TestRemoteToolExecutesAfterGovernanceAndRedactsArguments(t *testing.T) {
 	}
 }
 
+func TestRemoteToolInjectsResolvedAuthenticationWithoutLeakingValue(t *testing.T) {
+	const secretValue = "callback-secret-must-never-appear"
+	tests := []struct {
+		name       string
+		auth       *RemoteAuth
+		wantHeader string
+		wantValue  string
+	}{
+		{name: "bearer", auth: &RemoteAuth{Type: "bearer", SecretRef: "env://CALLBACK_TOKEN"}, wantHeader: "Authorization", wantValue: "Bearer " + secretValue},
+		{name: "custom header", auth: &RemoteAuth{Type: "header", SecretRef: "env://CALLBACK_TOKEN", HeaderName: "X-Service-Token"}, wantHeader: "X-Service-Token", wantValue: secretValue},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var event RemoteInvocationEvent
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if got := request.Header.Get(test.wantHeader); got != test.wantValue {
+					t.Errorf("auth header = %q", got)
+				}
+				var input RemoteExecutionRequest
+				_ = json.NewDecoder(request.Body).Decode(&input)
+				writeRemoteResponse(t, writer, input, http.StatusOK, "ok", "authenticated", nil)
+			}))
+			defer server.Close()
+			registration := remoteRegistration(server.URL)
+			registration.Auth = test.auth
+			definition := mustRemoteDefinition(t, registration, RemoteToolOptions{
+				AllowedOrigins: []string{server.URL},
+				ResolveSecret: func(context.Context, string) (RemoteResolvedSecret, error) {
+					return RemoteResolvedSecret{Value: secretValue}, nil
+				},
+				Observe: func(_ context.Context, observed RemoteInvocationEvent) { event = observed },
+			})
+			content, err := invokeRemoteDefinition(t, definition, `{}`)
+			if err != nil || content != "authenticated" {
+				t.Fatalf("content = %q, error = %v", content, err)
+			}
+			encoded, _ := json.Marshal(event)
+			if strings.Contains(string(encoded), secretValue) || event.AuthResult != "injected" || event.SecretRef != test.auth.SecretRef {
+				t.Fatalf("unsafe auth event = %#v", event)
+			}
+		})
+	}
+}
+
+func TestRemoteToolRejectsInvalidSecretStatesBeforeNetwork(t *testing.T) {
+	serverHits := atomic.Int32{}
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { serverHits.Add(1) }))
+	defer server.Close()
+	tests := []struct {
+		name       string
+		secret     RemoteResolvedSecret
+		resolveErr error
+		wantCode   string
+	}{
+		{name: "missing", resolveErr: errors.New("provider detail must be hidden"), wantCode: "remote_auth_secret_unavailable"},
+		{name: "revoked", secret: RemoteResolvedSecret{Value: "never-log-revoked", Revoked: true}, wantCode: "remote_auth_secret_revoked"},
+		{name: "expired", secret: RemoteResolvedSecret{Value: "never-log-expired", ExpiresAt: time.Now().Add(-time.Minute)}, wantCode: "remote_auth_secret_expired"},
+		{name: "invalid header value", secret: RemoteResolvedSecret{Value: "never-log\r\ninjected"}, wantCode: "remote_auth_secret_invalid"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			registration := remoteRegistration(server.URL)
+			registration.Auth = &RemoteAuth{Type: "bearer", SecretRef: "vault://callback"}
+			definition := mustRemoteDefinition(t, registration, RemoteToolOptions{
+				AllowedOrigins: []string{server.URL},
+				ResolveSecret: func(context.Context, string) (RemoteResolvedSecret, error) {
+					return test.secret, test.resolveErr
+				},
+			})
+			_, err := invokeRemoteDefinition(t, definition, `{}`)
+			var remoteErr *RemoteExecutionError
+			if !errors.As(err, &remoteErr) || remoteErr.Code != test.wantCode {
+				t.Fatalf("error = %#v", err)
+			}
+			if strings.Contains(err.Error(), "never-log") || strings.Contains(err.Error(), "provider detail") {
+				t.Fatalf("error leaked provider detail: %v", err)
+			}
+		})
+	}
+	if serverHits.Load() != 0 {
+		t.Fatalf("network hits = %d", serverHits.Load())
+	}
+}
+
+func TestRemoteToolValidatesAuthenticationContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer server.Close()
+	registration := remoteRegistration(server.URL)
+	tests := []*RemoteAuth{
+		{Type: "bearer"},
+		{Type: "bearer", SecretRef: "raw-secret-without-provider"},
+		{Type: "bearer", SecretRef: "env://TOKEN?value=secret"},
+		{Type: "bearer", SecretRef: "env://TOKEN/old"},
+		{Type: "bearer", SecretRef: "env://TOKEN:1"},
+		{Type: "bearer", SecretRef: "env://lower_case"},
+		{Type: "basic", SecretRef: "env://TOKEN"},
+		{Type: "bearer", SecretRef: "env://TOKEN", HeaderName: "X-Token"},
+		{Type: "header", SecretRef: "env://TOKEN", HeaderName: "Cookie"},
+		{Type: "header", SecretRef: "env://TOKEN", HeaderName: "X-Token\nBad"},
+		{Type: "header", SecretRef: "env://TOKEN", HeaderName: "X-Token: Bad"},
+		{Type: "header", SecretRef: "env://TOKEN", HeaderName: "X- Token"},
+		{Type: "header", SecretRef: "env://TOKEN", HeaderName: "X-"},
+	}
+	for _, auth := range tests {
+		registration.Auth = auth
+		if _, err := NewRemoteDefinition(registration, RemoteToolOptions{AllowedOrigins: []string{server.URL}}); err == nil {
+			t.Fatalf("expected invalid auth rejection for %#v", auth)
+		}
+	}
+}
+
+func TestRemoteToolReturnsCallbackAuthenticationRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var input RemoteExecutionRequest
+		_ = json.NewDecoder(request.Body).Decode(&input)
+		writeRemoteResponse(t, writer, input, http.StatusUnauthorized, "error", "", &RemoteExecutionError{
+			Code: "callback_auth_rejected", Message: "callback rejected Athena service identity",
+		})
+	}))
+	defer server.Close()
+	registration := remoteRegistration(server.URL)
+	registration.Auth = &RemoteAuth{Type: "bearer", SecretRef: "env://CALLBACK_TOKEN"}
+	definition := mustRemoteDefinition(t, registration, RemoteToolOptions{
+		AllowedOrigins: []string{server.URL},
+		ResolveSecret: func(context.Context, string) (RemoteResolvedSecret, error) {
+			return RemoteResolvedSecret{Value: "wrong-secret"}, nil
+		},
+	})
+	_, err := invokeRemoteDefinition(t, definition, `{}`)
+	var remoteErr *RemoteExecutionError
+	if !errors.As(err, &remoteErr) || remoteErr.Code != "callback_auth_rejected" || remoteErr.Retryable {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
+func BenchmarkRemoteAuthResolution(b *testing.B) {
+	tool := &remoteTool{
+		registration: RemoteRegistration{Auth: &RemoteAuth{Type: "bearer", SecretRef: "env://CALLBACK_TOKEN"}},
+		resolveSecret: func(context.Context, string) (RemoteResolvedSecret, error) {
+			return RemoteResolvedSecret{Value: "benchmark-secret"}, nil
+		},
+	}
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if _, _, _, err := tool.resolveRemoteAuth(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestRemoteToolRetriesOnlyBoundedIdempotentCalls(t *testing.T) {
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

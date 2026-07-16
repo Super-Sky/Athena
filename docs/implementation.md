@@ -42,7 +42,8 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - The contract is generic and app-facing. Business domains such as fund analysis must remain in the host app and enter Athena through context, assets, payload, tools and governance references.
   - app-owned remote tools 可通过 authenticated Control Plane API list/upsert/delete，并在启动时从 control-plane document 恢复。
   - runtime resolver 与 Eino executor 从线程安全 catalog 获取 per-operation snapshot；HTTP adapter 在网络前执行治理，并落实 origin、timeout、response budget、redirect、retry/idempotency 约束。
-  - canonical transcript 继续承担 call/result/error trace；remote observer 补充 origin、attempt、duration、decision ID、status、error code 与 generic metric。
+  - remote registration 只持久化 `auth.type/secret_ref/header_name`；`internal/app/remote_secrets.go` 在每次调用时解析 `env://` secret，`internal/tools/remote.go` 仅在 HTTP 边界注入 bearer 或安全 `X-*` header。
+  - canonical transcript 继续承担 call/result/error trace；remote observer 补充 origin、attempt、duration、decision ID、status、auth decision、error code 与 generic metric，禁止记录 credential value。
   - Business tool implementations and domain data remain app-owned.
   - `internal/tools/builtin.go` 注册 calculator、current_time 和 JSON Schema subset validator；三者使用 existing catalog、governance 和 transcript 主链，不读网络、文件或业务数据。
 - 应用拥有的 memory/context API 位于 `internal/memory/external.go`、`internal/app/external_memory.go` 和 `internal/server/external_memory.go`：
