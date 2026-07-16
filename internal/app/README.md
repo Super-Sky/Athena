@@ -23,6 +23,10 @@
   - 封装控制面 scene、skill、tool、governance、system resources、版本快照和认证相关用例。
 - `remote_tools.go`
   - 将持久化 remote tool 注册、治理判定、观测事件与实时 tool catalog 串联，并负责 upsert/delete。
+- `remote_secrets.go`
+  - 按调用解析 `env://` remote tool secret reference，并提供轮换、撤销和过期状态。
+- `remote_secrets_test.go`
+  - 验证环境 secret provider 的引用校验、轮换、撤销和过期元数据。
 - `direct_respond_rich_delivery.go`
   - 拼装 direct respond 富交付 read model，包括 summary、cards、right panel、workflow、automation、context assets 和 base capability 兼容结果。
 - `direct_respond_rich_delivery_test.go`

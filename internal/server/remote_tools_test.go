@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -17,7 +20,13 @@ import (
 )
 
 func TestRemoteToolRegistrationExecutionRestoreAndDelete(t *testing.T) {
+	t.Setenv("ATHENA_FUND_CALLBACK_TOKEN", "initial-callback-secret")
+	var callbackHits atomic.Int32
 	callback := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		callbackHits.Add(1)
+		if got, want := request.Header.Get("Authorization"), "Bearer "+os.Getenv("ATHENA_FUND_CALLBACK_TOKEN"); got != want {
+			t.Errorf("callback authorization = %q, want current runtime secret", got)
+		}
 		var input tools.RemoteExecutionRequest
 		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
 			t.Errorf("decode callback request: %v", err)
@@ -45,6 +54,7 @@ func TestRemoteToolRegistrationExecutionRestoreAndDelete(t *testing.T) {
 		"description":"Read a normalized fund snapshot.",
 		"parameters":{"type":"object","properties":{"symbol":{"type":"string"}}},
 		"endpoint":"` + callback.URL + `",
+		"auth":{"type":"bearer","secret_ref":"env://ATHENA_FUND_CALLBACK_TOKEN"},
 		"tool_scope":"market_data_read",
 		"operation":"read",
 		"risk_level":"low",
@@ -63,6 +73,17 @@ func TestRemoteToolRegistrationExecutionRestoreAndDelete(t *testing.T) {
 	)
 	if put.Code != consts.StatusOK {
 		t.Fatalf("put status = %d, body = %s", put.Code, put.Body.String())
+	}
+	if strings.Contains(put.Body.String(), "initial-callback-secret") {
+		t.Fatalf("registration response leaked callback secret: %s", put.Body.String())
+	}
+	list := ut.PerformRequest(httpServer.engine.Engine, http.MethodGet, "/api/control-plane/remote-tools", nil)
+	if list.Code != consts.StatusOK || !strings.Contains(list.Body.String(), "env://ATHENA_FUND_CALLBACK_TOKEN") || strings.Contains(list.Body.String(), "initial-callback-secret") {
+		t.Fatalf("unsafe registration readout status = %d, body = %s", list.Code, list.Body.String())
+	}
+	persisted, err := os.ReadFile(cfg.ControlPlane.StorePath)
+	if err != nil || strings.Contains(string(persisted), "initial-callback-secret") || !strings.Contains(string(persisted), "env://ATHENA_FUND_CALLBACK_TOKEN") {
+		t.Fatalf("unsafe persisted registration = %q, error = %v", persisted, err)
 	}
 
 	definition, exists := application.ToolCatalog.Get("fund_market_snapshot")
@@ -91,17 +112,40 @@ func TestRemoteToolRegistrationExecutionRestoreAndDelete(t *testing.T) {
 		}
 		foundTrace = true
 		encoded, _ := json.Marshal(trace)
-		if strings.Contains(string(encoded), "must-not-appear-in-trace") {
-			t.Fatalf("trace leaked raw arguments: %s", encoded)
+		if strings.Contains(string(encoded), "must-not-appear-in-trace") || strings.Contains(string(encoded), "initial-callback-secret") {
+			t.Fatalf("trace leaked sensitive data: %s", encoded)
 		}
 	}
 	if !foundTrace {
 		t.Fatal("remote invocation trace was not recorded")
 	}
 
+	t.Setenv("ATHENA_FUND_CALLBACK_TOKEN", "rotated-callback-secret")
 	restored := appcore.NewService(cfg)
-	if _, exists := restored.ToolCatalog.Get("fund_market_snapshot"); !exists {
+	restoredDefinition, exists := restored.ToolCatalog.Get("fund_market_snapshot")
+	if !exists {
 		t.Fatal("remote tool was not restored after service restart")
+	}
+	if _, err := invokeServerRemoteDefinition(restoredDefinition, `{"symbol":"SPY"}`); err != nil {
+		t.Fatalf("restored remote invocation error = %v", err)
+	}
+	if callbackHits.Load() != 2 {
+		t.Fatalf("callback hits after rotation = %d", callbackHits.Load())
+	}
+	for _, trace := range restored.Observability.SnapshotTraces() {
+		encoded, _ := json.Marshal(trace)
+		if strings.Contains(string(encoded), "rotated-callback-secret") {
+			t.Fatalf("restored trace leaked rotated secret: %s", encoded)
+		}
+	}
+	t.Setenv("ATHENA_FUND_CALLBACK_TOKEN_REVOKED", "true")
+	_, err = invokeServerRemoteDefinition(restoredDefinition, `{"symbol":"SPY"}`)
+	var revoked *tools.RemoteExecutionError
+	if !errors.As(err, &revoked) || revoked.Code != "remote_auth_secret_revoked" {
+		t.Fatalf("revoked invocation error = %#v", err)
+	}
+	if callbackHits.Load() != 2 {
+		t.Fatalf("revoked secret reached callback, hits = %d", callbackHits.Load())
 	}
 
 	deleteResponse := ut.PerformRequest(httpServer.engine.Engine, http.MethodDelete, "/api/control-plane/remote-tools/fund_market_snapshot", nil)
@@ -246,6 +290,17 @@ func TestRemoteToolOpenAPIContractIsTyped(t *testing.T) {
 	if _, ok := schemas["RemoteToolRegistrationListResponse"]; !ok {
 		t.Fatal("OpenAPI missing RemoteToolRegistrationListResponse")
 	}
+	if _, ok := schemas["RemoteToolAuth"]; !ok {
+		t.Fatal("OpenAPI missing RemoteToolAuth")
+	}
+}
+
+func invokeServerRemoteDefinition(definition tools.Definition, arguments string) (string, error) {
+	invokable, ok := definition.BaseTool.(einotool.InvokableTool)
+	if !ok {
+		return "", errors.New("remote tool is not invokable")
+	}
+	return invokable.InvokableRun(context.Background(), arguments)
 }
 
 func remoteToolTestConfig(root, allowedOrigin string) config.Config {

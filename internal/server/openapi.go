@@ -1893,6 +1893,11 @@ func buildOpenAPISchemas() map[string]any {
 		"ControlPlaneToolListResponse": objectSchema(map[string]any{
 			"items": arraySchema(refSchema("ControlPlaneTool")),
 		}, []string{"items"}),
+		"RemoteToolAuth": objectSchema(map[string]any{
+			"type":        stringSchema("出站鉴权类型：bearer 或 header。", "bearer"),
+			"secret_ref":  stringSchema("仅运行时解析的 secret reference，不包含凭据值。", "env://ATHENA_FUND_CALLBACK_TOKEN"),
+			"header_name": stringSchema("header 类型使用的 X-* 请求头；bearer 类型必须省略。", "X-Athena-Service-Token"),
+		}, []string{"type", "secret_ref"}),
 		"RemoteToolRegistration": objectSchema(map[string]any{
 			"registration_id":    stringSchema("业务应用提供的稳定注册 ID。", "fund-market-snapshot-v1"),
 			"app_id":             stringSchema("业务应用稳定标识。", "athena-fund-assistant"),
@@ -1900,6 +1905,7 @@ func buildOpenAPISchemas() map[string]any {
 			"description":        stringSchema("模型可见的工具说明。", "Read one normalized fund market snapshot."),
 			"parameters":         map[string]any{"type": "object", "description": "Root object JSON Schema.", "additionalProperties": true},
 			"endpoint":           stringSchema("白名单内的应用 HTTP callback endpoint。", "http://fund-api:8081/internal/tools/execute"),
+			"auth":               refSchema("RemoteToolAuth"),
 			"tool_scope":         stringSchema("治理作用域。", "market_data_read"),
 			"operation":          stringSchema("治理操作标识。", "read"),
 			"risk_level":         stringSchema("治理风险等级。", "low"),

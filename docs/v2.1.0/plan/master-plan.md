@@ -62,6 +62,21 @@ Supplement、Compaction、Memory、Context ownership、Capability Studio、exter
 - [x] 用本地 fake business service 验证注册、执行、超时、重试、错误和治理拒绝。
 - [x] 同步 OpenAPI、API/架构/实现/能力总览、feature 文档与真实场景测试。
 
+## Remote Tool Outbound Authentication Checklist
+
+- canonical issue: `Super-Sky/Athena#24`
+- branch: `codex/remote-tool-auth-issue-24`
+- base branch: `codex/remote-tool-registry-issue-9`
+- current state: `ready_for_delivery`
+
+- [x] 为 remote registration 增加业务中立的 `bearer|header + secret_ref` 契约，不持久化 credential value。
+- [x] 增加 per-invocation `env://` secret resolver，并支持即时轮换、撤销与 RFC3339 过期状态。
+- [x] 仅在 outbound HTTP boundary 注入 Authorization 或安全 `X-*` header。
+- [x] missing/revoked/expired/invalid secret 在触网前 fail closed，并返回稳定 normalized error。
+- [x] trace 只记录 auth type、secret reference、safe result 和 error code，不记录 credential value。
+- [x] 覆盖 valid callback、wrong callback rejection、rotation、revocation、expiration、restart restoration 和 API/trace no-leak 测试。
+- [x] 同步 OpenAPI、API/架构/实现/能力总览、feature 文档、模块索引和真实场景测试。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：
@@ -114,6 +129,7 @@ API smoke 需要一个已启用 runtime persistence 的运行中后端。`--web-
 - Codex in-app Browser 已确认 `http://127.0.0.1:8091/swagger` 加载为 `Athena Swagger UI`；Swagger 大 DOM 读取超时，typed schema 由真实 `/swagger/openapi.json` 响应补充验证。
 - 2026-07-09 issue #9 已完成 remote registry、dynamic catalog、governance-before-network、HTTP callback、网络预算、safe trace/usage 与重启恢复。
 - 2026-07-09 全仓验证通过：`env -u APP_ENV go test ./...`；fake business service 测试覆盖注册、执行、redaction、deny、timeout、retry、correlation、response budget、redirect、restore 与 delete。
+- 2026-07-16 issue #24 已完成 remote tool outbound authentication：注册只保存 secret reference，env resolver 按调用解析，HTTP 边界注入 bearer/custom header，并覆盖 rotation/revocation/expiration/restart/no-leak。
 
 ## Next Iteration Plan
 
