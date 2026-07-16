@@ -58,6 +58,10 @@
   - 将 resolved RuntimeContract 的 execution profile、exit policy 和 agent runtime controls 投影到 ExecutionSpec constraints。
 - `runtime_contract_controls_test.go`
   - 验证 RuntimeContract control constraints、model retry、failover 和 after-agent 设置解析。
+- `execution_stop_reason.go`
+  - 定义 provider-neutral 的稳定 execution stop-reason taxonomy，并规范化终态、等待、治理、deadline 与取消语义。
+- `execution_stop_reason_test.go`
+  - 验证八类公开 stop reason、显式原因准入和未知内部状态的 fail-closed 映射。
 - `execution.go`
   - 定义执行治理 contract、风险分类和显式执行意图解析逻辑。
 - `execution_test.go`

@@ -32,8 +32,6 @@ const (
 	agentRunSourceResume           = "resume"
 	agentRunCancelUnsupported      = "cancel_unsupported"
 	agentRunCancelAlreadyTerminal  = "cancel_rejected"
-	agentRunStopReasonNotAsync     = "sync_execution_not_cancellable"
-	agentRunStopReasonAlreadyFinal = "run_already_terminal"
 )
 
 type agentRunStartRequest struct {
@@ -317,10 +315,10 @@ func handleCancelAgentRun(ctx context.Context, c *hertzapp.RequestContext, _ con
 		return
 	}
 	status := agentRunCancelUnsupported
-	stopReason := agentRunStopReasonNotAsync
+	stopReason := ""
 	if agentRunIsTerminal(readout.Run.Status) {
 		status = agentRunCancelAlreadyTerminal
-		stopReason = agentRunStopReasonAlreadyFinal
+		stopReason = agentRunStopReasonFromTrace(readout)
 	}
 	c.JSON(consts.StatusConflict, agentRunResponse{
 		RunID:          runID,
@@ -353,7 +351,7 @@ type agentRunExecutionOptions struct {
 
 func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service, requestID string, req agentRunStartRequest, opts agentRunExecutionOptions) (agentRunResponse, int) {
 	if application == nil {
-		return agentRunResponse{RequestID: requestID, Status: "failed", StopReason: "application_not_configured", Error: "application is not configured"}, consts.StatusInternalServerError
+		return agentRunResponse{RequestID: requestID, Status: "failed", StopReason: string(runtime.ExecutionStopUnrecoverableError), Error: "application is not configured"}, consts.StatusInternalServerError
 	}
 
 	runtimeTuning, _ := application.GetControlPlaneRuntime(ctx)
@@ -386,7 +384,7 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 	defer chatSession.Release()
 
 	if chatSession.Prepared == nil {
-		return agentRunResponse{RequestID: requestID, SessionID: chatSession.SessionID, Status: "failed", StopReason: "prepared_execution_missing", Error: "prepared execution is missing"}, consts.StatusInternalServerError
+		return agentRunResponse{RequestID: requestID, SessionID: chatSession.SessionID, Status: "failed", StopReason: string(runtime.ExecutionStopUnrecoverableError), Error: "prepared execution is missing"}, consts.StatusInternalServerError
 	}
 
 	prepared := chatSession.Prepared
@@ -397,8 +395,9 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 	if prepared.Initial != nil && prepared.Initial.Error != "" {
 		_ = chatSession.Complete(ctx, "")
 		_ = prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
-			Status: runtime.RuntimeTerminalStatusFailed,
-			Error:  errors.New(prepared.Initial.Error),
+			Status:     runtime.RuntimeTerminalStatusFailed,
+			StopReason: runtime.NormalizeExecutionStopReason(string(prepared.InitialStatus), errors.New(prepared.Initial.Error), ""),
+			Error:      errors.New(prepared.Initial.Error),
 			Metadata: map[string]any{
 				"agent_run_source": agentRunDefaultString(opts.Source, agentRunSourceCreate),
 				"respond_stage":    "initial_error",
@@ -416,8 +415,11 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 	} else {
 		rawOutput, toolSideEffects, err = collectRespondOutput(ctx, prepared.Runner, prepared.Messages)
 		if err != nil {
-			_ = prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
+			projectionCtx, projectionCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer projectionCancel()
+			_ = prepared.ProjectTerminalOutcome(projectionCtx, runtime.RuntimeTerminalOutcome{
 				Status:          runtime.RuntimeTerminalStatusFailed,
+				StopReason:      runtime.NormalizeExecutionStopReason(agentRunErrorStatus(err), err, ""),
 				Error:           err,
 				ToolSideEffects: toolSideEffects,
 				Metadata: map[string]any{
@@ -425,10 +427,19 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 					"respond_stage":    "collect_output",
 				},
 			})
-			return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, "failed", "", err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
+			return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, agentRunErrorStatus(err), "", err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
 		}
 	}
 	if err := chatSession.Complete(ctx, rawOutput); err != nil {
+		_ = prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
+			Status:          runtime.RuntimeTerminalStatusFailed,
+			Error:           err,
+			ToolSideEffects: toolSideEffects,
+			Metadata: map[string]any{
+				"agent_run_source": agentRunDefaultString(opts.Source, agentRunSourceCreate),
+				"respond_stage":    "complete_session",
+			},
+		})
 		return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, "failed", rawOutput, err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
 	}
 	if err := prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
@@ -469,7 +480,7 @@ func agentRunResponseFromSession(ctx context.Context, application *appcore.Servi
 			response.WaitState = chatSession.Prepared.TimeoutWait
 		}
 		if response.StopReason == "" {
-			response.StopReason = string(chatSession.Prepared.InitialStatus)
+			response.StopReason = agentRunStopReason(string(chatSession.Prepared.InitialStatus), "")
 		}
 	}
 	if chatSession.Prepared != nil && chatSession.Prepared.ToolTranscript != nil {
@@ -493,7 +504,7 @@ func agentRunResponseFromSession(ctx context.Context, application *appcore.Servi
 	response.TraceSummary = &readout.Summary
 	response.Checkpoints = readout.Checkpoints
 	response.TraceAvailable = true
-	if stopReason := agentRunStopReasonFromTrace(readout); stopReason != "" {
+	if stopReason, authoritative := agentRunTerminalStopReasonFromTrace(readout); authoritative {
 		response.StopReason = stopReason
 	}
 	return response
@@ -593,6 +604,7 @@ func readAgentRunTrace(ctx context.Context, application *appcore.Service, runID 
 	if err != nil {
 		return agentRunTraceReadout{}, err
 	}
+	runDTO.Status = agentRunEffectiveStatus(runDTO.Status, runtimeLifecycleEventDTOs(events))
 	traces, err := application.ListRuntimeTraces(ctx, appcore.RuntimeRecordReadQuery{RunID: runID, Limit: 200})
 	if err != nil {
 		return agentRunTraceReadout{}, err
@@ -1079,28 +1091,70 @@ func agentRunTraceSummaryFromReadout(readout agentRunTraceReadout) agentRunTrace
 }
 
 func agentRunStopReasonFromTrace(readout agentRunTraceReadout) string {
-	for idx := len(readout.Events) - 1; idx >= 0; idx-- {
-		if strings.TrimSpace(readout.Events[idx].Reason) != "" {
-			return strings.TrimSpace(readout.Events[idx].Reason)
-		}
+	if reason, ok := agentRunTerminalStopReasonFromTrace(readout); ok {
+		return reason
 	}
 	return agentRunStopReason(readout.Run.Status, "")
 }
 
+func agentRunTerminalStopReasonFromTrace(readout agentRunTraceReadout) (string, bool) {
+	for idx := len(readout.Events) - 1; idx >= 0; idx-- {
+		event := readout.Events[idx]
+		if event.SubjectType != runtime.LifecycleSubjectRun || event.EventType != "run_terminal_observed" {
+			continue
+		}
+		if reason, ok := runtime.ParseExecutionStopReason(event.Reason); ok {
+			return string(reason), true
+		}
+	}
+	return "", false
+}
+
+func agentRunEffectiveStatus(persisted string, events []runtimeLifecycleEventDTO) string {
+	for idx := len(events) - 1; idx >= 0; idx-- {
+		event := events[idx]
+		if event.SubjectType == runtime.LifecycleSubjectRun && event.EventType == "run_terminal_observed" && agentRunIsTerminal(event.ToStatus) {
+			return event.ToStatus
+		}
+	}
+	for idx := len(events) - 1; idx >= 0; idx-- {
+		event := events[idx]
+		if event.SubjectType != runtime.LifecycleSubjectRun || strings.TrimSpace(event.ToStatus) == "" {
+			continue
+		}
+		if event.EventType == "run_completed" && event.Reason == "minimal_persistence_complete" {
+			continue
+		}
+		switch event.ToStatus {
+		case runtime.TaskRunStatusCreated,
+			runtime.TaskRunStatusRunning,
+			runtime.TaskRunStatusWaiting,
+			runtime.TaskRunStatusResumed,
+			runtime.TaskRunStatusCompleted,
+			runtime.TaskRunStatusFailed,
+			runtime.TaskRunStatusCancelled:
+			return event.ToStatus
+		}
+	}
+	return persisted
+}
+
 func agentRunStopReason(status string, errText string) string {
+	var err error
 	if strings.TrimSpace(errText) != "" {
-		return "error"
+		err = errors.New("execution failed")
 	}
-	switch strings.TrimSpace(status) {
-	case string(runtime.RequestStatusWaitingForInformation), string(runtime.RequestStatusPendingHuman):
-		return strings.TrimSpace(status)
-	case string(runtime.RequestStatusInvalidModel), string(runtime.RequestStatusInvalidResumeToken), string(runtime.RequestStatusPolicyRejected):
-		return strings.TrimSpace(status)
-	case "", "running":
-		return ""
-	default:
-		return strings.TrimSpace(status)
+	return string(runtime.NormalizeExecutionStopReason(status, err, ""))
+}
+
+func agentRunErrorStatus(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return string(runtime.RequestStatusTimedOut)
 	}
+	if errors.Is(err, context.Canceled) {
+		return runtime.TaskRunStatusCancelled
+	}
+	return runtime.RuntimeTerminalStatusFailed
 }
 
 func agentRunIsTerminal(status string) bool {
@@ -1118,14 +1172,14 @@ func agentRunOpenErrorResponse(requestID string, req agentRunStartRequest, opts 
 		ResumedFromRunID: strings.TrimSpace(opts.ResumedFromRunID),
 		SessionID:        strings.TrimSpace(req.SessionID),
 		Status:           "failed",
-		StopReason:       "open_session_failed",
+		StopReason:       agentRunStopReason("failed", err.Error()),
 		Error:            err.Error(),
 		TraceAvailable:   false,
 	}
 	var invalidTokenErr *appcore.InvalidResumeTokenError
 	if errors.As(err, &invalidTokenErr) {
 		response.Status = string(runtime.RequestStatusInvalidResumeToken)
-		response.StopReason = string(runtime.RequestStatusInvalidResumeToken)
+		response.StopReason = string(runtime.ExecutionStopUnrecoverableError)
 		response.SessionID = invalidTokenErr.SessionID
 		response.ErrorDetail = &runtime.ProtocolError{
 			Code:      string(runtime.RequestStatusInvalidResumeToken),
@@ -1138,7 +1192,7 @@ func agentRunOpenErrorResponse(requestID string, req agentRunStartRequest, opts 
 	}
 	var invalidTaskErr *appcore.InvalidTaskRequestError
 	if errors.As(err, &invalidTaskErr) {
-		response.StopReason = invalidTaskErr.Reason
+		response.StopReason = string(runtime.ExecutionStopUnrecoverableError)
 		response.Metadata = map[string]any{
 			"task_type":      invalidTaskErr.TaskType,
 			"missing_fields": invalidTaskErr.MissingFields,
@@ -1147,12 +1201,18 @@ func agentRunOpenErrorResponse(requestID string, req agentRunStartRequest, opts 
 	var pendingErr *appcore.PendingWaitError
 	if errors.As(err, &pendingErr) {
 		response.Status = string(runtime.RequestStatusWaitingForInformation)
-		response.StopReason = string(runtime.RequestStatusWaitingForInformation)
+		response.StopReason = string(runtime.ExecutionStopAwaitingInput)
 		response.Metadata = map[string]any{
 			"pending": pendingErr.Pending != nil,
 			"queued":  pendingErr.Queued != nil,
 			"dropped": pendingErr.Dropped != nil,
 		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		response.StopReason = string(runtime.ExecutionStopDeadlineExceeded)
+	}
+	if errors.Is(err, context.Canceled) {
+		response.StopReason = string(runtime.ExecutionStopCancelled)
 	}
 	return response
 }

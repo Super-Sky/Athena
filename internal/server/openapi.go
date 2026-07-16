@@ -1541,7 +1541,7 @@ func buildOpenAPISchemas() map[string]any {
 			"resumed_from_run_id": stringSchema("若为续跑，则记录原 run ID。", "run_20260507_000"),
 			"session_id":          stringSchema("Athena session ID。", "sess_019d7286"),
 			"status":              stringSchema("run 请求状态。", "completed"),
-			"stop_reason":         stringSchema("停止原因或最后 lifecycle reason。", "runner_terminal_outcome_observed"),
+			"stop_reason":         map[string]any{"type": "string", "description": "稳定停止原因。", "enum": []string{"success", "budget_exhausted", "deadline_exceeded", "awaiting_input", "awaiting_external_data", "governance_denied", "cancelled", "unrecoverable_error"}, "example": "success"},
 			"output":              stringSchema("同步 MVP 的 assistant 输出。", "Here is the concise answer."),
 			"action_type":         stringSchema("等待或人工接管动作类型。", "information_request"),
 			"action":              map[string]any{"type": "object", "additionalProperties": true},

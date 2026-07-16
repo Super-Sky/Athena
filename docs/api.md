@@ -136,6 +136,8 @@ Agent Run API 当前暴露：
   - `tools` 接受 OpenAI-compatible function tool 或字符串简写，并转换为 provider-neutral runtime declarations；当前只允许调用 Athena 已注册的工具。内置 `calculator`、`current_time`、`json_schema_validate` 可直接启用；业务远程工具注册与执行属于 issue `#9`。
   - `tool_choice` 支持 `none`、`auto`、`required` 和指定 function object。省略时，无工具默认为 `none`，有工具默认为 `auto`。
   - The response exposes ordered `messages`, assistant `tool_calls`, correlated `tool_results`, stable call IDs and final `output`. Top-level call/result arrays are compatibility projections of the canonical transcript.
+  - `stop_reason` 使用稳定枚举：`success`、`budget_exhausted`、`deadline_exceeded`、`awaiting_input`、`awaiting_external_data`、`governance_denied`、`cancelled`、`unrecoverable_error`。
+  - `stop_reason` uses a stable runtime taxonomy instead of exposing internal lifecycle reason strings.
 - `GET /api/agent/runs/:runID`
   - 读取单个 run 的 app-facing 状态摘要，底层复用 persisted `TaskRun` 与 trace summary。
   - Reads the app-facing run status summary from persisted runtime records.

@@ -41,6 +41,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `GET /api/agent/runs/:runID` 与 `GET /api/agent/runs/:runID/trace` 复用 runtime persistence read boundary 返回 run 状态、trace timeline、usage、projection 和 checkpoint safe readouts
   - `internal/server/trace_timeline.go` 复用上述 readout，将 loop step、lifecycle、trace、usage 与 delivery projection 按时间投影成 `GET /api/agent/runs/:runID/timeline`；Control Plane 的同名 read path 和 Admin 展示共用该投影，不创建第二套 trace 存储
   - `internal/runtime/run_manifest.go` 规范化 model、最终 prompt、skill、tool、governance、context、evaluator、system truth 和 runtime contract 的安全 revision refs；`eino_graph.go` 在 TaskRun 创建时冻结清单，timeline 只读取该持久化事实
+  - `internal/runtime/execution_stop_reason.go` 定义稳定 stop-reason taxonomy；terminal projector 将同一原因写入 run/step lifecycle，Agent Run API 与 timeline 不再暴露任意内部 reason 字符串
   - `POST /api/agent/runs/:runID/resume` 先校验原 run 可读，再创建一次带 `resumed_from_run_id` 的 follow-up run；`POST /api/agent/runs/:runID/cancel` 当前返回同步 MVP 的稳定 unsupported / terminal response
   - The contract is generic and app-facing. Business domains such as fund analysis must remain in the host app and enter Athena through context, assets, payload, tools and governance references.
   - app-owned remote tools 可通过 authenticated Control Plane API list/upsert/delete，并在启动时从 control-plane document 恢复。
