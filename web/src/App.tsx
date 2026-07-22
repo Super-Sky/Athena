@@ -2,6 +2,25 @@
 // App.tsx 负责渲染控制面控制台，包括场景、skill、tool 编辑、模型治理、治理策略、版本管理和 Swagger 标签页。
 import { lazy, Suspense, startTransition, useEffect, useState } from "react";
 import {
+  Activity,
+  BookOpenCheck,
+  Bot,
+  Boxes,
+  Braces,
+  ClipboardCheck,
+  DatabaseZap,
+  FileCode2,
+  Gauge,
+  History,
+  Network,
+  PackageSearch,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+  Wrench,
+  type LucideIcon
+} from "lucide-react";
+import {
   activateSystemResource,
   buildSystemAssetsPackage,
   compileSystemResource,
@@ -228,21 +247,25 @@ type ReleaseReadinessCheck = {
   tab: TabKey;
 };
 
-const tabs: { key: TabKey; label: string; description: string }[] = [
-  { key: "overview", label: "概览", description: "运行态指标与 truth dir 状态" },
-  { key: "observability", label: "运行观测", description: "逐步检查模型、skill、tool、影响与性能" },
-  { key: "release-readiness", label: "Release Readiness", description: "v2.0.0 成品门禁、阻塞项和下一步入口" },
-  { key: "scenes", label: "场景", description: "编辑场景匹配、默认技能和建议问题" },
-  { key: "skills", label: "Skills", description: "维护技能指导、工具引用和开关" },
-  { key: "tools", label: "Tools", description: "治理工具契约、作用域和确认策略" },
-  { key: "system-resources", label: "System Resources", description: "管理 system truth 主源、编译和审计" },
-  { key: "system-validation", label: "System Validation", description: "验证 system truth 一致性、试运行和优化对比" },
-  { key: "models", label: "模型", description: "配置模型供应商、模型记录和可用性" },
-  { key: "governance", label: "治理策略", description: "调整运行时治理开关和规划阈值" },
-  { key: "versions", label: "版本回滚", description: "查看配置快照并执行回滚" },
-  { key: "api-debug", label: "接口调试", description: "从 OpenAPI 快速构造和发送请求" },
-  { key: "swagger", label: "Swagger", description: "按需加载完整接口文档" }
+type NavigationGroup = "运行" | "构建" | "治理" | "开发";
+
+const tabs: { key: TabKey; label: string; description: string; group: NavigationGroup; icon: LucideIcon }[] = [
+  { key: "overview", label: "概览", description: "运行态与 truth 状态", group: "运行", icon: Gauge },
+  { key: "observability", label: "运行观测", description: "模型、Skill、Tool 与性能", group: "运行", icon: Activity },
+  { key: "release-readiness", label: "发布门禁", description: "阻塞项与验收入口", group: "运行", icon: ClipboardCheck },
+  { key: "scenes", label: "场景", description: "匹配、技能与建议问题", group: "构建", icon: Network },
+  { key: "skills", label: "Skills", description: "指导、工具引用与开关", group: "构建", icon: Bot },
+  { key: "tools", label: "Tools", description: "契约、作用域与确认策略", group: "构建", icon: Wrench },
+  { key: "system-resources", label: "System Resources", description: "Truth 主源、编译与审计", group: "构建", icon: PackageSearch },
+  { key: "system-validation", label: "System Validation", description: "一致性与试运行", group: "构建", icon: BookOpenCheck },
+  { key: "models", label: "模型", description: "供应商、模型与可用性", group: "构建", icon: DatabaseZap },
+  { key: "governance", label: "治理策略", description: "运行约束与规划阈值", group: "治理", icon: ShieldCheck },
+  { key: "versions", label: "版本回滚", description: "配置快照与恢复", group: "治理", icon: History },
+  { key: "api-debug", label: "接口调试", description: "构造并发送 API 请求", group: "开发", icon: Braces },
+  { key: "swagger", label: "Swagger", description: "完整接口文档", group: "开发", icon: FileCode2 }
 ];
+
+const navigationGroups: NavigationGroup[] = ["运行", "构建", "治理", "开发"];
 
 const emptyProviderDraft: ProviderDraft = {
   name: "",
@@ -556,53 +579,54 @@ export default function App() {
       <a className="skip-link" href="#main-content">跳到主内容</a>
       <aside className="side-nav">
         <div className="brand-block">
-          <p className="eyebrow">Athena</p>
-          <h1>Control Plane</h1>
-          <p className="muted">场景、skill、tool、模型治理、策略、配置版本与 API 文档。</p>
-        </div>
-        <div className="status-card">
-          <span className="status-label">认证</span>
-          <strong>{authPhase === "loading" ? "检查中" : authPhase === "ready" ? "已登录" : "未登录"}</strong>
-          {authStatus?.truth_dir?.path ? <span className="muted">truth dir: {authStatus.truth_dir.path}</span> : null}
-          {authStatus?.truth_dir?.version ? <span className="muted">truth version: {authStatus.truth_dir.version}</span> : null}
-          {authPhase === "ready" ? (
-            <button className="secondary-button" onClick={() => handleLogout()} type="button">
-              退出登录
-            </button>
-          ) : null}
+          <span className="brand-icon" aria-hidden="true"><Boxes size={19} strokeWidth={1.8} /></span>
+          <div>
+            <p className="eyebrow">Agent Runtime</p>
+            <h1>Athena</h1>
+            <p className="muted">Control Plane</p>
+          </div>
         </div>
         <nav className="nav-list">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              aria-current={tab.key === activeTab ? "page" : undefined}
-              className={tab.key === activeTab ? "nav-item active" : "nav-item"}
-              data-testid={`nav-${tab.key}`}
-              onClick={() => setActiveTab(tab.key)}
-              type="button"
-            >
-              <strong>{tab.label}</strong>
-              <span>{tab.description}</span>
-            </button>
+          {navigationGroups.map((group) => (
+            <div className="nav-group" key={group}>
+              <span className="nav-group-label">{group}</span>
+              {tabs.filter((tab) => tab.group === group).map((tab) => {
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.key}
+                    aria-current={tab.key === activeTab ? "page" : undefined}
+                    className={tab.key === activeTab ? "nav-item active" : "nav-item"}
+                    data-testid={`nav-${tab.key}`}
+                    onClick={() => setActiveTab(tab.key)}
+                    type="button"
+                  >
+                    <TabIcon aria-hidden="true" size={16} strokeWidth={1.8} />
+                    <span className="nav-item-copy"><strong>{tab.label}</strong><small>{tab.description}</small></span>
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </nav>
-        <div className="status-card">
-          <span className="status-label">状态</span>
-          <strong>{status}</strong>
+        <div className="sidebar-runtime">
+          <div className="runtime-state"><span className={`runtime-dot ${authPhase}`} /><div><strong>{authPhase === "ready" ? "Runtime online" : authPhase}</strong><span>{authStatus?.truth_dir?.version || "truth 未同步"}</span></div></div>
+          <p>{status}</p>
           {error ? <p className="error-text">{error}</p> : null}
+          {authPhase === "ready" ? <button className="sidebar-action" onClick={() => handleLogout()} type="button"><Settings2 size={14} />退出登录</button> : null}
         </div>
       </aside>
 
       <main className="content-pane" id="main-content">
         <header className="content-header">
           <div>
-            <p className="eyebrow">Control Surface</p>
+            <p className="eyebrow">Athena / {activeTabInfo.group}</p>
             <h2>{activeTabInfo.label}</h2>
             <p className="muted">{activeTabInfo.description}</p>
           </div>
           <div className="sync-pill">
-            <span>Runtime</span>
-            <strong>{authPhase === "ready" ? "online" : authPhase}</strong>
+            <span className={`runtime-dot ${authPhase}`} />
+            <div><strong>{authPhase === "ready" ? "在线" : authPhase}</strong><small>Runtime</small></div>
           </div>
         </header>
         {authPhase === "loading" ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-line" /><span className="skeleton-line short" /></section> : null}
@@ -828,13 +852,13 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
 
       <div className="observability-grid">
         <aside className="run-browser">
-          <div className="observability-panel-title"><div><h3>Runs</h3><span>{runs.length} 条</span></div><span>{loading ? "同步中" : "实时记录"}</span></div>
+          <div className="observability-panel-title"><div><h3>Runs</h3><span>{runs.length} 条运行记录</span></div><button aria-label="刷新运行记录" className="icon-button" disabled={loading || !selectedRunID} onClick={() => selectRun(selectedRunID)} title="刷新运行记录" type="button"><RefreshCw className={loading ? "spin" : ""} size={15} /></button></div>
           <div className="run-browser-list">
             {runs.map((run) => (
               <button className={run.id === selectedRunID ? "run-browser-item active" : "run-browser-item"} key={run.id} onClick={() => selectRun(run.id)} type="button">
                 <span><i className={`run-status-dot ${run.status}`} />{run.status}</span>
                 <strong>{run.task_type || run.scene || run.task_id || run.id}</strong>
-                <small>{formatRuntimeTime(run.created_at)}</small>
+                <small>{formatRuntimeTime(run.created_at)} · {shortHash(run.id)}</small>
               </button>
             ))}
             {!loading && runs.length === 0 ? <div className="observability-empty">暂无运行记录</div> : null}
@@ -860,6 +884,7 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
           {selectedItem ? (
             <div className="inspector-content">
               <div className="inspector-heading"><strong>{selectedItem.summary}</strong><span>{selectedItem.status || "recorded"} · {formatRuntimeTime(selectedItem.timestamp)}</span></div>
+              <div className="inspector-meta"><span>{selectedItem.source || "runtime"}</span><span>{selectedItem.duration_ms === undefined ? "耗时未记录" : `${selectedItem.duration_ms} ms`}</span><span>{selectedItem.id}</span></div>
               <InspectorSection title="发送内容" value={observabilitySection(selectedItem, ["request", "input", "arguments", "messages", "redacted_input", "input_count", "input_runes"])} />
               <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output", "output_runes", "tool_call_count"])} />
               <InspectorSection title="影响与状态" value={observabilityImpact(selectedItem)} />

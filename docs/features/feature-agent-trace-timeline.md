@@ -24,6 +24,10 @@ The Control Plane exposes `运行观测` as a first-level navigation view. It co
 
 Control Plane 将 `运行观测` 提升为一级导航页，组合 run 列表、有序时间线、安全步骤检查器，以及总耗时、模型调用、skill/tool、usage 和失败计数。检查器分开展示白名单请求、返回、影响/状态、性能与 run manifest；未持久化字段明确显示为未记录，不由前端推断。可见 detail 继续排除原始模型隐式推理、凭据和未脱敏业务载荷。
 
+The operator shell groups navigation into runtime, build, governance, and development domains. The observability surface uses a stable three-pane debugger layout, a compact summary strip, explicit source/duration/trace identifiers, and an in-place refresh control. Lucide icons provide consistent visual recognition without changing route or API behavior.
+
+运维壳层把导航收敛为运行、构建、治理和开发四组。运行观测采用稳定三栏调试器布局、紧凑摘要栏、明确的 source/duration/trace 标识和原地刷新入口。Lucide 图标只用于提升识别效率，不改变路由或 API 行为。
+
 Model callback entries expose only persisted safe summaries: input/output counts, tool-call count, callback status, duration, token usage, and a redacted error summary when the callback fails. Raw prompts, model responses, credentials, provider headers, and hidden reasoning never enter the timeline contract.
 
 模型回调条目只展示已持久化的安全摘要：输入/输出计数、tool call 数量、回调状态、耗时、Token 用量，以及失败时的脱敏错误摘要。原始 Prompt、模型返回、凭据、provider header 和隐式推理都不会进入 timeline 契约。
@@ -55,13 +59,13 @@ go test ./internal/runtime ./internal/server -count=1
 cd web && npm ci && npm run build
 ```
 
-Tests cover deterministic/redaction-safe manifest hashing, Eino persistence capture, legacy compatibility, timestamp ordering, classification, callback status/duration, safe model summaries, safe failure detail, and route registration. The UI build confirms the typed client and three-pane inspector compile. Browser smoke verifies the first-level navigation and confirms no horizontal page overflow at 1280px and 390px widths.
+Tests cover deterministic/redaction-safe manifest hashing, Eino persistence capture, legacy compatibility, timestamp ordering, classification, callback status/duration, safe model summaries, safe failure detail, and route registration. The UI build confirms the typed client and three-pane inspector compile. Browser smoke with a seven-step trace fixture verifies the grouped navigation, request/response/impact/performance inspector, and no horizontal page overflow at 1440px and 390px widths.
 
 The 100-tool manifest benchmark on the local Intel development machine measured 177-229 us/op, about 27.1 KB/op, and 41 allocations/op across three isolated runs. Manifest construction is one write-time operation and performs no per-reference database reads.
 
 本地 Intel 开发机上的 100-tool manifest benchmark 三轮隔离结果为 177-229 us/op、约 27.1 KB/op、41 allocs/op。清单只在写入时构建一次，不会对每条引用执行数据库读取。
 
-测试覆盖时间排序、loop/model/tool/governance/usage 分类、duration、安全失败详情和两条路由注册。UI build 确认 typed client 与可展开详情面板能够编译。
+测试覆盖时间排序、loop/model/tool/governance/usage 分类、duration、安全失败详情和两条路由注册。UI build 确认 typed client 与三栏详情面板能够编译；包含七步 trace fixture 的 Browser smoke 已在 1440px 与 390px 验证分组导航、请求/返回/影响/性能详情和无横向页面溢出。
 
 ## Skill Decision / Skill 结论
 
