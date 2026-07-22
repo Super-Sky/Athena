@@ -17,18 +17,21 @@ import (
 )
 
 const (
-	defaultConfigDir            = "config"
-	defaultHTTPPort             = 8080
-	defaultMaxConcurrentReqs    = 256
-	defaultMaxConcurrentTools   = 8
-	defaultRequestTimeoutSecs   = 60
-	defaultDeferredQueueLimit   = 32
-	defaultClosedTokenTTLSecs   = 86400
-	defaultSkillPackageRevs     = 10
-	defaultSharedRootDir        = "shared"
-	defaultControlPlaneTTL      = 28800
-	defaultControlPlaneAttempts = 5
-	defaultCompressionThreshold = 12000
+	defaultConfigDir             = "config"
+	defaultHTTPPort              = 8080
+	defaultMaxConcurrentReqs     = 256
+	defaultMaxConcurrentTools    = 8
+	defaultRequestTimeoutSecs    = 60
+	defaultDeferredQueueLimit    = 32
+	defaultClosedTokenTTLSecs    = 86400
+	defaultSkillPackageRevs      = 10
+	defaultSharedRootDir         = "shared"
+	defaultControlPlaneTTL       = 28800
+	defaultControlPlaneAttempts  = 5
+	defaultCompressionThreshold  = 12000
+	defaultTracePayloadRetention = 24
+	defaultTracePayloadRecordMax = 262144
+	defaultTracePayloadRunMax    = 2097152
 )
 
 // Config captures the top-level runtime configuration assembled from files and environment overrides.
@@ -156,13 +159,32 @@ type DatabaseConfig struct {
 // SecurityConfig groups runtime security settings such as encryption secrets.
 // SecurityConfig 聚合运行时安全配置，例如加密密钥。
 type SecurityConfig struct {
-	EncryptionKey string `yaml:"encryption_key"`
+	EncryptionKey               string `yaml:"encryption_key"`
+	TracePayloadEncryptionKey   string `yaml:"trace_payload_encryption_key"`
+	TracePayloadEncryptionKeyID string `yaml:"trace_payload_encryption_key_id"`
 }
 
 // ObservabilityConfig groups runtime log and observability settings.
 // ObservabilityConfig 聚合运行时日志与可观测配置。
 type ObservabilityConfig struct {
-	LogLevel string `yaml:"log_level"`
+	LogLevel               string                       `yaml:"log_level"`
+	PrivilegedTracePayload PrivilegedTracePayloadConfig `yaml:"privileged_trace_payload"`
+}
+
+// PrivilegedTracePayloadConfig controls the separately encrypted, control-plane-only trace detail plane.
+// PrivilegedTracePayloadConfig 控制独立加密、仅控制面可读的 trace 明细平面。
+type PrivilegedTracePayloadConfig struct {
+	CaptureEnabled        bool     `yaml:"capture_enabled"`
+	ReadEnabled           bool     `yaml:"read_enabled"`
+	SampleRate            float64  `yaml:"sample_rate"`
+	RetentionHours        int      `yaml:"retention_hours"`
+	MaxRecordBytes        int64    `yaml:"max_record_bytes"`
+	MaxRunBytes           int64    `yaml:"max_run_bytes"`
+	CaptureModel          bool     `yaml:"capture_model"`
+	CaptureTools          bool     `yaml:"capture_tools"`
+	CaptureContextSummary bool     `yaml:"capture_context_summary"`
+	DisabledWorkspaceIDs  []string `yaml:"disabled_workspace_ids"`
+	ExtraRedactedFields   []string `yaml:"extra_redacted_fields"`
 }
 
 // LoadFromEnv loads config files, applies environment overrides, and validates the final config.
@@ -231,10 +253,25 @@ func LoadFromEnv() (Config, error) {
 			ConnMaxLifetime: envInt("DB_CONN_MAX_LIFETIME_SECONDS", 300),
 		},
 		Security: SecurityConfig{
-			EncryptionKey: strings.TrimSpace(os.Getenv("SECURITY_ENCRYPTION_KEY")),
+			EncryptionKey:               strings.TrimSpace(os.Getenv("SECURITY_ENCRYPTION_KEY")),
+			TracePayloadEncryptionKey:   strings.TrimSpace(os.Getenv("TRACE_PAYLOAD_ENCRYPTION_KEY")),
+			TracePayloadEncryptionKeyID: strings.TrimSpace(os.Getenv("TRACE_PAYLOAD_ENCRYPTION_KEY_ID")),
 		},
 		Observability: ObservabilityConfig{
 			LogLevel: defaultString(strings.ToLower(strings.TrimSpace(os.Getenv("OBSERVABILITY_LOG_LEVEL"))), "info"),
+			PrivilegedTracePayload: PrivilegedTracePayloadConfig{
+				CaptureEnabled:        envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_ENABLED", false),
+				ReadEnabled:           envBool("PRIVILEGED_TRACE_PAYLOAD_READ_ENABLED", false),
+				SampleRate:            envFloat64("PRIVILEGED_TRACE_PAYLOAD_SAMPLE_RATE", 1),
+				RetentionHours:        envInt("PRIVILEGED_TRACE_PAYLOAD_RETENTION_HOURS", defaultTracePayloadRetention),
+				MaxRecordBytes:        envInt64("PRIVILEGED_TRACE_PAYLOAD_MAX_RECORD_BYTES", defaultTracePayloadRecordMax),
+				MaxRunBytes:           envInt64("PRIVILEGED_TRACE_PAYLOAD_MAX_RUN_BYTES", defaultTracePayloadRunMax),
+				CaptureModel:          envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_MODEL", true),
+				CaptureTools:          envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_TOOLS", true),
+				CaptureContextSummary: envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_CONTEXT_SUMMARY", true),
+				DisabledWorkspaceIDs:  envStringSlice("PRIVILEGED_TRACE_PAYLOAD_DISABLED_WORKSPACE_IDS"),
+				ExtraRedactedFields:   envStringSlice("PRIVILEGED_TRACE_PAYLOAD_EXTRA_REDACTED_FIELDS"),
+			},
 		},
 	}
 
@@ -370,7 +407,25 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Database.LogZap = defaultString(strings.TrimSpace(os.Getenv("DB_LOG_ZAP")), cfg.Database.LogZap)
 	cfg.Database.ConnMaxLifetime = envInt("DB_CONN_MAX_LIFETIME_SECONDS", cfg.Database.ConnMaxLifetime)
 	cfg.Security.EncryptionKey = defaultString(strings.TrimSpace(os.Getenv("SECURITY_ENCRYPTION_KEY")), cfg.Security.EncryptionKey)
+	cfg.Security.TracePayloadEncryptionKey = defaultString(strings.TrimSpace(os.Getenv("TRACE_PAYLOAD_ENCRYPTION_KEY")), cfg.Security.TracePayloadEncryptionKey)
+	cfg.Security.TracePayloadEncryptionKeyID = defaultString(strings.TrimSpace(os.Getenv("TRACE_PAYLOAD_ENCRYPTION_KEY_ID")), cfg.Security.TracePayloadEncryptionKeyID)
 	cfg.Observability.LogLevel = defaultString(strings.ToLower(strings.TrimSpace(os.Getenv("OBSERVABILITY_LOG_LEVEL"))), cfg.Observability.LogLevel)
+	tracePayload := &cfg.Observability.PrivilegedTracePayload
+	tracePayload.CaptureEnabled = envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_ENABLED", tracePayload.CaptureEnabled)
+	tracePayload.ReadEnabled = envBool("PRIVILEGED_TRACE_PAYLOAD_READ_ENABLED", tracePayload.ReadEnabled)
+	tracePayload.SampleRate = envFloat64("PRIVILEGED_TRACE_PAYLOAD_SAMPLE_RATE", tracePayload.SampleRate)
+	tracePayload.RetentionHours = envInt("PRIVILEGED_TRACE_PAYLOAD_RETENTION_HOURS", tracePayload.RetentionHours)
+	tracePayload.MaxRecordBytes = envInt64("PRIVILEGED_TRACE_PAYLOAD_MAX_RECORD_BYTES", tracePayload.MaxRecordBytes)
+	tracePayload.MaxRunBytes = envInt64("PRIVILEGED_TRACE_PAYLOAD_MAX_RUN_BYTES", tracePayload.MaxRunBytes)
+	tracePayload.CaptureModel = envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_MODEL", tracePayload.CaptureModel)
+	tracePayload.CaptureTools = envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_TOOLS", tracePayload.CaptureTools)
+	tracePayload.CaptureContextSummary = envBool("PRIVILEGED_TRACE_PAYLOAD_CAPTURE_CONTEXT_SUMMARY", tracePayload.CaptureContextSummary)
+	if values := envStringSlice("PRIVILEGED_TRACE_PAYLOAD_DISABLED_WORKSPACE_IDS"); len(values) > 0 {
+		tracePayload.DisabledWorkspaceIDs = values
+	}
+	if values := envStringSlice("PRIVILEGED_TRACE_PAYLOAD_EXTRA_REDACTED_FIELDS"); len(values) > 0 {
+		tracePayload.ExtraRedactedFields = values
+	}
 }
 
 // Validate checks whether the assembled config satisfies the runtime minimum constraints.
@@ -446,6 +501,33 @@ func (c Config) Validate() error {
 	case "", "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("OBSERVABILITY_LOG_LEVEL must be one of debug, info, warn, error")
+	}
+	tracePayload := c.Observability.PrivilegedTracePayload
+	if tracePayload.SampleRate < 0 || tracePayload.SampleRate > 1 {
+		return fmt.Errorf("PRIVILEGED_TRACE_PAYLOAD_SAMPLE_RATE must be between 0 and 1")
+	}
+	if tracePayload.CaptureEnabled || tracePayload.ReadEnabled {
+		if strings.TrimSpace(c.ControlPlane.AuthToken) == "" {
+			return fmt.Errorf("CONTROL_PLANE_AUTH_TOKEN is required when privileged trace payload capture or read is enabled")
+		}
+		if strings.TrimSpace(c.Security.TracePayloadEncryptionKey) == "" {
+			return fmt.Errorf("TRACE_PAYLOAD_ENCRYPTION_KEY is required when privileged trace payload capture or read is enabled")
+		}
+		if len([]byte(strings.TrimSpace(c.Security.TracePayloadEncryptionKey))) < 32 {
+			return fmt.Errorf("TRACE_PAYLOAD_ENCRYPTION_KEY must contain at least 32 bytes of random secret material")
+		}
+		if strings.TrimSpace(c.Security.TracePayloadEncryptionKeyID) == "" {
+			return fmt.Errorf("TRACE_PAYLOAD_ENCRYPTION_KEY_ID is required when privileged trace payload capture or read is enabled")
+		}
+		if tracePayload.RetentionHours <= 0 {
+			return fmt.Errorf("PRIVILEGED_TRACE_PAYLOAD_RETENTION_HOURS must be greater than 0")
+		}
+		if tracePayload.MaxRecordBytes <= 0 || tracePayload.MaxRunBytes <= 0 {
+			return fmt.Errorf("privileged trace payload byte limits must be greater than 0")
+		}
+		if tracePayload.MaxRunBytes < tracePayload.MaxRecordBytes {
+			return fmt.Errorf("PRIVILEGED_TRACE_PAYLOAD_MAX_RUN_BYTES must be greater than or equal to PRIVILEGED_TRACE_PAYLOAD_MAX_RECORD_BYTES")
+		}
 	}
 	switch c.Session.Driver {
 	case "memory":
@@ -615,6 +697,18 @@ func envInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func envFloat64(key string, fallback float64) float64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return fallback
 	}

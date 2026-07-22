@@ -155,6 +155,23 @@ export type RuntimeTraceTimelineItem = {
   step_id?: string;
   error?: Record<string, unknown>;
   detail?: Record<string, unknown>;
+  payload_ref?: string;
+  payload_status?: string;
+  payload_unavailable_reason?: string;
+};
+
+export type PrivilegedTracePayload = {
+  payload_ref: string;
+  run_id: string;
+  step_id?: string;
+  trace_type: string;
+  source: string;
+  schema_version: string;
+  payload: Record<string, unknown>;
+  payload_size: number;
+  redacted_field_count: number;
+  created_at: string;
+  expires_at: string;
 };
 
 export type RuntimeRunRevisionRef = {

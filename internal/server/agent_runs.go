@@ -631,6 +631,9 @@ func readAgentRunTrace(ctx context.Context, application *appcore.Service, runID 
 		Checkpoints: runtimeCheckpointReadoutDTOs(checkpoints),
 	}
 	if _, appFacing := appRequestIdentity(ctx); appFacing {
+		for index := range readout.Traces {
+			readout.Traces[index].Metadata = metadataWithoutPrivilegedTraceRef(readout.Traces[index].Metadata)
+		}
 		for index := range readout.Projections {
 			readout.Projections[index].SemanticPayload = nil
 		}

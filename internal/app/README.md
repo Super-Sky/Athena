@@ -44,7 +44,7 @@
 - `orchestration_test.go`
   - 验证编排状态和主链 orchestration 行为。
 - `runtime_read.go`
-  - 提供 Control Plane 读取 Phase 1 runtime persistence objects 的 app-layer read boundary。
+  - 提供 Control Plane 读取 Phase 1 runtime persistence objects 的 app-layer read boundary，并在独立密钥边界解密特权 trace 载荷、追加读取审计。
 - `runtime_system_truth.go`
   - 编排 System Truth source、draft、compile、activate 和 rollback 的 append-only lifecycle 写入路径。
 - `runtime_contract_resolution.go`

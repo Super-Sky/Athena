@@ -36,6 +36,10 @@
   - 将既有 runtime step、lifecycle、trace、usage 和 projection 安全投影为 app-facing / Control Plane 共用的统一时间线。
 - `trace_timeline_test.go`
   - 验证时间顺序、model/tool/governance 分类、失败信息和路由注册，不创建重复 trace store。
+- `privileged_trace_payload.go`
+  - 提供仅 Control Plane 可用、run/ref 绑定、禁止缓存且读取必审计的特权 trace 明细接口。
+- `privileged_trace_payload_test.go`
+  - 验证未认证拒绝、成功解密、run/ref 不匹配和各类读取结果的审计行为。
 - `control_plane.go`
   - 暴露控制面 bootstrap、scene/skill/runtime-config、remote tool registry 接口和控制面 CORS 处理。
 - `remote_tools_test.go`

@@ -12,6 +12,8 @@
   - 说明 issue #22 的稳定 stop-reason taxonomy、runtime 持久化边界及后续 budget/Redis 切片。
 - `feature-agent-trace-timeline.md`
   - 说明 issue #11 的统一 trace 时间线、不可变 run manifest、安全详情与后台观测入口。
+- `feature-privileged-trace-payload.md`
+  - 说明 issue #30 的特权 trace 明细采集、强制脱敏、独立加密、访问审计、控制面按需读取与验证基线。
 - `feature-remote-business-tools.md`
   - 说明 issue #9 的 app-owned remote tool registry、HTTP callback contract、执行治理、网络边界与验证方式。
 - `feature-builtin-tools.md`

@@ -153,8 +153,19 @@ Agent Run API 当前暴露：
 - `GET /api/agent/runs/:runID/timeline`
   - 将现有的 step、lifecycle、trace、usage 和 projection records 依时间投影为一条业务应用可直接展示的列表；每条 entry 包含 timestamp、duration、status、source、error 和安全 detail。
   - Projects existing persisted records into one ordered, app-readable timeline. It does not create a duplicate trace store and never returns raw prompts, tool arguments, tool results, or business payloads.
+  - 模型回调 detail 仅返回输入/输出计数、tool call 数量、状态、耗时、Token 与脱敏错误摘要；不会返回原始 Prompt 或模型响应。
+  - Model callback detail contains only safe counts, status, duration, token usage, and a redacted error summary; raw prompts and model responses are excluded.
   - 顶层可选 `run_manifest` 是 TaskRun 创建时冻结的 `agent_run_manifest.v1`，并通过 `manifest_status` 区分 `complete`、`partial`、`legacy_unavailable`、`unsupported_schema` 与 `invalid`。历史 run 不会从当前配置重建版本。
   - The optional top-level `run_manifest` is frozen with TaskRun creation. It contains revision IDs/versions/sources and SHA-256 values only; `manifest_status=legacy_unavailable` preserves backward compatibility without read-time reconstruction.
+
+Control Plane privileged trace detail is a separate opt-in contract:
+
+- `GET /api/control-plane/runtime/runs/:runID/trace-payloads/:payloadRef`
+  - Requires a valid Control Plane session, enabled privileged reads, a dedicated trace encryption key, and an exact run/ref match.
+  - Returns the decrypted payload only after mandatory field redaction; every denied, missing, expired, failed, or successful read is durably audited and responses use `Cache-Control: no-store`.
+  - The Control Plane timeline may expose opaque `payload_ref`, `payload_status`, and an unavailable reason. App-facing trace/timeline responses remove the reference and never gain access to this endpoint.
+
+Control Plane 特权 trace 明细使用独立的显式开启契约。读取要求有效控制面 session、专用密钥和精确 run/ref 绑定；返回内容已完成强制字段脱敏，所有读取结果都会持久审计。普通业务应用 trace/timeline 不返回引用，也不能访问该接口。
 
 启用 `APP_AUTH_REQUIRED=true` 后，上述六条路由都要求 `X-Athena-App-Token`、`X-Athena-App-ID`、`X-Athena-Workspace-ID` 和 `X-Athena-App-Instance-ID`。Token 与精确 scope 由 `APP_AUTH_IDENTITIES_JSON` 绑定；无效身份返回 `401`，scope 外、跨租户、不存在或无归属历史 run 统一返回同形 `404`。应用 token 使用专用 header，不会进入 Platform Context 的 `Authorization` 转发链。
 
