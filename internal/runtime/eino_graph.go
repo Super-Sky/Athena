@@ -30,8 +30,10 @@ const (
 // EinoGraphTurnExecutorOptions carries optional graph-side persistence dependencies.
 // EinoGraphTurnExecutorOptions 携带 graph 侧可选持久化依赖。
 type EinoGraphTurnExecutorOptions struct {
-	Store RuntimePersistenceStore
-	Now   func() time.Time
+	Store         RuntimePersistenceStore
+	PayloadStore  PrivilegedTracePayloadStore
+	PayloadPolicy PrivilegedTracePayloadPolicy
+	Now           func() time.Time
 }
 
 // RuntimeGraphStepSnapshot records the safe status of one graph node.
@@ -67,9 +69,11 @@ type RuntimeGraphFrame struct {
 // EinoGraphFoundation owns the compiled runtime graph and its persistence projection dependencies.
 // EinoGraphFoundation 持有已编译的 runtime graph 及其持久化投影依赖。
 type EinoGraphFoundation struct {
-	Executor TurnExecutor
-	Store    RuntimePersistenceStore
-	Now      func() time.Time
+	Executor      TurnExecutor
+	Store         RuntimePersistenceStore
+	PayloadStore  PrivilegedTracePayloadStore
+	PayloadPolicy PrivilegedTracePayloadPolicy
+	Now           func() time.Time
 
 	compileMu sync.Mutex
 	compiled  compose.Runnable[*RuntimeGraphFrame, *RuntimeGraphFrame]
@@ -86,9 +90,11 @@ type EinoGraphTurnExecutor struct {
 func NewEinoGraphTurnExecutor(base TurnExecutor, opts EinoGraphTurnExecutorOptions) TurnExecutor {
 	return EinoGraphTurnExecutor{
 		graph: &EinoGraphFoundation{
-			Executor: base,
-			Store:    opts.Store,
-			Now:      opts.Now,
+			Executor:      base,
+			Store:         opts.Store,
+			PayloadStore:  opts.PayloadStore,
+			PayloadPolicy: opts.PayloadPolicy,
+			Now:           opts.Now,
 		},
 	}
 }
@@ -114,11 +120,14 @@ func (e EinoGraphTurnExecutor) Prepare(ctx context.Context, state RuntimeState, 
 	if frame.RecordSet != nil {
 		frame.Prepared.RuntimeRecords = frame.RecordSet
 		frame.Prepared.TerminalProjector = &RuntimeTerminalProjector{
-			Store:     e.graph.Store,
-			Now:       e.graph.Now,
-			RecordSet: frame.RecordSet,
-			Callbacks: frame.Prepared.CallbackRecorder,
-			Tools:     frame.Prepared.ToolTranscript,
+			Store:         e.graph.Store,
+			PayloadStore:  e.graph.PayloadStore,
+			PayloadPolicy: e.graph.PayloadPolicy,
+			Now:           e.graph.Now,
+			RecordSet:     frame.RecordSet,
+			Callbacks:     frame.Prepared.CallbackRecorder,
+			Tools:         frame.Prepared.ToolTranscript,
+			ExecutionSpec: frame.Spec,
 			Metadata: map[string]any{
 				"graph_steps":     graphStepNames(frame.Steps),
 				"callback_events": graphCallbackEventSummaries(frame.CallbackEvents),
@@ -197,14 +206,14 @@ func (g *EinoGraphFoundation) compile(ctx context.Context) (compose.Runnable[*Ru
 	return runnable, nil
 }
 
-func (g EinoGraphFoundation) contextAssemblyNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) contextAssemblyNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	frame.ensureMetadata()
 	frame.Metadata["message_count"] = len(frame.Messages)
 	frame.markStep(RuntimeGraphNodeContextAssembly, "success", "messages_received_from_runtime_context_assembler")
 	return frame, nil
 }
 
-func (g EinoGraphFoundation) capabilityNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) capabilityNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	if frame.Spec == nil {
 		return nil, fmt.Errorf("runtime graph execution spec is required")
 	}
@@ -215,7 +224,7 @@ func (g EinoGraphFoundation) capabilityNode(_ context.Context, frame *RuntimeGra
 	return frame, nil
 }
 
-func (g EinoGraphFoundation) governanceNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) governanceNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	frame.ensureMetadata()
 	decision := ""
 	if frame.Spec != nil && frame.Spec.Metadata.Governance != nil {
@@ -226,7 +235,7 @@ func (g EinoGraphFoundation) governanceNode(_ context.Context, frame *RuntimeGra
 	return frame, nil
 }
 
-func (g EinoGraphFoundation) turnExecutionNode(ctx context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) turnExecutionNode(ctx context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	if g.Executor == nil {
 		return nil, fmt.Errorf("runtime graph executor is required")
 	}
@@ -240,7 +249,7 @@ func (g EinoGraphFoundation) turnExecutionNode(ctx context.Context, frame *Runti
 	return frame, nil
 }
 
-func (g EinoGraphFoundation) schemaValidationNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) schemaValidationNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	if frame.Prepared == nil {
 		return nil, fmt.Errorf("runtime graph prepared execution is required before schema validation")
 	}
@@ -250,7 +259,7 @@ func (g EinoGraphFoundation) schemaValidationNode(_ context.Context, frame *Runt
 	return frame, nil
 }
 
-func (g EinoGraphFoundation) projectionCandidateNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) projectionCandidateNode(_ context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	frame.Projection = &ProjectionCandidate{
 		CandidateKind: "prepared_execution",
 		Status:        "ready",
@@ -267,7 +276,7 @@ func (g EinoGraphFoundation) projectionCandidateNode(_ context.Context, frame *R
 	return frame, nil
 }
 
-func (g EinoGraphFoundation) persistenceProjectionNode(ctx context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
+func (g *EinoGraphFoundation) persistenceProjectionNode(ctx context.Context, frame *RuntimeGraphFrame) (*RuntimeGraphFrame, error) {
 	if g.Store == nil {
 		frame.markStep(RuntimeGraphNodePersistence, "skipped", "runtime_persistence_store_unconfigured")
 		return frame, nil
@@ -315,11 +324,14 @@ func (g EinoGraphFoundation) persistenceProjectionNode(ctx context.Context, fram
 	if frame.Prepared != nil {
 		frame.Prepared.RuntimeRecords = frame.RecordSet
 		frame.Prepared.TerminalProjector = &RuntimeTerminalProjector{
-			Store:     g.Store,
-			Now:       g.Now,
-			RecordSet: frame.RecordSet,
-			Callbacks: frame.Prepared.CallbackRecorder,
-			Tools:     frame.Prepared.ToolTranscript,
+			Store:         g.Store,
+			PayloadStore:  g.PayloadStore,
+			PayloadPolicy: g.PayloadPolicy,
+			Now:           g.Now,
+			RecordSet:     frame.RecordSet,
+			Callbacks:     frame.Prepared.CallbackRecorder,
+			Tools:         frame.Prepared.ToolTranscript,
+			ExecutionSpec: frame.Spec,
 			Metadata: map[string]any{
 				"graph_steps":     graphStepNames(frame.Steps),
 				"callback_events": graphCallbackEventSummaries(frame.CallbackEvents),

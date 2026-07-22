@@ -111,6 +111,10 @@ App-facing Agent Run routes optionally enter through `internal/server/app_auth.g
 
 The timeline endpoint is a read projection over Athena-owned runtime records. It merges loop steps, lifecycle events, callback/tool traces, usage and delivery projections by timestamp, preserving only safe labels, redacted payloads and metadata for the admin detail view. It does not become a second event store or a host application's business audit log.
 
+Privileged trace detail is a separate encrypted plane rather than a wider timeline contract. Request-local model/tool callbacks and the Skill/context assembly summary are redacted before encryption, bounded by sample/record/run/retention policy, and correlated through opaque refs stored only in safe trace metadata. App reads strip those refs; authenticated Control Plane reads are run-bound, no-store, and fail closed when immutable access audit cannot be written.
+
+特权 trace 明细是独立加密平面，不会扩张 timeline 契约。请求级 model/tool callback 与 Skill/Context assembly 摘要会在加密前脱敏，并受采样、单条/单 run 容量与保留期限制；安全 trace metadata 只保存 opaque 引用。应用读取会移除引用，控制面读取绑定 run、禁止缓存，并在访问审计不可写时 fail closed。
+
 `agent_run_manifest.v1` is captured once at the Eino persistence boundary and stored with the immutable TaskRun metadata envelope. The read projection exposes that persisted typed value once at timeline top level; it does not join current registries or configuration during reads. Raw prompt, tool payload, provider headers, context content and policy bodies are represented only by canonical SHA-256 references.
 
 `agent_run_manifest.v1` 在 Eino 持久化边界一次性捕获，并随不可变 TaskRun metadata 包络保存。读取投影只把该 typed 值在 timeline 顶层暴露一次，不在读取时关联当前 registry 或配置。Prompt、tool payload、provider header、context 内容和策略正文仅以规范 SHA-256 引用表达。

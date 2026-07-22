@@ -1557,6 +1557,36 @@ code {
   overflow-wrap: anywhere;
 }
 
+.privileged-trace-access {
+  gap: 10px;
+}
+
+.privileged-trace-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.privileged-trace-status > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.privileged-trace-status strong,
+.privileged-trace-status small {
+  overflow-wrap: anywhere;
+}
+
+.privileged-trace-status small {
+  color: var(--muted);
+}
+
+.privileged-trace-status button {
+  flex: 0 0 auto;
+}
+
 .raw-safe-detail summary {
   cursor: pointer;
 }

@@ -352,3 +352,61 @@ func TestConfigValidateRejectsUnknownObservabilityLogLevel(t *testing.T) {
 		t.Fatalf("Validate() expected error when observability log level is unsupported")
 	}
 }
+
+// TestConfigValidateFailsClosedForPrivilegedTracePayload verifies privileged capture cannot start without both admin auth and a dedicated key.
+// TestConfigValidateFailsClosedForPrivilegedTracePayload 验证特权载荷捕获缺少管理鉴权或独立密钥时无法启动。
+func TestConfigValidateFailsClosedForPrivilegedTracePayload(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.Observability.PrivilegedTracePayload = PrivilegedTracePayloadConfig{
+		CaptureEnabled: true,
+		SampleRate:     1,
+		RetentionHours: 24,
+		MaxRecordBytes: 1024,
+		MaxRunBytes:    4096,
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "CONTROL_PLANE_AUTH_TOKEN") {
+		t.Fatalf("Validate() error = %v, want control-plane token error", err)
+	}
+	cfg.ControlPlane.AuthToken = "admin-secret"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_PAYLOAD_ENCRYPTION_KEY") {
+		t.Fatalf("Validate() error = %v, want trace payload key error", err)
+	}
+	cfg.Security.TracePayloadEncryptionKey = "short-trace-secret"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "at least 32 bytes") {
+		t.Fatalf("Validate() error = %v, want trace payload key entropy error", err)
+	}
+	cfg.Security.TracePayloadEncryptionKey = "dedicated-trace-secret-at-least-32-bytes"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_PAYLOAD_ENCRYPTION_KEY_ID") {
+		t.Fatalf("Validate() error = %v, want trace payload key id error", err)
+	}
+	cfg.Security.TracePayloadEncryptionKeyID = "local-v1"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want valid privileged trace config", err)
+	}
+}
+
+// TestConfigValidateRejectsInvalidPrivilegedTracePayloadLimits verifies sampling, retention, and byte budgets remain bounded.
+// TestConfigValidateRejectsInvalidPrivilegedTracePayloadLimits 验证采样率、保留时间和字节预算始终受限。
+func TestConfigValidateRejectsInvalidPrivilegedTracePayloadLimits(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.ControlPlane.AuthToken = "admin-secret"
+	cfg.Security.TracePayloadEncryptionKey = "dedicated-trace-secret-at-least-32-bytes"
+	cfg.Security.TracePayloadEncryptionKeyID = "local-v1"
+	cfg.Observability.PrivilegedTracePayload = PrivilegedTracePayloadConfig{
+		ReadEnabled:    true,
+		SampleRate:     1.1,
+		RetentionHours: 24,
+		MaxRecordBytes: 1024,
+		MaxRunBytes:    4096,
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "SAMPLE_RATE") {
+		t.Fatalf("Validate() error = %v, want sample rate error", err)
+	}
+
+	cfg.Observability.PrivilegedTracePayload.SampleRate = 1
+	cfg.Observability.PrivilegedTracePayload.MaxRunBytes = 512
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "MAX_RUN_BYTES") {
+		t.Fatalf("Validate() error = %v, want run byte budget error", err)
+	}
+}

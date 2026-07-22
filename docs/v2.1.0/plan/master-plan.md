@@ -118,6 +118,20 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [ ] 接入 Redis-backed enqueue、idempotency lock、retry/backoff、cancel 与 checkpoint/resume contract。
 - [ ] 补齐异步 HTTP/SSE、OpenAPI、Docker env、Redis 故障降级和系统回归测试。
 
+## Privileged Trace Payload Checklist
+
+- canonical issue: `Super-Sky/Athena#30`
+- branch: `codex/privileged-trace-payload-issue-30`
+- base branch: `codex/agent-run-contract-issue-22`
+- current state: `ready_for_delivery`
+
+- [x] 新增默认关闭、按 model/tool/context 与 workspace 控制的特权载荷采集策略，支持确定性采样、短保留期、单条/单 run 容量限制。
+- [x] 在持久化前递归移除凭据、Authorization、账号、附件原文和隐式推理字段，并使用独立 AES-256-GCM 密钥保存 PostgreSQL 密文。
+- [x] 保持 app-facing trace/timeline 安全摘要不变，仅在 Control Plane timeline 暴露 opaque `payload_ref`、状态和不可用原因。
+- [x] 提供 run/ref 绑定、no-store、Control Plane session 鉴权和 fail-closed 访问审计的按需读取接口与后台检查器。
+- [x] 覆盖加密/脱敏/篡改、采样/容量、context 开关、PostgreSQL 预算/过期、鉴权/审计和引用隔离测试。
+- [x] 完成启用采集后的真实 PostgreSQL API 与浏览器 smoke，并记录最终性能基线。
+
 ## Acceptance Gates
 
 - 在启用 runtime persistence 的真实后端上通过 API smoke：

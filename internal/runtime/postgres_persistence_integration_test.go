@@ -873,6 +873,114 @@ func TestPostgresRuntimeStoreRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+// TestPostgresPrivilegedTracePayloadIntegration verifies encrypted storage, run budgets, expiry cleanup, and immutable access audit.
+// TestPostgresPrivilegedTracePayloadIntegration 验证加密存储、单 run 预算、过期清理与不可变访问审计。
+func TestPostgresPrivilegedTracePayloadIntegration(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("ATHENA_PG_TEST_DSN"))
+	if dsn == "" {
+		t.Skip("skip postgres integration test: ATHENA_PG_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open() error = %v", err)
+	}
+	store := NewPostgresRuntimeStore(db)
+	ctx := context.Background()
+	if err := store.AutoMigrate(ctx); err != nil {
+		t.Fatalf("AutoMigrate() error = %v", err)
+	}
+	runID := "itest-privileged-trace-" + time.Now().UTC().Format("20060102150405.000000000")
+	concurrentRunID := runID + "-concurrent"
+	defer func() {
+		_ = db.Exec("DELETE FROM runtime_privileged_trace_payload_access_audits WHERE run_id IN ?", []string{runID, concurrentRunID}).Error
+		_ = db.Exec("DELETE FROM runtime_privileged_trace_payloads WHERE run_id IN ?", []string{runID, concurrentRunID}).Error
+	}()
+	key := DerivePrivilegedTracePayloadKey("integration-trace-secret")
+	policy := PrivilegedTracePayloadPolicy{Enabled: true, SampleRate: 1, Retention: time.Hour, MaxPayloadBytes: 4096, MaxRunBytes: 4096, KeyID: "itest-v1", EncryptionKey: key}
+	record, _, err := BuildPrivilegedTracePayload(
+		PrivilegedTracePayloadCoordinates{RunID: runID, StepID: "step-1", TraceType: "model_call", Source: "eino", CorrelationID: "trace-1"},
+		map[string]any{"request": "inspect portfolio", "password": "must-redact"}, policy, time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.RunBudgetBytes = int64(record.PayloadSize)
+	if _, err := store.CreatePrivilegedTracePayload(ctx, record); err != nil {
+		t.Fatalf("CreatePrivilegedTracePayload() error=%v", err)
+	}
+	second, _, err := BuildPrivilegedTracePayload(
+		PrivilegedTracePayloadCoordinates{RunID: runID, StepID: "step-1", TraceType: "tool_call", Source: "canonical", CorrelationID: "trace-2"},
+		map[string]any{"arguments": map[string]any{"symbol": "SPY"}}, policy, time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.RunBudgetBytes = int64(record.PayloadSize)
+	if _, err := store.CreatePrivilegedTracePayload(ctx, second); !errors.Is(err, ErrPrivilegedTracePayloadRunBudgetExceeded) {
+		t.Fatalf("second payload error=%v, want run budget error", err)
+	}
+	concurrentRecords := make([]PrivilegedTracePayload, 2)
+	for index := range concurrentRecords {
+		concurrentRecords[index], _, err = BuildPrivilegedTracePayload(
+			PrivilegedTracePayloadCoordinates{RunID: concurrentRunID, StepID: fmt.Sprintf("step-%d", index), TraceType: "model_call", Source: "eino", CorrelationID: fmt.Sprintf("trace-%d", index)},
+			map[string]any{"request": strings.Repeat("concurrent-budget", index+1)}, policy, time.Now().UTC(),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	concurrentBudget := int64(max(concurrentRecords[0].PayloadSize, concurrentRecords[1].PayloadSize))
+	results := make(chan error, len(concurrentRecords))
+	start := make(chan struct{})
+	for index := range concurrentRecords {
+		record := concurrentRecords[index]
+		record.RunBudgetBytes = concurrentBudget
+		go func() {
+			<-start
+			_, createErr := store.CreatePrivilegedTracePayload(ctx, record)
+			results <- createErr
+		}()
+	}
+	close(start)
+	successes, budgetRejections := 0, 0
+	for range concurrentRecords {
+		switch createErr := <-results; {
+		case createErr == nil:
+			successes++
+		case errors.Is(createErr, ErrPrivilegedTracePayloadRunBudgetExceeded):
+			budgetRejections++
+		default:
+			t.Fatalf("concurrent payload error=%v", createErr)
+		}
+	}
+	if successes != 1 || budgetRejections != 1 {
+		t.Fatalf("concurrent run budget successes=%d rejections=%d", successes, budgetRejections)
+	}
+	stored, found, err := store.GetPrivilegedTracePayload(ctx, runID, record.PayloadRef)
+	if err != nil || !found {
+		t.Fatalf("GetPrivilegedTracePayload() found=%v error=%v", found, err)
+	}
+	decoded, err := DecryptPrivilegedTracePayload(stored, key)
+	if err != nil || decoded["password"] != privilegedTraceRedactedValue {
+		t.Fatalf("decrypted=%#v error=%v", decoded, err)
+	}
+	audit := PrivilegedTracePayloadAccessAudit{RunID: runID, PayloadRef: record.PayloadRef, RequestID: "request-1", ActorSessionHash: "hash", RemoteIP: "127.0.0.1", Outcome: "success", Reason: "integration", ReturnedBytes: record.PayloadSize, RedactedFieldCount: record.RedactedFieldCount, AccessedAt: time.Now().UTC()}
+	if err := store.CreatePrivilegedTracePayloadAccessAudit(ctx, audit); err != nil {
+		t.Fatalf("CreatePrivilegedTracePayloadAccessAudit() error=%v", err)
+	}
+	audits, err := store.ListPrivilegedTracePayloadAccessAudits(ctx, record.PayloadRef, 10)
+	if err != nil || len(audits) != 1 || audits[0].Outcome != "success" {
+		t.Fatalf("audits=%#v error=%v", audits, err)
+	}
+	if _, err := store.DeleteExpiredPrivilegedTracePayloads(ctx, record.ExpiresAt.Add(-time.Nanosecond)); err != nil {
+		t.Fatalf("early expiry delete error=%v", err)
+	}
+	deleted, err := store.DeleteExpiredPrivilegedTracePayloads(ctx, record.ExpiresAt)
+	if err != nil || deleted != 1 {
+		t.Fatalf("expiry deleted=%d error=%v", deleted, err)
+	}
+}
+
 func cleanupPostgresRuntimeContractArtifacts(t *testing.T, db *gorm.DB, contractID string) {
 	t.Helper()
 	if err := db.WithContext(context.Background()).Where("id = ?", contractID).Delete(&postgresRuntimeContractModel{}).Error; err != nil {

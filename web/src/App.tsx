@@ -1,6 +1,6 @@
 // App.tsx renders the control-plane console, including scene/skill/tool editing, model governance, governance controls, versions, and Swagger tabs.
 // App.tsx 负责渲染控制面控制台，包括场景、skill、tool 编辑、模型治理、治理策略、版本管理和 Swagger 标签页。
-import { lazy, Suspense, startTransition, useEffect, useState } from "react";
+import { lazy, Suspense, startTransition, useEffect, useRef, useState } from "react";
 import {
   activateSystemResource,
   buildSystemAssetsPackage,
@@ -31,6 +31,7 @@ import {
   loadRuntimeSteps,
   loadRuntimeTraces,
   loadRuntimeTimeline,
+  loadPrivilegedTracePayload,
   loadRuntimeUsage,
   loadToolGovernanceDecisions,
   loadToolGovernancePolicy,
@@ -86,6 +87,7 @@ import type {
   ModelTestResult,
   ProviderDefinition,
   ProviderInput,
+  PrivilegedTracePayload,
   ProviderModelInput,
   ProviderModelRecord,
   RuntimeCheckpointReadout,
@@ -764,6 +766,9 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
   const [selectedRunID, setSelectedRunID] = useState("");
   const [selectedItemID, setSelectedItemID] = useState("");
   const [loading, setLoading] = useState(true);
+  const [payloadLoading, setPayloadLoading] = useState(false);
+  const [privilegedPayload, setPrivilegedPayload] = useState<PrivilegedTracePayload | null>(null);
+  const privilegedPayloadRequest = useRef(0);
 
   const selectedItem = timeline?.items.find((item) => item.id === selectedItemID) ?? timeline?.items[0] ?? null;
   const duration = runtimeElapsedMilliseconds(timeline?.summary.started_at, timeline?.summary.completed_at);
@@ -801,7 +806,10 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
   }, []);
 
   async function selectRun(runID: string) {
+    privilegedPayloadRequest.current += 1;
+    setPayloadLoading(false);
     setLoading(true);
+    setPrivilegedPayload(null);
     try {
       const response = await loadRuntimeTimeline(runID);
       setSelectedRunID(runID);
@@ -813,6 +821,27 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
       onError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function inspectPrivilegedPayload() {
+    if (!selectedItem?.payload_ref || !selectedRunID) return;
+    const requestGeneration = privilegedPayloadRequest.current + 1;
+    privilegedPayloadRequest.current = requestGeneration;
+    const requestedRunID = selectedRunID;
+    const requestedPayloadRef = selectedItem.payload_ref;
+    setPayloadLoading(true);
+    setPrivilegedPayload(null);
+    try {
+      const response = await loadPrivilegedTracePayload(requestedRunID, requestedPayloadRef);
+      if (privilegedPayloadRequest.current !== requestGeneration || response.run_id !== requestedRunID || response.payload_ref !== requestedPayloadRef) return;
+      setPrivilegedPayload(response);
+      onError("");
+      onStatus(`已审计读取 ${selectedItem.summary} 的脱敏明细`);
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (privilegedPayloadRequest.current === requestGeneration) setPayloadLoading(false);
     }
   }
 
@@ -845,7 +874,7 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
           <div className="observability-panel-title"><div><h3>执行时间线</h3><span>{timeline?.run.id ?? "未选择 run"}</span></div><span>{timeline?.summary.item_count ?? 0} 步</span></div>
           <div className="trace-browser-list">
             {(timeline?.items ?? []).map((item, index) => (
-              <button className={item.id === selectedItem?.id ? "trace-browser-item active" : "trace-browser-item"} key={item.id} onClick={() => setSelectedItemID(item.id)} type="button">
+              <button className={item.id === selectedItem?.id ? "trace-browser-item active" : "trace-browser-item"} key={item.id} onClick={() => { privilegedPayloadRequest.current += 1; setPayloadLoading(false); setSelectedItemID(item.id); setPrivilegedPayload(null); }} type="button">
                 <span className="trace-index">{String(index + 1).padStart(2, "0")}</span>
                 <span className={`trace-kind ${item.kind}`}>{observabilityKindLabel(item.kind)}</span>
                 <span className="trace-browser-copy"><strong>{item.summary}</strong><small>{item.source} · {item.status || "recorded"}</small></span>
@@ -864,6 +893,17 @@ function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) =>
               <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output", "output_runes", "tool_call_count"])} />
               <InspectorSection title="影响与状态" value={observabilityImpact(selectedItem)} />
               <InspectorSection title="性能与用量" value={observabilityPerformance(selectedItem)} />
+              <section className="inspector-section privileged-trace-access">
+                <span>审计明细</span>
+                <div className="privileged-trace-status">
+                  <div>
+                    <strong>{privilegedTraceStatusLabel(selectedItem.payload_status)}</strong>
+                    <small>{selectedItem.payload_unavailable_reason || "加密存储，仅在本次查看时解密"}</small>
+                  </div>
+                  {selectedItem.payload_ref ? <button type="button" disabled={payloadLoading} onClick={inspectPrivilegedPayload}>{payloadLoading ? "读取中" : "查看明细"}</button> : null}
+                </div>
+                {privilegedPayload ? <pre>{formatMaybeJSON(privilegedPayload.payload)}</pre> : null}
+              </section>
               <InspectorSection title="运行版本清单" value={observabilityManifest(timeline)} />
               <details className="raw-safe-detail"><summary>完整安全记录</summary><pre>{formatMaybeJSON(selectedItem.detail ?? {})}</pre></details>
             </div>
@@ -889,6 +929,14 @@ function observabilityKindLabel(kind: string) {
     model_call: "模型", skill: "Skill", tool_call: "Tool", usage: "用量"
   };
   return labels[kind] ?? kind;
+}
+
+function privilegedTraceStatusLabel(status?: string) {
+  const labels: Record<string, string> = {
+    recorded: "已加密记录", disabled: "未启用", sampled_out: "未采样",
+    size_exceeded: "超过容量限制", redacted_empty: "脱敏后为空", expired: "已过期", capture_failed: "捕获失败"
+  };
+  return labels[status || ""] || "无审计明细";
 }
 
 function observabilitySection(item: RuntimeTraceTimelineItem, keys: string[]) {

@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -12,10 +13,12 @@ import (
 // RuntimeToolTranscriptProjector projects canonical calls without persisting raw arguments or results.
 // RuntimeToolTranscriptProjector 投影标准工具调用，但不持久化原始参数或结果。
 type RuntimeToolTranscriptProjector struct {
-	Store      RuntimePersistenceStore
-	Now        func() time.Time
-	RecordSet  *MinimalPersistenceRecordSet
-	Transcript *ToolCallTranscript
+	Store         RuntimePersistenceStore
+	PayloadStore  PrivilegedTracePayloadStore
+	PayloadPolicy PrivilegedTracePayloadPolicy
+	Now           func() time.Time
+	RecordSet     *MinimalPersistenceRecordSet
+	Transcript    *ToolCallTranscript
 }
 
 // Project writes one safe trace per canonical tool call.
@@ -29,7 +32,14 @@ func (p RuntimeToolTranscriptProjector) Project(ctx context.Context) error {
 		now = p.Now().UTC()
 	}
 	for index, call := range p.Transcript.Snapshot() {
+		traceID := defaultID("")
+		createdAt := now.Add(time.Duration(index) * time.Millisecond)
+		payloadMetadata := projectPrivilegedTracePayload(
+			ctx, p.PayloadStore, p.PayloadPolicy, p.RecordSet.Run.WorkspaceID, runtimeCallbackComponentTool,
+			p.RecordSet.Run.ID, p.RecordSet.Step.ID, traceID, "tool_call", "canonical_tool_transcript", privilegedToolCallPayload(call), createdAt,
+		)
 		if _, err := p.Store.CreateRuntimeTrace(ctx, RuntimeTrace{
+			ID:        traceID,
 			RunID:     p.RecordSet.Run.ID,
 			StepID:    p.RecordSet.Step.ID,
 			TraceType: "tool_call",
@@ -42,16 +52,39 @@ func (p RuntimeToolTranscriptProjector) Project(ctx context.Context) error {
 				"tool_call_id": call.ID,
 			},
 			RedactedPayload: toolCallRedactedPayload(call),
-			Metadata: map[string]any{
+			Metadata: mergeAnyMaps(map[string]any{
 				"projection_source": "runtime_tool_transcript_projector",
 				"redaction_policy":  "whitelist_summary",
-			},
-			CreatedAt: now.Add(time.Duration(index) * time.Millisecond),
+			}, payloadMetadata),
+			CreatedAt: createdAt,
 		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func privilegedToolCallPayload(call ToolCall) map[string]any {
+	var arguments any
+	if err := json.Unmarshal([]byte(call.Arguments), &arguments); err != nil {
+		arguments = call.Arguments
+	}
+	payload := map[string]any{
+		"request": map[string]any{
+			"tool_call_id": call.ID,
+			"tool_name":    call.Name,
+			"arguments":    arguments,
+		},
+	}
+	if call.Result != nil {
+		payload["response"] = map[string]any{
+			"tool_call_id": call.Result.ToolCallID,
+			"content":      call.Result.Content,
+			"error":        call.Result.Error,
+			"is_error":     call.Result.IsError,
+		}
+	}
+	return payload
 }
 
 func toolCallRedactedPayload(call ToolCall) map[string]any {

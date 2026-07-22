@@ -14,6 +14,7 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	einomodel "github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	ucb "github.com/cloudwego/eino/utils/callbacks"
 )
 
@@ -34,24 +35,25 @@ type RuntimeCallbackRecorderConfig struct {
 // RuntimeComponentCallbackEvent is a redacted model/tool callback event ready for later projection.
 // RuntimeComponentCallbackEvent 表示可延迟投影的脱敏 model/tool callback 事件。
 type RuntimeComponentCallbackEvent struct {
-	Component        string
-	Node             string
-	Provider         string
-	ResourceName     string
-	Status           string
-	DurationMS       int64
-	InputCount       int
-	InputRuneCount   int
-	OutputRuneCount  int
-	ToolCallCount    int
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
-	CachedTokens     int
-	ReasoningTokens  int
-	ErrorSummary     string
-	Metadata         map[string]any
-	ObservedAt       time.Time
+	Component         string
+	Node              string
+	Provider          string
+	ResourceName      string
+	Status            string
+	DurationMS        int64
+	InputCount        int
+	InputRuneCount    int
+	OutputRuneCount   int
+	ToolCallCount     int
+	PromptTokens      int
+	CompletionTokens  int
+	TotalTokens       int
+	CachedTokens      int
+	ReasoningTokens   int
+	ErrorSummary      string
+	Metadata          map[string]any
+	PrivilegedPayload map[string]any
+	ObservedAt        time.Time
 }
 
 // RuntimeCallbackRecorder collects safe callback events during graph-native turn execution.
@@ -78,8 +80,9 @@ func (r *RuntimeCallbackRecorder) Handler() callbacks.Handler {
 		ChatModel(&ucb.ModelCallbackHandler{
 			OnStart: func(ctx context.Context, _ *callbacks.RunInfo, input *einomodel.CallbackInput) context.Context {
 				return context.WithValue(ctx, runtimeCallbackStartKey{}, runtimeCallbackStart{
-					startedAt: time.Now().UTC(),
-					input:     summarizeModelCallbackInput(input),
+					startedAt:       time.Now().UTC(),
+					input:           summarizeModelCallbackInput(input),
+					privilegedInput: privilegedModelCallbackInput(input),
 				})
 			},
 			OnEnd: func(ctx context.Context, info *callbacks.RunInfo, output *einomodel.CallbackOutput) context.Context {
@@ -96,8 +99,9 @@ func (r *RuntimeCallbackRecorder) Handler() callbacks.Handler {
 		Tool(&ucb.ToolCallbackHandler{
 			OnStart: func(ctx context.Context, _ *callbacks.RunInfo, input *einotool.CallbackInput) context.Context {
 				return context.WithValue(ctx, runtimeCallbackStartKey{}, runtimeCallbackStart{
-					startedAt: time.Now().UTC(),
-					input:     summarizeToolCallbackInput(input),
+					startedAt:       time.Now().UTC(),
+					input:           summarizeToolCallbackInput(input),
+					privilegedInput: privilegedToolCallbackInput(input),
 				})
 			},
 			OnEnd: func(ctx context.Context, info *callbacks.RunInfo, output *einotool.CallbackOutput) context.Context {
@@ -135,8 +139,9 @@ func (r *RuntimeCallbackRecorder) record(event RuntimeComponentCallbackEvent) {
 }
 
 type runtimeCallbackStart struct {
-	startedAt time.Time
-	input     runtimeCallbackInputSummary
+	startedAt       time.Time
+	input           runtimeCallbackInputSummary
+	privilegedInput map[string]any
 }
 
 type runtimeCallbackInputSummary struct {
@@ -184,6 +189,10 @@ func modelCallbackEvent(config RuntimeCallbackRecorderConfig, info *callbacks.Ru
 			event.ReasoningTokens = output.Message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens
 		}
 	}
+	event.PrivilegedPayload = map[string]any{
+		"request":  start.privilegedInput,
+		"response": privilegedModelCallbackOutput(output),
+	}
 	if output != nil && output.TokenUsage != nil {
 		event.PromptTokens = output.TokenUsage.PromptTokens
 		event.CompletionTokens = output.TokenUsage.CompletionTokens
@@ -220,6 +229,10 @@ func toolCallbackEvent(info *callbacks.RunInfo, start runtimeCallbackStart, outp
 			event.Metadata["structured_tool_output"] = true
 		}
 	}
+	event.PrivilegedPayload = map[string]any{
+		"request":  start.privilegedInput,
+		"response": privilegedToolCallbackOutput(output),
+	}
 	if err != nil {
 		event.ErrorSummary = safeTerminalErrorSummary(err)
 	}
@@ -253,6 +266,64 @@ func summarizeToolCallbackInput(input *einotool.CallbackInput) runtimeCallbackIn
 		argumentRunes:  utf8.RuneCountInString(input.ArgumentsInJSON),
 		redactionLabel: "tool_arguments_omitted",
 	}
+}
+
+func privilegedModelCallbackInput(input *einomodel.CallbackInput) map[string]any {
+	if input == nil {
+		return nil
+	}
+	messages := make([]any, 0, len(input.Messages))
+	for _, message := range input.Messages {
+		messages = append(messages, privilegedTraceMessage(message))
+	}
+	return map[string]any{"messages": messages}
+}
+
+func privilegedModelCallbackOutput(output *einomodel.CallbackOutput) map[string]any {
+	if output == nil || output.Message == nil {
+		return nil
+	}
+	return map[string]any{"message": privilegedTraceMessage(output.Message)}
+}
+
+func privilegedTraceMessage(message *schema.Message) map[string]any {
+	if message == nil {
+		return nil
+	}
+	result := map[string]any{
+		"role":         message.Role,
+		"content":      message.Content,
+		"tool_call_id": message.ToolCallID,
+	}
+	if len(message.ToolCalls) > 0 {
+		calls := make([]any, 0, len(message.ToolCalls))
+		for _, call := range message.ToolCalls {
+			calls = append(calls, map[string]any{
+				"id": call.ID, "type": call.Type,
+				"function": map[string]any{"name": call.Function.Name, "arguments": call.Function.Arguments},
+			})
+		}
+		result["tool_calls"] = calls
+	}
+	return result
+}
+
+func privilegedToolCallbackInput(input *einotool.CallbackInput) map[string]any {
+	if input == nil {
+		return nil
+	}
+	var arguments any
+	if err := json.Unmarshal([]byte(input.ArgumentsInJSON), &arguments); err != nil {
+		arguments = input.ArgumentsInJSON
+	}
+	return map[string]any{"arguments": arguments}
+}
+
+func privilegedToolCallbackOutput(output *einotool.CallbackOutput) map[string]any {
+	if output == nil {
+		return nil
+	}
+	return map[string]any{"response": output.Response}
 }
 
 func safeJSONArgumentKeys(arguments string) []string {

@@ -76,6 +76,24 @@ func TestTimelineErrorDoesNotMarkNormalStatusAsFailure(t *testing.T) {
 	}
 }
 
+func TestTimelinePayloadReferenceIsControlPlaneOnly(t *testing.T) {
+	readout := agentRunTraceReadout{Traces: []runtimeTraceDTO{{
+		ID: "trace-1", TraceType: "eino_model_callback", Summary: "model callback", CreatedAt: time.Now().UTC(),
+		Metadata: map[string]any{"payload_ref": "ptp_private", "payload_status": "recorded", "payload_expires_at": "private-expiry"},
+	}}}
+	appItems := projectAgentTraceTimeline(readout)
+	if appItems[0].PayloadRef != "" || appItems[0].PayloadStatus != "" {
+		t.Fatalf("app timeline leaked payload metadata: %#v", appItems[0])
+	}
+	if metadata, _ := appItems[0].Detail["metadata"].(map[string]any); metadata["payload_ref"] != nil || metadata["payload_expires_at"] != nil {
+		t.Fatalf("app timeline detail leaked payload reference: %#v", metadata)
+	}
+	controlItems := projectAgentTraceTimelineWithPayloadRefs(readout, true)
+	if controlItems[0].PayloadRef != "ptp_private" || controlItems[0].PayloadStatus != "recorded" {
+		t.Fatalf("control-plane timeline missing payload status: %#v", controlItems[0])
+	}
+}
+
 func TestTimelineTraceProjectionUsesOnlyRedactedFailureSummary(t *testing.T) {
 	trace := runtimeTraceDTO{
 		SafeLabels: map[string]string{"status": " ERROR "},

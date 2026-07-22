@@ -66,6 +66,55 @@ type RuntimeCheckpointReadout struct {
 	Source             string
 }
 
+// PrivilegedTracePayloadReadout is the decrypted control-plane-only payload view without crypto material.
+// PrivilegedTracePayloadReadout 是不暴露加密材料、仅供控制面读取的解密 payload 视图。
+type PrivilegedTracePayloadReadout struct {
+	PayloadRef         string
+	RunID              string
+	StepID             string
+	TraceType          string
+	Source             string
+	SchemaVersion      string
+	Payload            map[string]any
+	PayloadSize        int
+	RedactedFieldCount int
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
+}
+
+// GetPrivilegedTracePayload decrypts one run-bound payload through the dedicated key boundary.
+// GetPrivilegedTracePayload 通过独立密钥边界解密一条绑定 run 的 payload。
+func (s *Service) GetPrivilegedTracePayload(ctx context.Context, runID, payloadRef string) (PrivilegedTracePayloadReadout, bool, error) {
+	if s == nil || !s.Config.Observability.PrivilegedTracePayload.ReadEnabled || s.PrivilegedTraceStore == nil {
+		return PrivilegedTracePayloadReadout{}, false, ErrRuntimeStoreNotConfigured
+	}
+	record, found, err := s.PrivilegedTraceStore.GetPrivilegedTracePayload(ctx, strings.TrimSpace(runID), strings.TrimSpace(payloadRef))
+	if err != nil || !found {
+		return PrivilegedTracePayloadReadout{}, found, err
+	}
+	if strings.TrimSpace(record.KeyID) != strings.TrimSpace(s.Config.Security.TracePayloadEncryptionKeyID) {
+		return PrivilegedTracePayloadReadout{}, false, fmt.Errorf("privileged trace payload key id is unavailable")
+	}
+	payload, err := runtime.DecryptPrivilegedTracePayload(record, s.PrivilegedTracePolicy.EncryptionKey)
+	if err != nil {
+		return PrivilegedTracePayloadReadout{}, false, err
+	}
+	return PrivilegedTracePayloadReadout{
+		PayloadRef: record.PayloadRef, RunID: record.RunID, StepID: record.StepID, TraceType: record.TraceType,
+		Source: record.Source, SchemaVersion: record.SchemaVersion, Payload: payload, PayloadSize: record.PayloadSize,
+		RedactedFieldCount: record.RedactedFieldCount, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt,
+	}, true, nil
+}
+
+// RecordPrivilegedTracePayloadAccess durably appends one payload read audit.
+// RecordPrivilegedTracePayloadAccess 持久追加一条 payload 读取审计。
+func (s *Service) RecordPrivilegedTracePayloadAccess(ctx context.Context, audit runtime.PrivilegedTracePayloadAccessAudit) error {
+	if s == nil || s.PrivilegedTraceStore == nil {
+		return ErrRuntimeStoreNotConfigured
+	}
+	return s.PrivilegedTraceStore.CreatePrivilegedTracePayloadAccessAudit(ctx, audit)
+}
+
 // ListRuntimeRuns returns persisted runtime runs through the app-layer read boundary.
 // ListRuntimeRuns 通过 app 层读取边界返回持久化 runtime run。
 func (s *Service) ListRuntimeRuns(ctx context.Context, query RuntimeRunReadQuery) ([]runtime.TaskRun, error) {

@@ -479,6 +479,9 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.GET("/api/control-plane/runtime/runs/:runID/timeline", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleGetControlPlaneRuntimeTimeline)(ctx, c, cfg, application)
 	})
+	h.GET("/api/control-plane/runtime/runs/:runID/trace-payloads/:payloadRef", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withPrivilegedTracePayloadReadAuth(cfg, application, handleGetPrivilegedTracePayload)(ctx, c, cfg, application)
+	})
 	h.GET("/api/control-plane/runtime/runs/:runID/usage", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeUsage)(ctx, c, cfg, application)
 	})

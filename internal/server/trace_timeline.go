@@ -19,16 +19,19 @@ import (
 // agentTraceTimelineItem is a stable, app-readable view over existing safe runtime records.
 // agentTraceTimelineItem 是既有安全 runtime 记录的稳定、面向应用的视图。
 type agentTraceTimelineItem struct {
-	ID         string         `json:"id"`
-	Kind       string         `json:"kind"`
-	Timestamp  time.Time      `json:"timestamp"`
-	DurationMS *int64         `json:"duration_ms,omitempty"`
-	Status     string         `json:"status,omitempty"`
-	Source     string         `json:"source"`
-	Summary    string         `json:"summary"`
-	StepID     string         `json:"step_id,omitempty"`
-	Error      map[string]any `json:"error,omitempty"`
-	Detail     map[string]any `json:"detail,omitempty"`
+	ID                       string         `json:"id"`
+	Kind                     string         `json:"kind"`
+	Timestamp                time.Time      `json:"timestamp"`
+	DurationMS               *int64         `json:"duration_ms,omitempty"`
+	Status                   string         `json:"status,omitempty"`
+	Source                   string         `json:"source"`
+	Summary                  string         `json:"summary"`
+	StepID                   string         `json:"step_id,omitempty"`
+	Error                    map[string]any `json:"error,omitempty"`
+	Detail                   map[string]any `json:"detail,omitempty"`
+	PayloadRef               string         `json:"payload_ref,omitempty"`
+	PayloadStatus            string         `json:"payload_status,omitempty"`
+	PayloadUnavailableReason string         `json:"payload_unavailable_reason,omitempty"`
 }
 
 // agentTraceTimelineSummary provides list-level debug counters without duplicating runtime data.
@@ -52,7 +55,7 @@ type agentTraceTimelineResponse struct {
 // handleGetAgentRunTimeline exposes a business-app-readable safe trace timeline.
 // handleGetAgentRunTimeline 暴露面向业务应用可读的安全 trace 时间线。
 func handleGetAgentRunTimeline(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
-	response, err := loadAgentRunTimeline(ctx, application, string(c.Param("runID")))
+	response, err := loadAgentRunTimeline(ctx, application, string(c.Param("runID")), false)
 	if err != nil {
 		writeAgentRunReadError(c, err)
 		return
@@ -60,10 +63,10 @@ func handleGetAgentRunTimeline(ctx context.Context, c *hertzapp.RequestContext, 
 	c.JSON(consts.StatusOK, response)
 }
 
-// handleGetControlPlaneRuntimeTimeline exposes the same projection behind Control Plane auth.
-// handleGetControlPlaneRuntimeTimeline 在 Control Plane 认证后暴露同一份投影。
+// handleGetControlPlaneRuntimeTimeline exposes safe payload availability and opaque refs behind Control Plane auth.
+// handleGetControlPlaneRuntimeTimeline 在 Control Plane 认证后暴露安全 payload 状态与 opaque ref。
 func handleGetControlPlaneRuntimeTimeline(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
-	response, err := loadAgentRunTimeline(ctx, application, string(c.Param("runID")))
+	response, err := loadAgentRunTimeline(ctx, application, string(c.Param("runID")), true)
 	if err != nil {
 		writeRuntimeReadError(c, err)
 		return
@@ -71,12 +74,12 @@ func handleGetControlPlaneRuntimeTimeline(ctx context.Context, c *hertzapp.Reque
 	c.JSON(consts.StatusOK, response)
 }
 
-func loadAgentRunTimeline(ctx context.Context, application *appcore.Service, runID string) (agentTraceTimelineResponse, error) {
+func loadAgentRunTimeline(ctx context.Context, application *appcore.Service, runID string, includePayloadRefs bool) (agentTraceTimelineResponse, error) {
 	readout, err := readAgentRunTrace(ctx, application, runID)
 	if err != nil {
 		return agentTraceTimelineResponse{}, err
 	}
-	items := projectAgentTraceTimeline(readout)
+	items := projectAgentTraceTimelineWithPayloadRefs(readout, includePayloadRefs)
 	manifest, manifestStatus := runManifestFromMetadata(readout.Run.Metadata)
 	readout.Run.Metadata = metadataWithoutRunManifest(readout.Run.Metadata)
 	return agentTraceTimelineResponse{
@@ -136,6 +139,10 @@ func metadataWithoutRunManifest(metadata map[string]any) map[string]any {
 }
 
 func projectAgentTraceTimeline(readout agentRunTraceReadout) []agentTraceTimelineItem {
+	return projectAgentTraceTimelineWithPayloadRefs(readout, false)
+}
+
+func projectAgentTraceTimelineWithPayloadRefs(readout agentRunTraceReadout, includePayloadRefs bool) []agentTraceTimelineItem {
 	items := make([]agentTraceTimelineItem, 0, len(readout.Steps)+len(readout.Events)+len(readout.Traces)+len(readout.Usage)+len(readout.Projections))
 	for _, step := range readout.Steps {
 		items = append(items, agentTraceTimelineItem{
@@ -176,7 +183,7 @@ func projectAgentTraceTimeline(readout agentRunTraceReadout) []agentTraceTimelin
 	}
 	for _, trace := range readout.Traces {
 		status := timelineTraceRecordStatus(trace)
-		items = append(items, agentTraceTimelineItem{
+		item := agentTraceTimelineItem{
 			ID:         "trace:" + trace.ID,
 			Kind:       timelineTraceKind(trace.TraceType),
 			Timestamp:  trace.CreatedAt,
@@ -190,9 +197,15 @@ func projectAgentTraceTimeline(readout agentRunTraceReadout) []agentTraceTimelin
 				"trace_type":       trace.TraceType,
 				"safe_labels":      trace.SafeLabels,
 				"redacted_payload": trace.RedactedPayload,
-				"metadata":         trace.Metadata,
+				"metadata":         metadataWithoutPrivilegedTraceRef(trace.Metadata),
 			},
-		})
+		}
+		if includePayloadRefs {
+			item.PayloadRef = timelineMetadataString(trace.Metadata, "payload_ref")
+			item.PayloadStatus = timelineMetadataString(trace.Metadata, "payload_status")
+			item.PayloadUnavailableReason = timelineMetadataString(trace.Metadata, "payload_unavailable_reason")
+		}
+		items = append(items, item)
 	}
 	for _, usage := range readout.Usage {
 		items = append(items, agentTraceTimelineItem{
@@ -238,6 +251,27 @@ func projectAgentTraceTimeline(readout agentRunTraceReadout) []agentTraceTimelin
 		return items[left].Timestamp.Before(items[right].Timestamp)
 	})
 	return items
+}
+
+func metadataWithoutPrivilegedTraceRef(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		switch key {
+		case "payload_ref", "payload_expires_at":
+			continue
+		default:
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func timelineMetadataString(metadata map[string]any, key string) string {
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func firstRuntimeTime(preferred *time.Time, fallback time.Time) time.Time {
