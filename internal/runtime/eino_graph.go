@@ -273,6 +273,10 @@ func (g EinoGraphFoundation) persistenceProjectionNode(ctx context.Context, fram
 		return frame, nil
 	}
 	writer := PersistenceWriter{Store: g.Store, Now: g.Now}
+	capturedAt := time.Now()
+	if g.Now != nil {
+		capturedAt = g.Now()
+	}
 	recordSet, err := writer.WriteMinimalRun(ctx, MinimalPersistenceInput{
 		Task:             runtimeTaskFromGraphFrame(frame),
 		IdempotencyScope: runtimeGraphIdempotencyScope(frame),
@@ -282,6 +286,7 @@ func (g EinoGraphFoundation) persistenceProjectionNode(ctx context.Context, fram
 			"writer":          "eino_runtime_graph",
 			"graph_steps":     graphStepNames(frame.Steps),
 			"callback_events": graphCallbackEventSummaries(frame.CallbackEvents),
+			"run_manifest":    BuildRunManifest(frame.Spec, capturedAt),
 		},
 	})
 	if err != nil {

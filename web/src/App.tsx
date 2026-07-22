@@ -2,6 +2,25 @@
 // App.tsx 负责渲染控制面控制台，包括场景、skill、tool 编辑、模型治理、治理策略、版本管理和 Swagger 标签页。
 import { lazy, Suspense, startTransition, useEffect, useState } from "react";
 import {
+  Activity,
+  BookOpenCheck,
+  Bot,
+  Boxes,
+  Braces,
+  ClipboardCheck,
+  DatabaseZap,
+  FileCode2,
+  Gauge,
+  History,
+  Network,
+  PackageSearch,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+  Wrench,
+  type LucideIcon
+} from "lucide-react";
+import {
   activateSystemResource,
   buildSystemAssetsPackage,
   compileSystemResource,
@@ -30,6 +49,7 @@ import {
   loadRuntimeRuns,
   loadRuntimeSteps,
   loadRuntimeTraces,
+  loadRuntimeTimeline,
   loadRuntimeUsage,
   loadToolGovernanceDecisions,
   loadToolGovernancePolicy,
@@ -98,6 +118,8 @@ import type {
   RuntimeTaskTypeRegistration,
   RuntimeTaskTypeUpsertInput,
   RuntimeTrace,
+  RuntimeTraceTimeline,
+  RuntimeTraceTimelineItem,
   RuntimeValidationRunResponse,
   RuntimeUsage,
   SceneConfig,
@@ -131,7 +153,7 @@ const SwaggerUI = lazy(async () => {
   return import("swagger-ui-react");
 });
 
-type TabKey = "overview" | "release-readiness" | "scenes" | "skills" | "tools" | "system-resources" | "system-validation" | "models" | "governance" | "versions" | "api-debug" | "swagger";
+type TabKey = "overview" | "observability" | "release-readiness" | "scenes" | "skills" | "tools" | "system-resources" | "system-validation" | "models" | "governance" | "versions" | "api-debug" | "swagger";
 type AuthPhase = "loading" | "ready" | "unauthenticated";
 
 type ProviderDraft = {
@@ -225,20 +247,25 @@ type ReleaseReadinessCheck = {
   tab: TabKey;
 };
 
-const tabs: { key: TabKey; label: string; description: string }[] = [
-  { key: "overview", label: "概览", description: "运行态指标与 truth dir 状态" },
-  { key: "release-readiness", label: "Release Readiness", description: "v2.0.0 成品门禁、阻塞项和下一步入口" },
-  { key: "scenes", label: "场景", description: "编辑场景匹配、默认技能和建议问题" },
-  { key: "skills", label: "Skills", description: "维护技能指导、工具引用和开关" },
-  { key: "tools", label: "Tools", description: "治理工具契约、作用域和确认策略" },
-  { key: "system-resources", label: "System Resources", description: "管理 system truth 主源、编译和审计" },
-  { key: "system-validation", label: "System Validation", description: "验证 system truth 一致性、试运行和优化对比" },
-  { key: "models", label: "模型", description: "配置模型供应商、模型记录和可用性" },
-  { key: "governance", label: "治理策略", description: "调整运行时治理开关和规划阈值" },
-  { key: "versions", label: "版本回滚", description: "查看配置快照并执行回滚" },
-  { key: "api-debug", label: "接口调试", description: "从 OpenAPI 快速构造和发送请求" },
-  { key: "swagger", label: "Swagger", description: "按需加载完整接口文档" }
+type NavigationGroup = "运行" | "构建" | "治理" | "开发";
+
+const tabs: { key: TabKey; label: string; description: string; group: NavigationGroup; icon: LucideIcon }[] = [
+  { key: "overview", label: "概览", description: "运行态与 truth 状态", group: "运行", icon: Gauge },
+  { key: "observability", label: "运行观测", description: "模型、Skill、Tool 与性能", group: "运行", icon: Activity },
+  { key: "release-readiness", label: "发布门禁", description: "阻塞项与验收入口", group: "运行", icon: ClipboardCheck },
+  { key: "scenes", label: "场景", description: "匹配、技能与建议问题", group: "构建", icon: Network },
+  { key: "skills", label: "Skills", description: "指导、工具引用与开关", group: "构建", icon: Bot },
+  { key: "tools", label: "Tools", description: "契约、作用域与确认策略", group: "构建", icon: Wrench },
+  { key: "system-resources", label: "System Resources", description: "Truth 主源、编译与审计", group: "构建", icon: PackageSearch },
+  { key: "system-validation", label: "System Validation", description: "一致性与试运行", group: "构建", icon: BookOpenCheck },
+  { key: "models", label: "模型", description: "供应商、模型与可用性", group: "构建", icon: DatabaseZap },
+  { key: "governance", label: "治理策略", description: "运行约束与规划阈值", group: "治理", icon: ShieldCheck },
+  { key: "versions", label: "版本回滚", description: "配置快照与恢复", group: "治理", icon: History },
+  { key: "api-debug", label: "接口调试", description: "构造并发送 API 请求", group: "开发", icon: Braces },
+  { key: "swagger", label: "Swagger", description: "完整接口文档", group: "开发", icon: FileCode2 }
 ];
+
+const navigationGroups: NavigationGroup[] = ["运行", "构建", "治理", "开发"];
 
 const emptyProviderDraft: ProviderDraft = {
   name: "",
@@ -552,53 +579,54 @@ export default function App() {
       <a className="skip-link" href="#main-content">跳到主内容</a>
       <aside className="side-nav">
         <div className="brand-block">
-          <p className="eyebrow">Athena</p>
-          <h1>Control Plane</h1>
-          <p className="muted">场景、skill、tool、模型治理、策略、配置版本与 API 文档。</p>
-        </div>
-        <div className="status-card">
-          <span className="status-label">认证</span>
-          <strong>{authPhase === "loading" ? "检查中" : authPhase === "ready" ? "已登录" : "未登录"}</strong>
-          {authStatus?.truth_dir?.path ? <span className="muted">truth dir: {authStatus.truth_dir.path}</span> : null}
-          {authStatus?.truth_dir?.version ? <span className="muted">truth version: {authStatus.truth_dir.version}</span> : null}
-          {authPhase === "ready" ? (
-            <button className="secondary-button" onClick={() => handleLogout()} type="button">
-              退出登录
-            </button>
-          ) : null}
+          <span className="brand-icon" aria-hidden="true"><Boxes size={19} strokeWidth={1.8} /></span>
+          <div>
+            <p className="eyebrow">Agent Runtime</p>
+            <h1>Athena</h1>
+            <p className="muted">Control Plane</p>
+          </div>
         </div>
         <nav className="nav-list">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              aria-current={tab.key === activeTab ? "page" : undefined}
-              className={tab.key === activeTab ? "nav-item active" : "nav-item"}
-              data-testid={`nav-${tab.key}`}
-              onClick={() => setActiveTab(tab.key)}
-              type="button"
-            >
-              <strong>{tab.label}</strong>
-              <span>{tab.description}</span>
-            </button>
+          {navigationGroups.map((group) => (
+            <div className="nav-group" key={group}>
+              <span className="nav-group-label">{group}</span>
+              {tabs.filter((tab) => tab.group === group).map((tab) => {
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.key}
+                    aria-current={tab.key === activeTab ? "page" : undefined}
+                    className={tab.key === activeTab ? "nav-item active" : "nav-item"}
+                    data-testid={`nav-${tab.key}`}
+                    onClick={() => setActiveTab(tab.key)}
+                    type="button"
+                  >
+                    <TabIcon aria-hidden="true" size={16} strokeWidth={1.8} />
+                    <span className="nav-item-copy"><strong>{tab.label}</strong><small>{tab.description}</small></span>
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </nav>
-        <div className="status-card">
-          <span className="status-label">状态</span>
-          <strong>{status}</strong>
+        <div className="sidebar-runtime">
+          <div className="runtime-state"><span className={`runtime-dot ${authPhase}`} /><div><strong>{authPhase === "ready" ? "Runtime online" : authPhase}</strong><span>{authStatus?.truth_dir?.version || "truth 未同步"}</span></div></div>
+          <p>{status}</p>
           {error ? <p className="error-text">{error}</p> : null}
+          {authPhase === "ready" ? <button className="sidebar-action" onClick={() => handleLogout()} type="button"><Settings2 size={14} />退出登录</button> : null}
         </div>
       </aside>
 
       <main className="content-pane" id="main-content">
         <header className="content-header">
           <div>
-            <p className="eyebrow">Control Surface</p>
+            <p className="eyebrow">Athena / {activeTabInfo.group}</p>
             <h2>{activeTabInfo.label}</h2>
             <p className="muted">{activeTabInfo.description}</p>
           </div>
           <div className="sync-pill">
-            <span>Runtime</span>
-            <strong>{authPhase === "ready" ? "online" : authPhase}</strong>
+            <span className={`runtime-dot ${authPhase}`} />
+            <div><strong>{authPhase === "ready" ? "在线" : authPhase}</strong><small>Runtime</small></div>
           </div>
         </header>
         {authPhase === "loading" ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-line" /><span className="skeleton-line short" /></section> : null}
@@ -616,6 +644,7 @@ export default function App() {
           <>
         {data === null ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-grid"><span /><span /><span /></span></section> : null}
         {data && activeTab === "overview" ? <OverviewPanel data={data} providers={providers} truthDir={authStatus?.truth_dir} systemResources={systemResources} /> : null}
+        {data && activeTab === "observability" ? <ObservabilityPanel onError={setError} onStatus={setStatus} /> : null}
         {data && activeTab === "release-readiness" ? (
           <ReleaseReadinessPanel
             apiEndpoints={apiEndpoints}
@@ -751,6 +780,183 @@ function OverviewPanel({
       </div>
     </section>
   );
+}
+
+function ObservabilityPanel({ onError, onStatus }: { onError: (value: string) => void; onStatus: (value: string) => void }) {
+  const [runs, setRuns] = useState<RuntimeRun[]>([]);
+  const [timeline, setTimeline] = useState<RuntimeTraceTimeline | null>(null);
+  const [selectedRunID, setSelectedRunID] = useState("");
+  const [selectedItemID, setSelectedItemID] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const selectedItem = timeline?.items.find((item) => item.id === selectedItemID) ?? timeline?.items[0] ?? null;
+  const duration = runtimeElapsedMilliseconds(timeline?.summary.started_at, timeline?.summary.completed_at);
+  const modelCalls = timeline?.items.filter((item) => item.kind === "model_call") ?? [];
+  const toolCalls = timeline?.items.filter((item) => item.kind === "tool_call") ?? [];
+  const skillCalls = timeline?.items.filter((item) => item.kind === "skill") ?? [];
+  const usageItems = timeline?.items.filter((item) => item.kind === "usage") ?? [];
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadRuntimeRuns(40)
+      .then((response) => {
+        if (cancelled) return null;
+        const items = response.items ?? [];
+        setRuns(items);
+        const runID = selectedRunID || items[0]?.id || "";
+        setSelectedRunID(runID);
+        return runID ? loadRuntimeTimeline(runID) : null;
+      })
+      .then((response) => {
+        if (cancelled || !response) return;
+        setTimeline(response);
+        setSelectedItemID(response.items[0]?.id ?? "");
+        onError("");
+        onStatus(`已读取 ${response.summary.item_count} 条安全 trace`);
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) onError(cause.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function selectRun(runID: string) {
+    setLoading(true);
+    try {
+      const response = await loadRuntimeTimeline(runID);
+      setSelectedRunID(runID);
+      setTimeline(response);
+      setSelectedItemID(response.items[0]?.id ?? "");
+      onError("");
+      onStatus(`已切换到 run ${runID}`);
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="observability-page" data-testid="observability-page">
+      <div className="observability-summary">
+        <div><span>总耗时</span><strong>{duration === null ? "未记录" : `${duration} ms`}</strong></div>
+        <div><span>模型调用</span><strong>{modelCalls.length}</strong></div>
+        <div><span>Skill / Tool</span><strong>{skillCalls.length} / {toolCalls.length}</strong></div>
+        <div><span>Usage</span><strong>{usageItems.length}</strong></div>
+        <div className={timeline?.summary.failure_count ? "is-error" : "is-ok"}><span>失败</span><strong>{timeline?.summary.failure_count ?? 0}</strong></div>
+      </div>
+
+      <div className="observability-grid">
+        <aside className="run-browser">
+          <div className="observability-panel-title"><div><h3>Runs</h3><span>{runs.length} 条运行记录</span></div><button aria-label="刷新运行记录" className="icon-button" disabled={loading || !selectedRunID} onClick={() => selectRun(selectedRunID)} title="刷新运行记录" type="button"><RefreshCw className={loading ? "spin" : ""} size={15} /></button></div>
+          <div className="run-browser-list">
+            {runs.map((run) => (
+              <button className={run.id === selectedRunID ? "run-browser-item active" : "run-browser-item"} key={run.id} onClick={() => selectRun(run.id)} type="button">
+                <span><i className={`run-status-dot ${run.status}`} />{run.status}</span>
+                <strong>{run.task_type || run.scene || run.task_id || run.id}</strong>
+                <small>{formatRuntimeTime(run.created_at)} · {shortHash(run.id)}</small>
+              </button>
+            ))}
+            {!loading && runs.length === 0 ? <div className="observability-empty">暂无运行记录</div> : null}
+          </div>
+        </aside>
+
+        <div className="trace-browser">
+          <div className="observability-panel-title"><div><h3>执行时间线</h3><span>{timeline?.run.id ?? "未选择 run"}</span></div><span>{timeline?.summary.item_count ?? 0} 步</span></div>
+          <div className="trace-browser-list">
+            {(timeline?.items ?? []).map((item, index) => (
+              <button className={item.id === selectedItem?.id ? "trace-browser-item active" : "trace-browser-item"} key={item.id} onClick={() => setSelectedItemID(item.id)} type="button">
+                <span className="trace-index">{String(index + 1).padStart(2, "0")}</span>
+                <span className={`trace-kind ${item.kind}`}>{observabilityKindLabel(item.kind)}</span>
+                <span className="trace-browser-copy"><strong>{item.summary}</strong><small>{item.source} · {item.status || "recorded"}</small></span>
+                <span className="trace-duration">{item.duration_ms === undefined ? "-" : `${item.duration_ms} ms`}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <aside className="trace-inspector">
+          <div className="observability-panel-title"><div><h3>步骤详情</h3><span>安全字段 · 已脱敏</span></div><span>{selectedItem ? observabilityKindLabel(selectedItem.kind) : "-"}</span></div>
+          {selectedItem ? (
+            <div className="inspector-content">
+              <div className="inspector-heading"><strong>{selectedItem.summary}</strong><span>{selectedItem.status || "recorded"} · {formatRuntimeTime(selectedItem.timestamp)}</span></div>
+              <div className="inspector-meta"><span>{selectedItem.source || "runtime"}</span><span>{selectedItem.duration_ms === undefined ? "耗时未记录" : `${selectedItem.duration_ms} ms`}</span><span>{selectedItem.id}</span></div>
+              <InspectorSection title="发送内容" value={observabilitySection(selectedItem, ["request", "input", "arguments", "messages", "redacted_input", "input_count", "input_runes"])} />
+              <InspectorSection title="返回内容" value={observabilitySection(selectedItem, ["response", "output", "result", "tool_calls", "redacted_output", "output_runes", "tool_call_count"])} />
+              <InspectorSection title="影响与状态" value={observabilityImpact(selectedItem)} />
+              <InspectorSection title="性能与用量" value={observabilityPerformance(selectedItem)} />
+              <InspectorSection title="运行版本清单" value={observabilityManifest(timeline)} />
+              <details className="raw-safe-detail"><summary>完整安全记录</summary><pre>{formatMaybeJSON(selectedItem.detail ?? {})}</pre></details>
+            </div>
+          ) : <div className="observability-empty">选择一个步骤查看详情</div>}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function InspectorSection({ title, value }: { title: string; value: unknown }) {
+  return (
+    <section className="inspector-section">
+      <span>{title}</span>
+      {value === null || value === undefined ? <p>本次未记录</p> : <pre>{formatMaybeJSON(value)}</pre>}
+    </section>
+  );
+}
+
+function observabilityKindLabel(kind: string) {
+  const labels: Record<string, string> = {
+    delivery: "交付", governance: "治理", lifecycle: "状态", loop_step: "步骤", memory: "记忆",
+    model_call: "模型", skill: "Skill", tool_call: "Tool", usage: "用量"
+  };
+  return labels[kind] ?? kind;
+}
+
+function observabilitySection(item: RuntimeTraceTimelineItem, keys: string[]) {
+  const detail = item.detail ?? {};
+  const nested = [detail, asRecord(detail.redacted_payload), asRecord(detail.metadata), item.error].filter(Boolean) as Record<string, unknown>[];
+  const result: Record<string, unknown> = {};
+  for (const source of nested) {
+    for (const key of keys) {
+      if (source[key] !== undefined) result[key] = source[key];
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function observabilityImpact(item: RuntimeTraceTimelineItem) {
+  const result = observabilitySection(item, ["impact", "state_delta", "decision", "candidate_kind", "from_status", "to_status", "error"]) ?? {};
+  const safeError = asRecord(item.error)?.error_summary;
+  if (typeof safeError === "string" && safeError.trim() !== "") result.error_summary = safeError;
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function observabilityPerformance(item: RuntimeTraceTimelineItem) {
+  const detail = item.detail ?? {};
+  const result: Record<string, unknown> = {};
+  if (item.duration_ms !== undefined) result.duration_ms = item.duration_ms;
+  const sources = [detail, asRecord(detail.redacted_payload), asRecord(detail.metadata)].filter(Boolean) as Record<string, unknown>[];
+  for (const source of sources) {
+    for (const key of ["amount", "unit", "cost", "currency", "resource_type", "resource_name", "provider", "prompt_tokens", "completion_tokens", "total_tokens", "cached_tokens", "reasoning_tokens"]) {
+      if (source[key] !== undefined) result[key] = source[key];
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function observabilityManifest(timeline?: RuntimeTraceTimeline | null) {
+	if (!timeline) return null;
+	return timeline.run_manifest ?? { status: timeline.manifest_status };
+}
+
+function runtimeElapsedMilliseconds(start?: string, end?: string) {
+  if (!start || !end) return null;
+  const value = new Date(end).getTime() - new Date(start).getTime();
+  return value >= 0 ? value : null;
 }
 
 function ReleaseReadinessPanel({
@@ -2576,6 +2782,7 @@ function SystemValidationPanel({
   const [runtimeSteps, setRuntimeSteps] = useState<RuntimeStep[]>([]);
   const [runtimeLifecycleEvents, setRuntimeLifecycleEvents] = useState<RuntimeLifecycleEvent[]>([]);
   const [runtimeTraces, setRuntimeTraces] = useState<RuntimeTrace[]>([]);
+  const [runtimeTimeline, setRuntimeTimeline] = useState<RuntimeTraceTimeline | null>(null);
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage[]>([]);
   const [runtimeProjections, setRuntimeProjections] = useState<RuntimeProjectionCandidate[]>([]);
   const [runtimeCheckpoints, setRuntimeCheckpoints] = useState<RuntimeCheckpointReadout[]>([]);
@@ -2724,17 +2931,19 @@ function SystemValidationPanel({
         setRuntimeSteps([]);
         setRuntimeLifecycleEvents([]);
         setRuntimeTraces([]);
+        setRuntimeTimeline(null);
         setRuntimeUsage([]);
         setRuntimeProjections([]);
         setRuntimeCheckpoints([]);
         setRuntimeReadError("");
         return;
       }
-      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextUsage, nextProjections, nextCheckpoints] = await Promise.all([
+      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextTimeline, nextUsage, nextProjections, nextCheckpoints] = await Promise.all([
         loadRuntimeRun(nextRunID),
         loadRuntimeSteps(nextRunID),
         loadRuntimeLifecycleEvents(nextRunID),
         loadRuntimeTraces(nextRunID),
+        loadRuntimeTimeline(nextRunID),
         loadRuntimeUsage(nextRunID),
         loadRuntimeProjectionCandidates(nextRunID),
         loadRuntimeCheckpoints(nextRunID)
@@ -2743,6 +2952,7 @@ function SystemValidationPanel({
       setRuntimeSteps(nextSteps.items ?? []);
       setRuntimeLifecycleEvents(nextLifecycle.items ?? []);
       setRuntimeTraces(nextTraces.items ?? []);
+      setRuntimeTimeline(nextTimeline);
       setRuntimeUsage(nextUsage.items ?? []);
       setRuntimeProjections(nextProjections.items ?? []);
       setRuntimeCheckpoints(nextCheckpoints.items ?? []);
@@ -2758,6 +2968,7 @@ function SystemValidationPanel({
       setRuntimeSteps([]);
       setRuntimeLifecycleEvents([]);
       setRuntimeTraces([]);
+      setRuntimeTimeline(null);
       setRuntimeUsage([]);
       setRuntimeProjections([]);
       setRuntimeCheckpoints([]);
@@ -3385,16 +3596,24 @@ function SystemValidationPanel({
                 <span>{summarizeRuntimeCheckpoints(runtimeCheckpoints)}</span>
               </div>
             </div>
-            <div className="runtime-timeline">
-              {runtimeSteps.map((step) => (
-                <div className="runtime-timeline-row" key={step.id}>
-                  <span className="runtime-sequence">{step.sequence}</span>
-                  <div>
-                    <strong>{step.name || step.step_type || step.id}</strong>
-                    <span>{step.status} · {step.step_type || "step"} · {runtimeStepLifecycleCount(runtimeLifecycleEvents, step.id)} events</span>
-                  </div>
-                  <small>{formatRuntimeTime(step.updated_at || step.created_at)}</small>
+            <div className="runtime-record-list" data-testid="runtime-trace-timeline">
+              <div className="section-header">
+                <div>
+                  <h3>Agent Trace Timeline</h3>
+                  <p className="section-help">按时间投影 loop step、model、tool、governance、usage 与 delivery；详情只包含安全字段。</p>
                 </div>
+                <span className="muted">{runtimeTimeline?.summary.item_count ?? 0} items · {runtimeTimeline?.summary.failure_count ?? 0} failures</span>
+              </div>
+              {(runtimeTimeline?.items ?? []).map((item) => (
+                <details className="runtime-record-row runtime-timeline-detail" key={item.id}>
+                  <summary>
+                    <span className="status-label">{item.kind}</span>
+                    <strong>{item.summary}</strong>
+                    <span>{item.status || "recorded"} · {item.source}{item.duration_ms !== undefined ? ` · ${item.duration_ms} ms` : ""}</span>
+                    <small>{formatRuntimeTime(item.timestamp)}</small>
+                  </summary>
+                  <pre className="debug-pre">{formatMaybeJSON({ step_id: item.step_id, error: item.error, detail: item.detail })}</pre>
+                </details>
               ))}
             </div>
             {runtimeCheckpoints.length > 0 ? (

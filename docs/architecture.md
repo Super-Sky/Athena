@@ -101,8 +101,15 @@ Transport 只处理协议，不承载领域推理。
 - `POST /api/agent/runs/:runID/resume`
 - `POST /api/agent/runs/:runID/cancel`
 - `GET /api/agent/runs/:runID/trace`
+- `GET /api/agent/runs/:runID/timeline`
 
 This API is an app-facing runtime entrypoint, not a business-domain API. It accepts goal, criteria, constraints, budget, context assets, memory scope, governance refs and declarative tool inputs, then maps them into the generic app/runtime path. Domain objects remain owned by the host application.
+
+The timeline endpoint is a read projection over Athena-owned runtime records. It merges loop steps, lifecycle events, callback/tool traces, usage and delivery projections by timestamp, preserving only safe labels, redacted payloads and metadata for the admin detail view. It does not become a second event store or a host application's business audit log.
+
+`agent_run_manifest.v1` is captured once at the Eino persistence boundary and stored with the immutable TaskRun metadata envelope. The read projection exposes that persisted typed value once at timeline top level; it does not join current registries or configuration during reads. Raw prompt, tool payload, provider headers, context content and policy bodies are represented only by canonical SHA-256 references.
+
+`agent_run_manifest.v1` 在 Eino 持久化边界一次性捕获，并随不可变 TaskRun metadata 包络保存。读取投影只把该 typed 值在 timeline 顶层暴露一次，不在读取时关联当前 registry 或配置。Prompt、tool payload、provider header、context 内容和策略正文仅以规范 SHA-256 引用表达。
 
 ### 3.3 App Layer
 

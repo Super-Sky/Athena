@@ -395,6 +395,9 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	h.GET("/api/agent/runs/:runID/trace", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleGetAgentRunTrace(ctx, c, cfg, application)
 	})
+	h.GET("/api/agent/runs/:runID/timeline", func(ctx context.Context, c *hertzapp.RequestContext) {
+		handleGetAgentRunTimeline(ctx, c, cfg, application)
+	})
 	h.POST("/api/memory/write", func(ctx context.Context, c *hertzapp.RequestContext) {
 		handleWriteExternalMemory(ctx, c, application)
 	})
@@ -472,6 +475,9 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 	})
 	h.GET("/api/control-plane/runtime/runs/:runID/traces", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeTraces)(ctx, c, cfg, application)
+	})
+	h.GET("/api/control-plane/runtime/runs/:runID/timeline", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withControlPlaneAuth(cfg, application, handleGetControlPlaneRuntimeTimeline)(ctx, c, cfg, application)
 	})
 	h.GET("/api/control-plane/runtime/runs/:runID/usage", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withControlPlaneAuth(cfg, application, handleListControlPlaneRuntimeUsage)(ctx, c, cfg, application)

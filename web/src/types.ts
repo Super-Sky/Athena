@@ -144,6 +144,58 @@ export type RuntimeTrace = {
   created_at: string;
 };
 
+export type RuntimeTraceTimelineItem = {
+  id: string;
+  kind: string;
+  timestamp: string;
+  duration_ms?: number;
+  status?: string;
+  source: string;
+  summary: string;
+  step_id?: string;
+  error?: Record<string, unknown>;
+  detail?: Record<string, unknown>;
+};
+
+export type RuntimeRunRevisionRef = {
+  kind: string;
+  id: string;
+  version?: string;
+  content_sha256?: string;
+  source?: string;
+};
+
+export type RuntimeRunManifest = {
+  schema_version: string;
+  status: string;
+  captured_at: string;
+  manifest_sha256: string;
+  model?: RuntimeRunRevisionRef;
+  prompt?: RuntimeRunRevisionRef;
+  skills?: RuntimeRunRevisionRef[];
+  tools?: RuntimeRunRevisionRef[];
+  governance?: RuntimeRunRevisionRef[];
+  context_assets?: RuntimeRunRevisionRef[];
+  evaluators?: RuntimeRunRevisionRef[];
+  system_truth?: RuntimeRunRevisionRef[];
+  runtime_contract?: RuntimeRunRevisionRef;
+  missing?: string[];
+};
+
+export type RuntimeTraceTimeline = {
+  run: RuntimeRun;
+  items: RuntimeTraceTimelineItem[];
+  run_manifest?: RuntimeRunManifest;
+  manifest_status: "complete" | "partial" | "legacy_unavailable" | "unsupported_schema" | "invalid";
+  summary: {
+    run_id: string;
+    item_count: number;
+    failure_count: number;
+    started_at?: string;
+    completed_at?: string;
+  };
+};
+
 export type RuntimeUsage = {
   id: string;
   run_id: string;

@@ -152,9 +152,10 @@ type PreservedContext = session.PreservedContext
 // SkillSpec captures the resolved high-level capability guidance for the current turn.
 // SkillSpec 保存当前轮解析后的高层能力语义与 guidance。
 type SkillSpec struct {
-	PrimarySkill    string   `json:"primary_skill,omitempty"`
-	AuxiliarySkills []string `json:"auxiliary_skills,omitempty"`
-	Guidance        string   `json:"guidance,omitempty"`
+	PrimarySkill    string           `json:"primary_skill,omitempty"`
+	AuxiliarySkills []string         `json:"auxiliary_skills,omitempty"`
+	Guidance        string           `json:"guidance,omitempty"`
+	RevisionRefs    []RunRevisionRef `json:"revision_refs,omitempty"`
 }
 
 // ToolSpec captures the resolved atomic tools allowed in the current turn.
@@ -164,6 +165,7 @@ type ToolSpec struct {
 	Declarations []ToolDefinition    `json:"declarations,omitempty"`
 	Constraints  map[string][]string `json:"constraints,omitempty"`
 	Sources      map[string]string   `json:"sources,omitempty"`
+	RevisionRefs []RunRevisionRef    `json:"revision_refs,omitempty"`
 }
 
 // CapabilityContract captures the first-phase declaration/governed/runtime-consumption relationship.
@@ -294,12 +296,13 @@ type ProcessingSpec struct {
 // ExecutionMetadata stores resolver reasons and machine-readable constraints for observability.
 // ExecutionMetadata 保存 resolver 理由和可观测约束信息。
 type ExecutionMetadata struct {
-	ResolverReason   string               `json:"resolver_reason,omitempty"`
-	Governance       *GovernanceDecision  `json:"governance,omitempty"`
-	Capability       *CapabilityContract  `json:"capability,omitempty"`
-	Orchestration    *OrchestrationStatus `json:"orchestration,omitempty"`
-	PreservedContext *PreservedContext    `json:"preserved_context,omitempty"`
-	Constraints      map[string]any       `json:"constraints,omitempty"`
+	ResolverReason   string                `json:"resolver_reason,omitempty"`
+	Governance       *GovernanceDecision   `json:"governance,omitempty"`
+	Capability       *CapabilityContract   `json:"capability,omitempty"`
+	Orchestration    *OrchestrationStatus  `json:"orchestration,omitempty"`
+	PreservedContext *PreservedContext     `json:"preserved_context,omitempty"`
+	Constraints      map[string]any        `json:"constraints,omitempty"`
+	ManifestRefs     RunManifestReferences `json:"manifest_refs,omitempty"`
 }
 
 // ExecutionSpec is the full runtime contract for one turn.
