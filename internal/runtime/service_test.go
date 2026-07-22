@@ -1010,6 +1010,12 @@ func TestServicePreparePrefersNormalizedTaskGoal(t *testing.T) {
 				"user_id": "u1001",
 			},
 			OutputMode: runtimetask.DefaultOutputModeText,
+			InputPayload: map[string]any{
+				"agent_run": map[string]any{
+					"success_criteria": []any{"include risks", "include next action"},
+					"budget":           map[string]any{"max_model_calls": 4},
+				},
+			},
 		},
 	})
 	if err != nil {
@@ -1020,6 +1026,12 @@ func TestServicePreparePrefersNormalizedTaskGoal(t *testing.T) {
 	}
 	if prepared.Spec.Inference.Goal != "analyze the current user's risk posture" {
 		t.Fatalf("Inference.Goal = %q", prepared.Spec.Inference.Goal)
+	}
+	if len(prepared.Spec.Inference.SuccessCriteria) != 2 || prepared.Spec.Inference.Budget.MaxModelCalls != 4 {
+		t.Fatalf("Inference controls = %#v", prepared.Spec.Inference)
+	}
+	if !strings.Contains(prepared.Spec.Skill.Guidance, "include risks") {
+		t.Fatalf("Skill guidance is missing success criteria: %q", prepared.Spec.Skill.Guidance)
 	}
 	if len(prepared.Messages) == 0 {
 		t.Fatalf("expected assembled messages")

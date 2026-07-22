@@ -129,6 +129,7 @@ App 是运行时编排层，不是领域逻辑中心。
 Agent Run API 当前以同步 MVP 方式复用 App Layer：
 
 - `goal` 会成为 runtime 当前请求目标。
+- `success_criteria` 与 provider-neutral budget 会进入 `ExecutionSpec.Inference`；Eino graph 在真实调用边界执行 model/tool/token 预算，App Layer 从准备阶段起执行最早 deadline。成功条件当前是 prompt guard，不是独立 evaluator 结论。
 - `context_assets` 继续走 Context Asset Plane 的默认注入、覆盖、禁用和优先级逻辑。
 - Transport 将 OpenAI-compatible `tools` / `tool_choice` 转为 provider-neutral runtime contract；Eino adapter 只在执行边界转换为 `ToolInfo`、模型调用选项和 `schema.Message`。
 - graph-native ReAct loop 通过 per-execution transcript 记录 assistant tool-call 轮次、稳定 ID、参数、tool result、错误与 timing；响应保留有序 message 结构，持久化 trace 仅投影安全摘要。

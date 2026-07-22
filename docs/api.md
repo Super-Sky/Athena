@@ -138,6 +138,8 @@ Agent Run API 当前暴露：
   - The response exposes ordered `messages`, assistant `tool_calls`, correlated `tool_results`, stable call IDs and final `output`. Top-level call/result arrays are compatibility projections of the canonical transcript.
   - `stop_reason` 使用稳定枚举：`success`、`budget_exhausted`、`deadline_exceeded`、`awaiting_input`、`awaiting_external_data`、`governance_denied`、`cancelled`、`unrecoverable_error`。
   - `stop_reason` uses a stable runtime taxonomy instead of exposing internal lifecycle reason strings.
+  - `budget` supports only positive `max_duration_ms`, RFC3339 `deadline_at`, `max_model_calls`, `max_tool_calls`, and `max_tokens`; unknown fields are rejected. The runtime enforces the earliest time limit and returns `budget_exhausted` or `deadline_exceeded` through the same persisted stop-reason contract. Configured token limits fail closed when a provider omits authoritative usage.
+  - `success_criteria` 当前以 `prompt_guard_only` 模式进入冻结 prompt；它约束模型不得在条件未满足时结束，但当前不代表独立 evaluator 已验证成功。
 - `GET /api/agent/runs/:runID`
   - 读取单个 run 的 app-facing 状态摘要，底层复用 persisted `TaskRun` 与 trace summary。
   - Reads the app-facing run status summary from persisted runtime records.

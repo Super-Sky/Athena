@@ -1454,8 +1454,18 @@ func buildOpenAPISchemas() map[string]any {
 			"query":            stringSchema("兼容字段；goal 为空时作为目标。", "Summarize portfolio risk."),
 			"success_criteria": arraySchema(map[string]any{"type": "string"}),
 			"constraints":      map[string]any{"type": "object", "additionalProperties": true},
-			"budget":           map[string]any{"type": "object", "additionalProperties": true},
-			"context_assets":   arraySchema(map[string]any{"type": "object", "additionalProperties": true}),
+			"budget": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"max_duration_ms": map[string]any{"type": "integer", "minimum": 1, "maximum": 86_400_000},
+					"deadline_at":     map[string]any{"type": "string", "format": "date-time"},
+					"max_model_calls": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
+					"max_tool_calls":  map[string]any{"type": "integer", "minimum": 1, "maximum": 1000},
+					"max_tokens":      map[string]any{"type": "integer", "minimum": 1, "maximum": 10_000_000},
+				},
+			},
+			"context_assets": arraySchema(map[string]any{"type": "object", "additionalProperties": true}),
 			"tools": map[string]any{
 				"type": "array",
 				"items": map[string]any{

@@ -35,6 +35,9 @@ func NormalizeExecutionStopReason(status string, err error, explicit ExecutionSt
 	if errors.Is(err, context.Canceled) {
 		return ExecutionStopCancelled
 	}
+	if errors.Is(err, ErrExecutionBudgetExceeded) {
+		return ExecutionStopBudgetExhausted
+	}
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case TaskRunStatusWaiting, string(RequestStatusWaitingForInformation), string(RequestStatusPendingHuman):
 		return ExecutionStopAwaitingInput

@@ -113,7 +113,8 @@ Supplement、Compaction、Capability Studio、external MCP registry、cleanup jo
 - [x] 在 foundation 中幂等注册默认 `chat` task type 与 active validator contract，修复 PostgreSQL strict resolution 下默认 Agent Run 返回 `unsupported_task_type`。
 - [x] 用受认证 app identity 发起省略 `task_type` 的真实 PostgreSQL Agent Run，并验证 run ownership、immutable manifest 与授权 timeline。
 - [x] 定义完整 stop-reason taxonomy，并让 terminal lifecycle、Agent Run API 与 timeline 共用持久化原因。
-- [ ] 定义并落实 success criteria evaluation、budget 与 deadline。
+- [x] 定义 success criteria prompt guard，并落实 duration/deadline/model/tool/token 硬预算。
+- [ ] 增加独立 evaluator/critic loop，以可追溯证据验证 success criteria；当前 prompt guard 不视为已验证完成。
 - [ ] 接入 Redis-backed enqueue、idempotency lock、retry/backoff、cancel 与 checkpoint/resume contract。
 - [ ] 补齐异步 HTTP/SSE、OpenAPI、Docker env、Redis 故障降级和系统回归测试。
 

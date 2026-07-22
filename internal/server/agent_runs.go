@@ -354,6 +354,15 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 		return agentRunResponse{RequestID: requestID, Status: "failed", StopReason: string(runtime.ExecutionStopUnrecoverableError), Error: "application is not configured"}, consts.StatusInternalServerError
 	}
 
+	budget, budgetErr := runtime.ParseExecutionBudget(req.Budget)
+	if budgetErr != nil {
+		return agentRunResponse{RequestID: requestID, Status: "failed", StopReason: string(runtime.ExecutionStopUnrecoverableError), Error: budgetErr.Error()}, consts.StatusBadRequest
+	}
+	if deadline, ok := budget.EffectiveDeadline(time.Now().UTC()); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
 	runtimeTuning, _ := application.GetControlPlaneRuntime(ctx)
 	custom := customization.UserCustomization{
 		PromptTemplate:         strings.TrimSpace(req.PromptTemplate),
@@ -388,13 +397,36 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 	}
 
 	prepared := chatSession.Prepared
+	projectExecutionFailure := func(runErr error, toolSideEffects bool, stage string) (agentRunResponse, int) {
+		projectionCtx, projectionCancel := agentRunTerminalContext(ctx)
+		defer projectionCancel()
+		_ = prepared.ProjectTerminalOutcome(projectionCtx, runtime.RuntimeTerminalOutcome{
+			Status:          runtime.RuntimeTerminalStatusFailed,
+			StopReason:      runtime.NormalizeExecutionStopReason(agentRunErrorStatus(runErr), runErr, ""),
+			Error:           runErr,
+			ToolSideEffects: toolSideEffects,
+			Metadata: map[string]any{
+				"agent_run_source": agentRunDefaultString(opts.Source, agentRunSourceCreate),
+				"respond_stage":    stage,
+			},
+		})
+		response := agentRunResponseFromSession(projectionCtx, application, requestID, chatSession, opts, agentRunErrorStatus(runErr), "", runErr.Error(), nil, runtimeTuning)
+		return response, agentRunExecutionErrorStatus(runErr)
+	}
+	if executionErr := ctx.Err(); executionErr != nil {
+		return projectExecutionFailure(executionErr, false, "prepare_deadline")
+	}
 	if prepared.Initial != nil && prepared.Initial.Action != nil {
-		_ = chatSession.Complete(ctx, "")
-		return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, agentRunPreparedStatus(prepared), "", "", nil, runtimeTuning), agentRunAcceptedStatus(prepared)
+		terminalCtx, terminalCancel := agentRunTerminalContext(ctx)
+		defer terminalCancel()
+		_ = chatSession.Complete(terminalCtx, "")
+		return agentRunResponseFromSession(terminalCtx, application, requestID, chatSession, opts, agentRunPreparedStatus(prepared), "", "", nil, runtimeTuning), agentRunAcceptedStatus(prepared)
 	}
 	if prepared.Initial != nil && prepared.Initial.Error != "" {
-		_ = chatSession.Complete(ctx, "")
-		_ = prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
+		terminalCtx, terminalCancel := agentRunTerminalContext(ctx)
+		defer terminalCancel()
+		_ = chatSession.Complete(terminalCtx, "")
+		_ = prepared.ProjectTerminalOutcome(terminalCtx, runtime.RuntimeTerminalOutcome{
 			Status:     runtime.RuntimeTerminalStatusFailed,
 			StopReason: runtime.NormalizeExecutionStopReason(string(prepared.InitialStatus), errors.New(prepared.Initial.Error), ""),
 			Error:      errors.New(prepared.Initial.Error),
@@ -403,7 +435,7 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 				"respond_stage":    "initial_error",
 			},
 		})
-		return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, agentRunPreparedStatus(prepared), "", prepared.Initial.Error, prepared.InitialError, runtimeTuning), agentRunAcceptedStatus(prepared)
+		return agentRunResponseFromSession(terminalCtx, application, requestID, chatSession, opts, agentRunPreparedStatus(prepared), "", prepared.Initial.Error, prepared.InitialError, runtimeTuning), agentRunAcceptedStatus(prepared)
 	}
 
 	var (
@@ -415,23 +447,16 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 	} else {
 		rawOutput, toolSideEffects, err = collectRespondOutput(ctx, prepared.Runner, prepared.Messages)
 		if err != nil {
-			projectionCtx, projectionCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			defer projectionCancel()
-			_ = prepared.ProjectTerminalOutcome(projectionCtx, runtime.RuntimeTerminalOutcome{
-				Status:          runtime.RuntimeTerminalStatusFailed,
-				StopReason:      runtime.NormalizeExecutionStopReason(agentRunErrorStatus(err), err, ""),
-				Error:           err,
-				ToolSideEffects: toolSideEffects,
-				Metadata: map[string]any{
-					"agent_run_source": agentRunDefaultString(opts.Source, agentRunSourceCreate),
-					"respond_stage":    "collect_output",
-				},
-			})
-			return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, agentRunErrorStatus(err), "", err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
+			return projectExecutionFailure(err, toolSideEffects, "collect_output")
 		}
 	}
-	if err := chatSession.Complete(ctx, rawOutput); err != nil {
-		_ = prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
+	if executionErr := ctx.Err(); executionErr != nil {
+		return projectExecutionFailure(executionErr, toolSideEffects, "post_execution_deadline")
+	}
+	terminalCtx, terminalCancel := agentRunTerminalContext(ctx)
+	defer terminalCancel()
+	if err := chatSession.Complete(terminalCtx, rawOutput); err != nil {
+		_ = prepared.ProjectTerminalOutcome(terminalCtx, runtime.RuntimeTerminalOutcome{
 			Status:          runtime.RuntimeTerminalStatusFailed,
 			Error:           err,
 			ToolSideEffects: toolSideEffects,
@@ -440,9 +465,9 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 				"respond_stage":    "complete_session",
 			},
 		})
-		return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, "failed", rawOutput, err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
+		return agentRunResponseFromSession(terminalCtx, application, requestID, chatSession, opts, "failed", rawOutput, err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
 	}
-	if err := prepared.ProjectTerminalOutcome(ctx, runtime.RuntimeTerminalOutcome{
+	if err := prepared.ProjectTerminalOutcome(terminalCtx, runtime.RuntimeTerminalOutcome{
 		Status:          runtime.RuntimeTerminalStatusCompleted,
 		Content:         rawOutput,
 		ToolSideEffects: toolSideEffects,
@@ -451,9 +476,24 @@ func executeAgentRun(ctx context.Context, c *hertzapp.RequestContext, cfg config
 			"respond_stage":    "complete",
 		},
 	}); err != nil {
-		return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, "failed", rawOutput, err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
+		return agentRunResponseFromSession(terminalCtx, application, requestID, chatSession, opts, "failed", rawOutput, err.Error(), nil, runtimeTuning), consts.StatusInternalServerError
 	}
-	return agentRunResponseFromSession(ctx, application, requestID, chatSession, opts, "completed", rawOutput, "", nil, runtimeTuning), consts.StatusCreated
+	return agentRunResponseFromSession(terminalCtx, application, requestID, chatSession, opts, "completed", rawOutput, "", nil, runtimeTuning), consts.StatusCreated
+}
+
+// agentRunTerminalContext gives persistence a bounded cleanup window after execution cancellation.
+// agentRunTerminalContext 在执行取消后为持久化提供有界的收尾窗口。
+func agentRunTerminalContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+}
+
+// agentRunExecutionErrorStatus maps execution cancellation to the stable transport status.
+// agentRunExecutionErrorStatus 将执行取消映射为稳定 transport 状态。
+func agentRunExecutionErrorStatus(err error) int {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return consts.StatusTooManyRequests
+	}
+	return consts.StatusInternalServerError
 }
 
 func agentRunResponseFromSession(ctx context.Context, application *appcore.Service, requestID string, chatSession *appcore.ChatSession, opts agentRunExecutionOptions, status string, output string, errText string, errDetail *runtime.ProtocolError, runtimeTuning controlplane.RuntimeTuning) agentRunResponse {
@@ -661,6 +701,9 @@ func parseAgentRunStartRequest(c *hertzapp.RequestContext) (agentRunStartRequest
 	}
 	req.CanonicalTools = canonicalTools
 	req.CanonicalToolChoice = canonicalToolChoice
+	if _, err := runtime.ParseExecutionBudget(req.Budget); err != nil {
+		return agentRunStartRequest{}, err
+	}
 	normalizeAgentRunSupplement(&req)
 	return req, nil
 }

@@ -168,6 +168,9 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 	if spec.Inference.Goal != "" {
 		instruction += fmt.Sprintf("\nCurrent goal: %s", spec.Inference.Goal)
 	}
+	if len(spec.Inference.SuccessCriteria) > 0 {
+		instruction += "\nDo not return a final answer until every success criterion in the execution guidance is satisfied."
+	}
 	promptRef := NewRunRevisionRef("prompt", "assembled_runtime_prompt", RunManifestSchemaVersion, "eino_turn_executor", instruction)
 	spec.Metadata.ManifestRefs.Prompt = &promptRef
 
@@ -189,6 +192,7 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		Callbacks:        callbackRecorder.Handler(),
 		CheckpointStore:  e.CheckpointStore,
 		CheckpointID:     checkpointRef.CheckpointID,
+		Budget:           spec.Inference.Budget,
 	})
 	if err != nil {
 		return nil, err

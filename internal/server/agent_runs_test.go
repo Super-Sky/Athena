@@ -23,6 +23,7 @@ func TestParseAgentRunStartRequestAcceptsOpenAITools(t *testing.T) {
 	ctx := newAgentRunJSONRequestContext(`{
 		"goal":"Build a concise fund briefing",
 		"success_criteria":["has risks","has next action"],
+		"budget":{"max_duration_ms":30000,"max_model_calls":4,"max_tool_calls":8,"max_tokens":4096},
 		"tools":[
 			{"type":"function","function":{"name":"web_search","parameters":{"type":"object"}}},
 			"calculator"
@@ -51,6 +52,21 @@ func TestParseAgentRunStartRequestAcceptsOpenAITools(t *testing.T) {
 	}
 	if req.Supplement.Resume == nil || req.Supplement.Resume.ResumeToken != "resume-1" {
 		t.Fatalf("unexpected resume context = %#v", req.Supplement.Resume)
+	}
+	if budget, err := runtime.ParseExecutionBudget(req.Budget); err != nil || budget.MaxModelCalls != 4 {
+		t.Fatalf("unexpected execution budget = %#v, error=%v", req.Budget, err)
+	}
+}
+
+func TestParseAgentRunStartRequestRejectsInvalidBudget(t *testing.T) {
+	for _, body := range []string{
+		`{"goal":"test","budget":{"max_model_calls":1.5}}`,
+		`{"goal":"test","budget":{"max_model_call":3}}`,
+	} {
+		_, err := parseAgentRunStartRequest(newAgentRunJSONRequestContext(body))
+		if err == nil || !strings.Contains(err.Error(), "budget.max_model_call") {
+			t.Fatalf("parse error = %v, want invalid model call budget", err)
+		}
 	}
 }
 
