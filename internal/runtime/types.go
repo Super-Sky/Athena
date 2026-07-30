@@ -200,6 +200,8 @@ type RuntimeConsumption struct {
 // InferenceSpec 描述单轮推理的目标、输出模式与 schema 约束。
 type InferenceSpec struct {
 	Goal             string                    `json:"goal,omitempty"`
+	SuccessCriteria  []string                  `json:"success_criteria,omitempty"`
+	Budget           ExecutionBudget           `json:"budget,omitempty"`
 	OutputSchema     string                    `json:"output_schema,omitempty"`
 	OutputMode       string                    `json:"output_mode,omitempty"`
 	StructuredOutput *StructuredOutputContract `json:"structured_output,omitempty"`

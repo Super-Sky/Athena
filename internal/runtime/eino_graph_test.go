@@ -282,6 +282,13 @@ func TestEinoGraphTerminalProjectorPersistsSafeOutcome(t *testing.T) {
 	if !containsLifecycleEvent(events, "run_terminal_observed") || !containsLifecycleEvent(events, "step_terminal_observed") {
 		t.Fatalf("events = %#v, want run and step terminal lifecycle events", events)
 	}
+	for _, event := range events {
+		if event.EventType == "run_terminal_observed" || event.EventType == "step_terminal_observed" {
+			if event.Reason != string(ExecutionStopSuccess) {
+				t.Fatalf("%s reason = %q, want %q", event.EventType, event.Reason, ExecutionStopSuccess)
+			}
+		}
+	}
 }
 
 func TestRuntimeGraphCheckpointRefFromWait(t *testing.T) {

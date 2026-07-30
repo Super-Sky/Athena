@@ -88,6 +88,28 @@ var runtimeValidationHookSeeds = []runtimeFoundationHookSeed{
 }
 
 var registeredTaskTypeValidatorSeeds = []registeredTaskTypeValidatorSeed{
+	// Chat is the generic default runtime task; app-facing Agent Runs map their transport contract onto it.
+	// Chat 是通用默认 runtime task；app-facing Agent Run 会把 transport contract 映射到该类型。
+	{
+		id:          "athena.task_type.chat.v1",
+		typeKey:     runtimetask.InputKindChat,
+		displayName: "Chat",
+		description: "Register the generic chat boundary without owning application or business semantics.",
+		scene:       "default",
+		aliases:     []any{"default_chat"},
+		properties: map[string]any{
+			"workspace_id":        map[string]any{"type": "string"},
+			"app_instance_id":     map[string]any{"type": "string"},
+			"app_session_id":      map[string]any{"type": "string"},
+			"session_id":          map[string]any{"type": "string"},
+			"main_session_id":     map[string]any{"type": "string"},
+			"query":               map[string]any{"type": "string"},
+			"desired_output_mode": map[string]any{"type": "string"},
+			"input_payload":       map[string]any{"type": "object"},
+			"global_context":      map[string]any{"type": "object"},
+			"app_context":         map[string]any{"type": "object"},
+		},
+	},
 	{
 		id:          "athena.task_type.inspection_task.v1",
 		typeKey:     runtimetask.InputKindInspectionTask,

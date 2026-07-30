@@ -1326,6 +1326,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/agent/runs/{runID}/trace"]; !ok {
 		t.Fatalf("openapi spec missing /api/agent/runs/{runID}/trace path: %#v", paths)
 	}
+	if _, ok := paths["/api/agent/runs/{runID}/events"]; !ok {
+		t.Fatalf("openapi spec missing /api/agent/runs/{runID}/events path: %#v", paths)
+	}
 	if _, ok := paths["/api/system-resources/{id}/debug-payload"]; !ok {
 		t.Fatalf("openapi spec missing system resource debug-payload path: %#v", paths)
 	}
@@ -1373,6 +1376,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	}
 	if _, ok := schemas["AgentRunResponse"]; !ok {
 		t.Fatalf("openapi spec missing AgentRunResponse: %#v", schemas)
+	}
+	if _, ok := schemas["AsyncAgentRunResponse"]; !ok {
+		t.Fatalf("openapi spec missing AsyncAgentRunResponse: %#v", schemas)
 	}
 	for _, schemaName := range []string{"AgentRunToolChoice", "AgentRunToolCall", "AgentRunToolResult", "AgentRunMessage"} {
 		if _, ok := schemas[schemaName]; !ok {

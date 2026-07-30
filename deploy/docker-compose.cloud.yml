@@ -17,6 +17,21 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: athena-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - athena-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   athena-api:
     image: ${ATHENA_IMAGE:-athena:local}
     container_name: athena-api
@@ -38,6 +53,22 @@ services:
       timeout: 5s
       retries: 10
 
+  athena-worker:
+    image: ${ATHENA_IMAGE:-athena:local}
+    container_name: athena-worker
+    restart: unless-stopped
+    depends_on:
+      athena-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./athena.env
+    command: ["worker"]
+    volumes:
+      - athena-controlplane-data:/app/config/controlplane
+      - athena-shared-data:/srv/shared
+
   athena-web:
     image: ${ATHENA_WEB_IMAGE:-athena-web:local}
     container_name: athena-web
@@ -52,5 +83,6 @@ services:
 
 volumes:
   athena-postgres-data:
+  athena-redis-data:
   athena-controlplane-data:
   athena-shared-data:

@@ -23,7 +23,7 @@
 - `agent_runs.go`
   - 暴露面向业务应用的 Agent Run API，转换 OpenAI-compatible tool contracts，并把 goal-first 请求映射到通用 app/runtime 主链和 runtime persistence trace readout。
 - `agent_runs_test.go`
-  - 验证 Agent Run 请求解析、tool schema / choice 错误、call/result message 映射以及 create/read/trace/resume/cancel 路由。
+  - 验证 Agent Run 请求解析、budget 校验、tool schema / choice 错误、call/result message 映射以及 create/read/trace/resume/cancel 路由。
 - `app_auth.go`
   - 使用独立 app token 和精确 workspace/app-instance scope 保护全部 app-facing Agent Run 路由，并统一资源越权响应。
 - `app_auth_test.go`

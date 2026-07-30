@@ -155,6 +155,10 @@ type DefaultCapabilityResolver struct {
 // Resolve 会决定当前 ExecutionSpec，并可在执行前提前产出 information_request 动作。
 func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeState, in Input) (*ExecutionSpec, *Action, error) {
 	task := ensureRuntimeTask(in)
+	executionControl, err := ResolveExecutionControlPlan(task)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve execution controls: %w", err)
+	}
 	effectiveQuery := resolveEffectiveQuery(in)
 	orchestration := normalizeOrchestrationInput(in)
 	toolDefinitions := r.Tools
@@ -290,6 +294,12 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 			guidanceParts = append(guidanceParts, fmt.Sprintf("Current scene: %s", strings.TrimSpace(task.Scene)))
 		}
 	}
+	if len(executionControl.SuccessCriteria) > 0 {
+		guidanceParts = append(guidanceParts, "Continue working toward the goal until the following success criteria are satisfied. Do not claim completion when any criterion is unmet:")
+		for _, criterion := range executionControl.SuccessCriteria {
+			guidanceParts = append(guidanceParts, fmt.Sprintf("- %s", criterion))
+		}
+	}
 
 	spec := &ExecutionSpec{
 		Skill: SkillSpec{
@@ -305,8 +315,10 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		},
 		Model: buildModelSpec(in.ModelSelection),
 		Inference: InferenceSpec{
-			Goal:       effectiveQuery,
-			OutputMode: defaultInferenceOutputMode(task),
+			Goal:            effectiveQuery,
+			SuccessCriteria: append([]string(nil), executionControl.SuccessCriteria...),
+			Budget:          executionControl.Budget,
+			OutputMode:      defaultInferenceOutputMode(task),
 			StructuredOutput: &StructuredOutputContract{
 				ContractID:    "structured-output.v1",
 				Mode:          "structured",
@@ -367,6 +379,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 				"subject_context_required": subjectRequirement.Required,
 				"subject_context_reason":   subjectRequirement.Reason,
 				"orchestration_in":         orchestration,
+				"success_evaluation_mode":  "prompt_guard_only",
 			},
 		},
 	}

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"gitee.com/super_sky/mkh_utils"
 	"moss/internal/config"
@@ -45,8 +47,38 @@ func main() {
 			log.Fatalf("failed to load config: %v", err)
 		}
 		runMigrate(cfg)
+	case "worker":
+		cfg, err := config.LoadFromEnv()
+		if err != nil {
+			log.Fatalf("failed to load config: %v", err)
+		}
+		runWorker(cfg)
 	default:
-		log.Fatalf("unsupported command %q, expected one of: api-server, migrate, healthcheck, version", command)
+		log.Fatalf("unsupported command %q, expected one of: api-server, worker, migrate, healthcheck, version", command)
+	}
+}
+
+// runWorker starts the durable outbox dispatcher and Redis delivery consumer until shutdown.
+// runWorker 启动持久 outbox dispatcher 与 Redis 投递 consumer，并持续运行到进程关闭。
+func runWorker(cfg config.Config) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	appEntry, err := entry.New(cfg)
+	if err != nil {
+		log.Fatalf("failed to build worker entry: %v", err)
+	}
+	worker, err := appEntry.NewAsyncWorkerRuntime(ctx)
+	if err != nil {
+		log.Fatalf("failed to build async worker: %v", err)
+	}
+	defer func() {
+		if err := worker.Close(); err != nil {
+			log.Printf("close async worker failed: %v", err)
+		}
+	}()
+	log.Printf("Async worker started with consumer %q", cfg.AsyncJobs.Consumer)
+	if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
+		log.Fatalf("async worker failed: %v", err)
 	}
 }
 

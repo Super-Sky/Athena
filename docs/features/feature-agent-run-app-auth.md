@@ -2,13 +2,13 @@
 
 ## Background / 背景
 
-Issue `Super-Sky/Athena#26` closes the production authorization gap on app-facing Agent Run create/read/resume/cancel/trace/timeline routes. A run ID is a locator, never an authorization credential.
+Issue `Super-Sky/Athena#26` closes the production authorization gap on app-facing Agent Run create/read/resume/cancel/events/trace/timeline routes. A run ID is a locator, never an authorization credential.
 
-Issue `Super-Sky/Athena#26` 补齐面向应用的 Agent Run create/read/resume/cancel/trace/timeline 生产授权边界。run ID 只是定位符，不能作为授权凭据。
+Issue `Super-Sky/Athena#26` 补齐面向应用的 Agent Run create/read/resume/cancel/events/trace/timeline 生产授权边界。run ID 只是定位符，不能作为授权凭据。
 
 ## Contract / 契约
 
-When `APP_AUTH_REQUIRED=true`, all six `/api/agent/runs` routes require:
+When `APP_AUTH_REQUIRED=true`, all app-facing `/api/agent/runs` routes require:
 
 - `X-Athena-App-Token`: application secret; a dedicated header prevents accidental Platform Context forwarding.
 - `X-Athena-App-ID`: configured application identity.
@@ -55,7 +55,7 @@ go test ./...
 go test ./internal/server -run '^$' -bench '^BenchmarkAuthenticateAppRequestWithOneHundredScopes$' -benchmem -count=3
 ```
 
-Tests cover six-route authentication, dedicated token header, gray mode, body scope injection/conflict, workspace/app-instance/app-identity isolation, identical missing/cross-tenant 404 responses, recursive redaction, semantic payload removal, token serialization, config validation and OpenAPI security metadata.
+Tests cover Agent Run route authentication, dedicated token header, gray mode, body scope injection/conflict, workspace/app-instance/app-identity isolation, identical missing/cross-tenant 404 responses, recursive redaction, semantic payload removal, token serialization, config validation and OpenAPI security metadata.
 
 On the local Intel validation host, the 100-instance scope benchmark measured approximately `1.5-1.7 us/op`, `48 B/op`, and `3 allocs/op`.
 

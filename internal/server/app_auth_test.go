@@ -147,6 +147,7 @@ func TestAgentRunOpenAPIOperationsDeclareAppAuth(t *testing.T) {
 		{path: "/api/agent/runs/{runID}", method: "get"},
 		{path: "/api/agent/runs/{runID}/resume", method: "post"},
 		{path: "/api/agent/runs/{runID}/cancel", method: "post"},
+		{path: "/api/agent/runs/{runID}/events", method: "get"},
 		{path: "/api/agent/runs/{runID}/trace", method: "get"},
 		{path: "/api/agent/runs/{runID}/timeline", method: "get"},
 	}

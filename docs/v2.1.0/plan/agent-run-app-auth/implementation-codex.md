@@ -9,7 +9,7 @@
 
 ## Implementation
 
-- 为六条 app-facing Agent Run 路由增加独立应用身份门禁，不复用可能被 Platform Context 转发的 `Authorization`。
+- 为 app-facing Agent Run 路由增加独立应用身份门禁，不复用可能被 Platform Context 转发的 `Authorization`。
 - 将身份绑定到精确 workspace/app-instance scope；create 注入权威归属，resume 继承已授权原 run 的归属。
 - 在读取 TaskRun 后、读取任何子 trace record 前执行 ownership 校验；不存在与跨租户资源统一返回通用 `404`。
 - 对共用 runtime DTO 递归脱敏凭据型键，app-facing trace 额外移除 projection semantic payload。

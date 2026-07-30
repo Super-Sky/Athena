@@ -29,7 +29,11 @@ const (
 // runtimeGraphNativeState stores the per-run ReAct message history inside Eino Graph state.
 // runtimeGraphNativeState 在 Eino Graph state 内保存每次运行的 ReAct 消息历史。
 type runtimeGraphNativeState struct {
-	Messages []*einoschema.Message
+	Messages           []*einoschema.Message
+	ModelCalls         int
+	ToolCalls          int
+	CountedToolCallIDs map[string]bool
+	TotalTokens        int64
 }
 
 // EinoGraphNativeAgentConfig contains the graph-native model/tool execution dependencies.
@@ -46,6 +50,7 @@ type EinoGraphNativeAgentConfig struct {
 	Callbacks        callbacks.Handler
 	CheckpointStore  RuntimeGraphCheckpointByteStore
 	CheckpointID     string
+	Budget           ExecutionBudget
 }
 
 // EinoGraphNativeAgent executes one turn through Eino Graph ChatModel and ToolsNode components.
@@ -100,8 +105,8 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 	if err := graph.AddChatModelNode(
 		runtimeGraphNativeModelNode,
 		modelNode,
-		compose.WithStatePreHandler(runtimeGraphNativeModelPreHandler),
-		compose.WithStatePostHandler(runtimeGraphNativeModelPostHandlerWithTranscript(cfg.ToolTranscript)),
+		compose.WithStatePreHandler(runtimeGraphNativeModelPreHandlerWithBudget(cfg.Budget)),
+		compose.WithStatePostHandler(runtimeGraphNativeModelPostHandlerWithTranscriptAndBudget(cfg.ToolTranscript, cfg.Budget)),
 	); err != nil {
 		return nil, err
 	}
@@ -116,7 +121,7 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 		if err := graph.AddToolsNode(
 			runtimeGraphNativeToolsNode,
 			toolsNode,
-			compose.WithStatePreHandler(runtimeGraphNativeToolsPreHandler),
+			compose.WithStatePreHandler(runtimeGraphNativeToolsPreHandlerWithBudget(cfg.Budget)),
 			compose.WithStatePostHandler(runtimeGraphNativeToolsPostHandlerWithTranscript(cfg.ToolTranscript)),
 		); err != nil {
 			return nil, err
@@ -138,7 +143,7 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 	}
 	compileOptions := []compose.GraphCompileOption{
 		compose.WithGraphName("athena_graph_native_turn"),
-		compose.WithMaxRunSteps(12),
+		compose.WithMaxRunSteps(cfg.Budget.MaxRunSteps()),
 	}
 	if cfg.CheckpointStore != nil {
 		compileOptions = append(compileOptions, compose.WithCheckPointStore(cfg.CheckpointStore))
@@ -367,6 +372,19 @@ func runtimeGraphNativeModelPreHandler(_ context.Context, in []*einoschema.Messa
 	return appendMessageCopies(nil, state.Messages...), nil
 }
 
+func runtimeGraphNativeModelPreHandlerWithBudget(budget ExecutionBudget) func(context.Context, []*einoschema.Message, *runtimeGraphNativeState) ([]*einoschema.Message, error) {
+	return func(ctx context.Context, in []*einoschema.Message, state *runtimeGraphNativeState) ([]*einoschema.Message, error) {
+		if state != nil {
+			next := state.ModelCalls + 1
+			if budget.MaxModelCalls > 0 && next > budget.MaxModelCalls {
+				return nil, &ExecutionBudgetExceededError{Dimension: "model_calls", Limit: int64(budget.MaxModelCalls), Observed: int64(next)}
+			}
+			state.ModelCalls = next
+		}
+		return runtimeGraphNativeModelPreHandler(ctx, in, state)
+	}
+}
+
 func runtimeGraphNativeModelPostHandler(_ context.Context, out *einoschema.Message, state *runtimeGraphNativeState) (*einoschema.Message, error) {
 	if state == nil || out == nil {
 		return out, nil
@@ -394,6 +412,27 @@ func runtimeGraphNativeModelPostHandlerWithTranscript(transcript *ToolCallTransc
 	}
 }
 
+func runtimeGraphNativeModelPostHandlerWithTranscriptAndBudget(transcript *ToolCallTranscript, budget ExecutionBudget) func(context.Context, *einoschema.Message, *runtimeGraphNativeState) (*einoschema.Message, error) {
+	base := runtimeGraphNativeModelPostHandlerWithTranscript(transcript)
+	return func(ctx context.Context, out *einoschema.Message, state *runtimeGraphNativeState) (*einoschema.Message, error) {
+		result, err := base(ctx, out, state)
+		if err != nil || state == nil {
+			return result, err
+		}
+		if out == nil || out.ResponseMeta == nil || out.ResponseMeta.Usage == nil {
+			if budget.MaxTokens > 0 {
+				return nil, ErrExecutionTokenUsageUnavailable
+			}
+			return result, nil
+		}
+		state.TotalTokens += int64(out.ResponseMeta.Usage.TotalTokens)
+		if budget.MaxTokens > 0 && state.TotalTokens > budget.MaxTokens {
+			return nil, &ExecutionBudgetExceededError{Dimension: "tokens", Limit: budget.MaxTokens, Observed: state.TotalTokens}
+		}
+		return result, nil
+	}
+}
+
 func runtimeGraphNativeToolsPreHandler(_ context.Context, in *einoschema.Message, state *runtimeGraphNativeState) (*einoschema.Message, error) {
 	if in != nil || state == nil {
 		return in, nil
@@ -405,6 +444,36 @@ func runtimeGraphNativeToolsPreHandler(_ context.Context, in *einoschema.Message
 		}
 	}
 	return in, nil
+}
+
+func runtimeGraphNativeToolsPreHandlerWithBudget(budget ExecutionBudget) func(context.Context, *einoschema.Message, *runtimeGraphNativeState) (*einoschema.Message, error) {
+	return func(ctx context.Context, in *einoschema.Message, state *runtimeGraphNativeState) (*einoschema.Message, error) {
+		resolved, err := runtimeGraphNativeToolsPreHandler(ctx, in, state)
+		if err != nil || state == nil || resolved == nil {
+			return resolved, err
+		}
+		unseenCallIDs := make([]string, 0, len(resolved.ToolCalls))
+		for _, call := range resolved.ToolCalls {
+			callID := strings.TrimSpace(call.ID)
+			if callID == "" || !state.CountedToolCallIDs[callID] {
+				unseenCallIDs = append(unseenCallIDs, callID)
+			}
+		}
+		next := state.ToolCalls + len(unseenCallIDs)
+		if budget.MaxToolCalls > 0 && next > budget.MaxToolCalls {
+			return nil, &ExecutionBudgetExceededError{Dimension: "tool_calls", Limit: int64(budget.MaxToolCalls), Observed: int64(next)}
+		}
+		if state.CountedToolCallIDs == nil {
+			state.CountedToolCallIDs = make(map[string]bool, len(unseenCallIDs))
+		}
+		for _, callID := range unseenCallIDs {
+			if callID != "" {
+				state.CountedToolCallIDs[callID] = true
+			}
+		}
+		state.ToolCalls = next
+		return resolved, nil
+	}
 }
 
 func runtimeGraphNativeToolsPostHandlerWithTranscript(transcript *ToolCallTranscript) func(context.Context, []*einoschema.Message, *runtimeGraphNativeState) ([]*einoschema.Message, error) {

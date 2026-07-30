@@ -21,6 +21,7 @@ const (
 // RuntimeTerminalOutcome 表示 runner 完成后向 runtime persistence 回传的安全终态信号。
 type RuntimeTerminalOutcome struct {
 	Status          string
+	StopReason      ExecutionStopReason
 	Content         string
 	Error           error
 	ToolSideEffects bool
@@ -71,6 +72,7 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 	run := p.RecordSet.Run
 	step := p.RecordSet.Step
 	status := normalizeRuntimeTerminalStatus(outcome.Status, outcome.Error)
+	stopReason := NormalizeExecutionStopReason(status, outcome.Error, outcome.StopReason)
 	runToStatus := TaskRunStatusCompleted
 	stepToStatus := TaskStepStatusSuccess
 	if status == RuntimeTerminalStatusFailed {
@@ -92,8 +94,8 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		SubjectID:   step.ID,
 		FromStatus:  step.Status,
 		ToStatus:    stepToStatus,
-		Reason:      "runner_terminal_outcome_observed",
-		Metadata:    map[string]any{"safe_label": "step_terminal_observed", "terminal_status": status},
+		Reason:      string(stopReason),
+		Metadata:    map[string]any{"safe_label": "step_terminal_observed", "terminal_status": status, "stop_reason": stopReason},
 		OccurredAt:  now,
 	}); err != nil {
 		return err
@@ -105,8 +107,8 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		SubjectID:   run.ID,
 		FromStatus:  run.Status,
 		ToStatus:    runToStatus,
-		Reason:      "runner_terminal_outcome_observed",
-		Metadata:    map[string]any{"safe_label": "run_terminal_observed", "terminal_status": status},
+		Reason:      string(stopReason),
+		Metadata:    map[string]any{"safe_label": "run_terminal_observed", "terminal_status": status, "stop_reason": stopReason},
 		OccurredAt:  now.Add(time.Millisecond),
 	}); err != nil {
 		return err

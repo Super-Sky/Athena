@@ -244,11 +244,13 @@ func buildOpenAPIPaths() map[string]any {
 				"summary":     "创建一次目标驱动 Agent Run",
 				"operationId": "createAgentRun",
 				"security":    []map[string]any{{"AppToken": []string{}}},
-				"parameters":  agentRunAuthHeaderParameters(),
+				"parameters":  append(agentRunAuthHeaderParameters(), agentRunAsyncRequestHeaderParameters()...),
 				"requestBody": jsonRequest("AgentRunCreateRequest", true),
 				"responses": map[string]any{
 					"201": jsonResponse("Agent Run 创建结果", "AgentRunResponse"),
+					"202": jsonResponse("持久异步 Agent Run 已接受", "AsyncAgentRunResponse"),
 					"400": jsonResponse("错误请求", "ErrorResponse"),
+					"409": jsonResponse("幂等 key 与不同请求冲突", "ErrorResponse"),
 					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"403": jsonResponse("请求 scope 与应用身份不一致", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
@@ -280,6 +282,7 @@ func buildOpenAPIPaths() map[string]any {
 				"requestBody": jsonRequest("AgentRunResumeRequest", true),
 				"responses": map[string]any{
 					"201": jsonResponse("Agent Run 续跑结果", "AgentRunResponse"),
+					"202": jsonResponse("等待态异步 Agent Run 已重新投递", "AsyncAgentRunResponse"),
 					"400": jsonResponse("错误请求", "ErrorResponse"),
 					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("原 Agent Run 不存在", "ErrorResponse"),
@@ -296,10 +299,31 @@ func buildOpenAPIPaths() map[string]any {
 				"parameters":  append(pathIDParameter("runID", "runtime run ID"), agentRunAuthHeaderParameters()...),
 				"requestBody": jsonRequest("AgentRunCancelRequest", false),
 				"responses": map[string]any{
-					"409": jsonResponse("当前同步 MVP 不支持取消或 run 已终态", "AgentRunResponse"),
+					"202": jsonResponse("异步 Agent Run 已取消或已记录取消请求", "AsyncAgentRunResponse"),
+					"409": jsonResponse("当前非 async 同步路径不支持取消或 run 已终态", "AgentRunResponse"),
 					"401": jsonResponse("应用身份无效", "ErrorResponse"),
 					"404": jsonResponse("Agent Run 不存在", "ErrorResponse"),
 					"503": jsonResponse("runtime persistence 未配置", "ErrorResponse"),
+				},
+			},
+		},
+		"/api/agent/runs/{runID}/events": map[string]any{
+			"get": map[string]any{
+				"tags":        []string{"agent-runs"},
+				"summary":     "回放持久异步 Agent Run 生命周期事件",
+				"operationId": "streamAsyncAgentRunEvents",
+				"security":    []map[string]any{{"AppToken": []string{}}},
+				"parameters": append(append(pathIDParameter("runID", "异步 run ID"), agentRunAuthHeaderParameters()...), map[string]any{
+					"name": "Last-Event-ID", "in": "header", "required": false,
+					"schema": map[string]any{"type": "string"}, "description": "最后成功接收的单调事件 cursor。",
+				}),
+				"responses": map[string]any{
+					"200": map[string]any{"description": "SSE lifecycle event stream", "content": map[string]any{
+						"text/event-stream": map[string]any{"schema": map[string]any{"type": "string"}},
+					}},
+					"400": jsonResponse("事件 cursor 无效", "ErrorResponse"),
+					"401": jsonResponse("应用身份无效", "ErrorResponse"),
+					"404": jsonResponse("异步 Agent Run 不存在", "ErrorResponse"),
 				},
 			},
 		},
@@ -1454,8 +1478,18 @@ func buildOpenAPISchemas() map[string]any {
 			"query":            stringSchema("兼容字段；goal 为空时作为目标。", "Summarize portfolio risk."),
 			"success_criteria": arraySchema(map[string]any{"type": "string"}),
 			"constraints":      map[string]any{"type": "object", "additionalProperties": true},
-			"budget":           map[string]any{"type": "object", "additionalProperties": true},
-			"context_assets":   arraySchema(map[string]any{"type": "object", "additionalProperties": true}),
+			"budget": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"max_duration_ms": map[string]any{"type": "integer", "minimum": 1, "maximum": 86_400_000},
+					"deadline_at":     map[string]any{"type": "string", "format": "date-time"},
+					"max_model_calls": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
+					"max_tool_calls":  map[string]any{"type": "integer", "minimum": 1, "maximum": 1000},
+					"max_tokens":      map[string]any{"type": "integer", "minimum": 1, "maximum": 10_000_000},
+				},
+			},
+			"context_assets": arraySchema(map[string]any{"type": "object", "additionalProperties": true}),
 			"tools": map[string]any{
 				"type": "array",
 				"items": map[string]any{
@@ -1541,8 +1575,8 @@ func buildOpenAPISchemas() map[string]any {
 			"resumed_from_run_id": stringSchema("若为续跑，则记录原 run ID。", "run_20260507_000"),
 			"session_id":          stringSchema("Athena session ID。", "sess_019d7286"),
 			"status":              stringSchema("run 请求状态。", "completed"),
-			"stop_reason":         stringSchema("停止原因或最后 lifecycle reason。", "runner_terminal_outcome_observed"),
-			"output":              stringSchema("同步 MVP 的 assistant 输出。", "Here is the concise answer."),
+			"stop_reason":         map[string]any{"type": "string", "description": "稳定停止原因。", "enum": []string{"success", "budget_exhausted", "deadline_exceeded", "awaiting_input", "awaiting_external_data", "governance_denied", "cancelled", "unrecoverable_error"}, "example": "success"},
+			"output":              stringSchema("同步路径的 assistant 输出。", "Here is the concise answer."),
 			"action_type":         stringSchema("等待或人工接管动作类型。", "information_request"),
 			"action":              map[string]any{"type": "object", "additionalProperties": true},
 			"wait_state":          map[string]any{"type": "object", "additionalProperties": true},
@@ -1557,6 +1591,21 @@ func buildOpenAPISchemas() map[string]any {
 			"trace_available":     boolSchema("是否可从 runtime persistence 读取 trace。", true),
 			"metadata":            map[string]any{"type": "object", "additionalProperties": true},
 		}, []string{"status", "trace_available"}),
+		"AsyncAgentRunResponse": objectSchema(map[string]any{
+			"job_id":         stringSchema("持久异步 job ID。", "019f8ca0-2ba4-7c62-9f69-66746065b1f3"),
+			"run_id":         stringSchema("对调用方稳定的异步 run ID。", "019f8ca0-2ba4-7c62-9f69-66746065b1f3"),
+			"status":         map[string]any{"type": "string", "enum": []string{"delivery_pending", "queued", "running", "waiting", "retry_scheduled", "completed", "failed", "cancelled"}},
+			"attempt":        map[string]any{"type": "integer", "format": "int32"},
+			"max_attempts":   map[string]any{"type": "integer", "format": "int32"},
+			"duplicate":      map[string]any{"type": "boolean"},
+			"events_url":     map[string]any{"type": "string"},
+			"runtime_run_id": map[string]any{"type": "string"},
+			"result":         refSchema("AgentRunResponse"),
+			"error_code":     map[string]any{"type": "string"},
+			"error_message":  map[string]any{"type": "string"},
+			"created_at":     map[string]any{"type": "string", "format": "date-time"},
+			"updated_at":     map[string]any{"type": "string", "format": "date-time"},
+		}, []string{"job_id", "run_id", "status", "attempt", "max_attempts", "events_url", "created_at", "updated_at"}),
 		"AgentRunTraceResponse": objectSchema(map[string]any{
 			"run":         refSchema("RuntimeRun"),
 			"steps":       arraySchema(refSchema("RuntimeStep")),
@@ -2522,6 +2571,13 @@ func agentRunAuthHeaderParameters() []map[string]any {
 		{"name": appAuthHeaderAppID, "in": "header", "required": true, "description": "Authenticated application ID.", "schema": map[string]any{"type": "string"}},
 		{"name": appAuthHeaderWorkspaceID, "in": "header", "required": true, "description": "Authorized workspace scope.", "schema": map[string]any{"type": "string"}},
 		{"name": appAuthHeaderAppInstanceID, "in": "header", "required": true, "description": "Authorized application-instance scope.", "schema": map[string]any{"type": "string"}},
+	}
+}
+
+func agentRunAsyncRequestHeaderParameters() []map[string]any {
+	return []map[string]any{
+		{"name": "Prefer", "in": "header", "required": false, "description": "Set to respond-async to request durable background execution.", "schema": map[string]any{"type": "string", "enum": []string{"respond-async"}}},
+		{"name": asyncAgentRunIdempotencyKey, "in": "header", "required": false, "description": "Required when Prefer is respond-async; same key and request hash reuse the original job.", "schema": map[string]any{"type": "string"}},
 	}
 }
 
