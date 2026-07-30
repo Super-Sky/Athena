@@ -117,6 +117,7 @@ curl http://127.0.0.1:8090/swagger/openapi.json
 - `go test ./...`
 - `cd web && npm ci && npm run build`
 - `docker compose -f deploy/docker-compose.cloud.yml config`
+- `cp deploy/athena.runtime.env.example deploy/athena.runtime.env && docker compose --env-file deploy/athena.runtime.env -f deploy/docker-compose.runtime.yml config`
 
 ## 仓库结构
 

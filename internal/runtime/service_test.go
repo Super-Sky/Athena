@@ -268,6 +268,94 @@ func TestServicePrepareAppliesSpecificToolChoiceToAllowedTools(t *testing.T) {
 	}
 }
 
+func TestServicePreparePreservesGovernedCanonicalToolDeclarations(t *testing.T) {
+	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
+	prepared, err := service.Prepare(context.Background(), &session.Session{ID: "sess-tool-schema"}, Input{
+		RequestID: "req-tool-schema",
+		SessionID: "sess-tool-schema",
+		Query:     "look up profile",
+		ToolDeclarations: []ToolDefinition{
+			{
+				Type: ToolTypeFunction,
+				Function: ToolFunctionDefinition{
+					Name:        "lookup_profile",
+					Description: "Caller schema.",
+					Parameters:  map[string]any{"type": "object"},
+				},
+			},
+		},
+		ModelSelection: &model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if len(prepared.Spec.Tools.AllowedTools) != 1 || prepared.Spec.Tools.AllowedTools[0] != "lookup_profile" {
+		t.Fatalf("allowed tools = %#v, want lookup_profile", prepared.Spec.Tools.AllowedTools)
+	}
+	if len(prepared.Spec.Tools.Declarations) != 1 || prepared.Spec.Tools.Declarations[0].Function.Description != "Caller schema." {
+		t.Fatalf("tool declarations = %#v, want caller schema", prepared.Spec.Tools.Declarations)
+	}
+}
+
+func TestServicePrepareAllowsBuiltinDeterministicToolDeclarations(t *testing.T) {
+	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
+	prepared, err := service.Prepare(context.Background(), &session.Session{ID: "sess-builtin-tools"}, Input{
+		RequestID: "req-builtin-tools",
+		SessionID: "sess-builtin-tools",
+		Query:     "calculate and validate a structured result",
+		ToolDeclarations: []ToolDefinition{
+			{Type: ToolTypeFunction, Function: ToolFunctionDefinition{Name: "calculator", Parameters: map[string]any{"type": "object"}}},
+			{Type: ToolTypeFunction, Function: ToolFunctionDefinition{Name: "json_schema_validate", Parameters: map[string]any{"type": "object"}}},
+		},
+		ModelSelection: &model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if !runtimeContainsString(prepared.Spec.Tools.AllowedTools, "calculator") || !runtimeContainsString(prepared.Spec.Tools.AllowedTools, "json_schema_validate") {
+		t.Fatalf("allowed tools = %#v, want deterministic built-ins", prepared.Spec.Tools.AllowedTools)
+	}
+	if len(prepared.Spec.Tools.Declarations) != 2 {
+		t.Fatalf("tool declarations = %#v, want two canonical built-ins", prepared.Spec.Tools.Declarations)
+	}
+}
+
+func TestServicePrepareRejectsUnregisteredCanonicalToolDeclaration(t *testing.T) {
+	service := newTestRuntimeService(t, policy.AllowAll(), &stubTurnExecutor{})
+	_, err := service.Prepare(context.Background(), &session.Session{ID: "sess-unknown-tool"}, Input{
+		RequestID: "req-unknown-tool",
+		SessionID: "sess-unknown-tool",
+		Query:     "call unknown",
+		ToolDeclarations: []ToolDefinition{
+			{
+				Type:     ToolTypeFunction,
+				Function: ToolFunctionDefinition{Name: "unknown_tool"},
+			},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "is not registered") {
+		t.Fatalf("Prepare() error = %v, want unregistered tool error", err)
+	}
+}
+
 func TestEinoTurnExecutorPrepareUsesRequestedModelWithoutFallback(t *testing.T) {
 	provider := &recordingModelProvider{}
 	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())
@@ -310,6 +398,41 @@ func TestEinoTurnExecutorPrepareUsesRequestedModelWithoutFallback(t *testing.T) 
 	}
 	if spec.Model.ExecutedConfig == nil || spec.Model.ExecutedConfig.ModelRecordID != "model-primary" {
 		t.Fatalf("executed config = %#v, want model-primary", spec.Model.ExecutedConfig)
+	}
+}
+
+func TestEinoTurnExecutorFreezesToolRevisionFromExecutionSnapshot(t *testing.T) {
+	provider := &recordingModelProvider{}
+	definitions, err := tools.DemoDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calculator := definitions["calculator"]
+	resolverRef := NewRunRevisionRef("tool", "calculator", "", "resolver_snapshot", map[string]any{"description": "old definition"})
+	calculator.Description = "execution snapshot definition"
+	executor := EinoTurnExecutor{
+		ModelProvider: provider,
+		ToolProvider: func(context.Context) map[string]tools.Definition {
+			return map[string]tools.Definition{"calculator": calculator}
+		},
+		Observability: observability.NewNoopManager(),
+	}
+	spec := &ExecutionSpec{
+		Skill: SkillSpec{PrimarySkill: "analysis", Guidance: "calculate"},
+		Tools: ToolSpec{
+			AllowedTools: []string{"calculator"}, Sources: map[string]string{"calculator": "dynamic_catalog"},
+			RevisionRefs: []RunRevisionRef{resolverRef},
+		},
+		Model: buildModelSpec(&model.Selection{Primary: model.ChatConfig{ProviderID: "provider", ModelRecordID: "model", ProviderModelID: "model"}}),
+	}
+	if _, err := executor.Prepare(context.Background(), RuntimeState{RequestID: "req-tool-revision", SessionID: "sess-tool-revision", Turn: 1}, spec, nil); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if len(spec.Tools.RevisionRefs) != 1 || spec.Tools.RevisionRefs[0].ContentSHA256 == resolverRef.ContentSHA256 {
+		t.Fatalf("tool refs = %#v, want execution snapshot revision", spec.Tools.RevisionRefs)
+	}
+	if spec.Tools.RevisionRefs[0].Source != "dynamic_catalog" {
+		t.Fatalf("tool source = %q, want dynamic_catalog", spec.Tools.RevisionRefs[0].Source)
 	}
 }
 
@@ -370,6 +493,104 @@ func TestEinoTurnExecutorPrepareFallsBackAndPreservesRequestedModel(t *testing.T
 	}
 	if spec.Model.ExecutedConfig == nil || spec.Model.ExecutedConfig.ModelRecordID != "model-fallback" {
 		t.Fatalf("executed config = %#v, want model-fallback", spec.Model.ExecutedConfig)
+	}
+}
+
+func TestEinoTurnExecutorPrepareRetriesPrimaryBeforeFailover(t *testing.T) {
+	provider := &recordingModelProvider{
+		fail: map[string]error{"model-primary": context.DeadlineExceeded},
+	}
+	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())
+	spec := &ExecutionSpec{
+		Skill: SkillSpec{PrimarySkill: "user_overview", Guidance: "helpful"},
+		Model: buildModelSpec(&model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+			Fallback: &model.ChatConfig{
+				ProviderID:       "provider-fallback",
+				ProviderName:     "Fallback Provider",
+				ProviderProtocol: "anthropic",
+				ModelRecordID:    "model-fallback",
+				ProviderModelID:  "claude-fallback",
+				ModelDisplayName: "Fallback Model",
+			},
+		}),
+		Metadata: ExecutionMetadata{
+			Constraints: map[string]any{
+				"runtime_model_retry_max_attempts": 2,
+				"runtime_model_failover_enabled":   true,
+			},
+		},
+	}
+
+	prepared, err := executor.Prepare(context.Background(), RuntimeState{RequestID: "req-model-retry", SessionID: "sess-model-retry", Turn: 1}, spec, nil)
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if prepared == nil || prepared.Runner == nil {
+		t.Fatalf("expected runner to be prepared")
+	}
+	if len(provider.calls) != 4 {
+		t.Fatalf("provider calls = %d, want 4 (3 primary retries + 1 fallback)", len(provider.calls))
+	}
+	if provider.calls[0].ModelRecordID != "model-primary" || provider.calls[1].ModelRecordID != "model-primary" || provider.calls[2].ModelRecordID != "model-primary" {
+		t.Fatalf("provider calls first 3 = %#v, want primary retries", provider.calls[:3])
+	}
+	if provider.calls[3].ModelRecordID != "model-fallback" {
+		t.Fatalf("provider fallback call = %#v, want model-fallback", provider.calls[3])
+	}
+	if spec.Model.FallbackReason != "primary_model_unavailable_after_retry" {
+		t.Fatalf("fallback reason = %q, want primary_model_unavailable_after_retry", spec.Model.FallbackReason)
+	}
+	if got := spec.Metadata.Constraints["runtime_model_prepare_primary_attempts"]; got != 3 {
+		t.Fatalf("runtime_model_prepare_primary_attempts = %#v, want 3", got)
+	}
+}
+
+func TestEinoTurnExecutorPrepareRespectsFailoverDisabled(t *testing.T) {
+	provider := &recordingModelProvider{
+		fail: map[string]error{"model-primary": context.DeadlineExceeded},
+	}
+	executor := NewEinoTurnExecutor(config.Config{}, provider, map[string]tools.Definition{}, observability.NewNoopManager())
+	spec := &ExecutionSpec{
+		Skill: SkillSpec{PrimarySkill: "user_overview", Guidance: "helpful"},
+		Model: buildModelSpec(&model.Selection{
+			Primary: model.ChatConfig{
+				ProviderID:       "provider-primary",
+				ProviderName:     "Primary Provider",
+				ProviderProtocol: "openai_compatible",
+				ModelRecordID:    "model-primary",
+				ProviderModelID:  "gpt-primary",
+				ModelDisplayName: "Primary Model",
+			},
+			Fallback: &model.ChatConfig{
+				ProviderID:       "provider-fallback",
+				ProviderName:     "Fallback Provider",
+				ProviderProtocol: "anthropic",
+				ModelRecordID:    "model-fallback",
+				ProviderModelID:  "claude-fallback",
+				ModelDisplayName: "Fallback Model",
+			},
+		}),
+		Metadata: ExecutionMetadata{
+			Constraints: map[string]any{
+				"runtime_model_failover_enabled": false,
+			},
+		},
+	}
+
+	_, err := executor.Prepare(context.Background(), RuntimeState{RequestID: "req-model-no-failover", SessionID: "sess-model-no-failover", Turn: 1}, spec, nil)
+	if err == nil {
+		t.Fatalf("Prepare() expected error when failover is disabled and primary fails")
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1 primary call only", len(provider.calls))
 	}
 }
 

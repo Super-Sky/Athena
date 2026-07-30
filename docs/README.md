@@ -13,8 +13,11 @@ Recommended reading order:
 7. `云端部署与交付.md`
 8. `platform-依赖与增强.md`
 9. `当前能力总览.md`
+10. `local-docker-runtime.zh-CN.md` / `local-docker-runtime.en-US.md`
 
 Notes:
 
-- Historical internal planning snapshots are not included in this public mirror.
+- Current feature notes live in `features/`.
+- Active version plans live in `vX.Y.Z/plan/` when a versionized task is in progress.
+- Historical internal planning snapshots are not included in this public mirror unless they are restored as current active plans.
 - The docs here describe the current runtime, control-plane, and integration boundaries.

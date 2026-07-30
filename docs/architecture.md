@@ -34,6 +34,7 @@ Athena 的目标不是某一个具体业务场景的聊天后端，而是一个�
 - 统一承接聊天、事件、任务和工作流步骤等不同入口
 - 把输入归一化为一致的任务语义模型
 - 消费结构化上下文资产，而不是依赖某个平台的专有主数据格式
+- 为业务应用提供按 `app_id / owner_id / scope` 隔离的摘要记忆与 context-asset 组装接口；该接口只承接受治理摘要和安全 trace，不承接业务主表
 - 在能力声明、执行治理、上下文保留和结果交付之间维持稳定边界
 - 支持 waiting / resume、补数请求、工具调用、多轮执行和恢复继续
 - 提供可审计、可版本化、可回滚的 system truth 与 control-plane
@@ -93,6 +94,31 @@ flowchart TD
 
 Transport 只处理协议，不承载领域推理。
 
+当前 Transport 已提供面向业务应用的 Agent Run API：
+
+- `POST /api/agent/runs`
+- `GET /api/agent/runs/:runID`
+- `POST /api/agent/runs/:runID/resume`
+- `POST /api/agent/runs/:runID/cancel`
+- `GET /api/agent/runs/:runID/trace`
+- `GET /api/agent/runs/:runID/timeline`
+
+This API is an app-facing runtime entrypoint, not a business-domain API. It accepts goal, criteria, constraints, budget, context assets, memory scope, governance refs and declarative tool inputs, then maps them into the generic app/runtime path. Domain objects remain owned by the host application.
+
+App-facing Agent Run routes optionally enter through `internal/server/app_auth.go`. When enabled, a dedicated app token authenticates one configured identity and exact workspace/app-instance pair. The authenticated scope becomes authoritative on create/resume, and run ownership is checked immediately after loading TaskRun but before any step/trace/usage/projection child records. This keeps missing and cross-tenant resources indistinguishable while leaving authenticated Control Plane sessions as system-admin reads.
+
+面向应用的 Agent Run 路由可先经过 `internal/server/app_auth.go`。门禁开启时，专用 app token 会认证一个已配置身份及精确 workspace/app-instance 组合；该 scope 在 create/resume 中成为权威归属。读取时会在加载 TaskRun 后、读取任何 step/trace/usage/projection 子记录前完成 ownership 校验，使不存在与跨租户资源不可区分，同时保留已认证 Control Plane session 的 system-admin 读取能力。
+
+The timeline endpoint is a read projection over Athena-owned runtime records. It merges loop steps, lifecycle events, callback/tool traces, usage and delivery projections by timestamp, preserving only safe labels, redacted payloads and metadata for the admin detail view. It does not become a second event store or a host application's business audit log.
+
+Privileged trace detail is a separate encrypted plane rather than a wider timeline contract. Request-local model/tool callbacks and the Skill/context assembly summary are redacted before encryption, bounded by sample/record/run/retention policy, and correlated through opaque refs stored only in safe trace metadata. App reads strip those refs; authenticated Control Plane reads are run-bound, no-store, and fail closed when immutable access audit cannot be written.
+
+特权 trace 明细是独立加密平面，不会扩张 timeline 契约。请求级 model/tool callback 与 Skill/Context assembly 摘要会在加密前脱敏，并受采样、单条/单 run 容量与保留期限制；安全 trace metadata 只保存 opaque 引用。应用读取会移除引用，控制面读取绑定 run、禁止缓存，并在访问审计不可写时 fail closed。
+
+`agent_run_manifest.v1` is captured once at the Eino persistence boundary and stored with the immutable TaskRun metadata envelope. The read projection exposes that persisted typed value once at timeline top level; it does not join current registries or configuration during reads. Raw prompt, tool payload, provider headers, context content and policy bodies are represented only by canonical SHA-256 references.
+
+`agent_run_manifest.v1` 在 Eino 持久化边界一次性捕获，并随不可变 TaskRun metadata 包络保存。读取投影只把该 typed 值在 timeline 顶层暴露一次，不在读取时关联当前 registry 或配置。Prompt、tool payload、provider header、context 内容和策略正文仅以规范 SHA-256 引用表达。
+
 ### 3.3 App Layer
 
 负责：
@@ -104,6 +130,18 @@ Transport 只处理协议，不承载领域推理。
 
 App 是运行时编排层，不是领域逻辑中心。
 
+Agent Run API 当前以同步 MVP 方式复用 App Layer：
+
+- `goal` 会成为 runtime 当前请求目标。
+- `context_assets` 继续走 Context Asset Plane 的默认注入、覆盖、禁用和优先级逻辑。
+- Transport 将 OpenAI-compatible `tools` / `tool_choice` 转为 provider-neutral runtime contract；Eino adapter 只在执行边界转换为 `ToolInfo`、模型调用选项和 `schema.Message`。
+- graph-native ReAct loop 通过 per-execution transcript 记录 assistant tool-call 轮次、稳定 ID、参数、tool result、错误与 timing；响应保留有序 message 结构，持久化 trace 仅投影安全摘要。
+- 当前 declaration 必须关联 Athena live catalog 中已启用的工具。业务应用可通过 authenticated remote registry 提供 HTTP callback；runtime resolver 与 Eino executor 对每次 operation 使用同一目录快照。
+- live catalog 同时包含 `calculator`、`current_time` 和 `json_schema_validate` 三个无副作用 Core 工具；它们不访问业务对象、网络或文件系统。HTTP/search/file 等能力仍需在受限 Enhancement 任务中接入。
+- `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；`cancel` 先暴露稳定路由和明确 unsupported / terminal response，不伪造异步取消。
+
+The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in transport, Eino-specific conversion stays in the runtime adapter, and app-owned implementations stay behind the versioned HTTP envelope.
+
 ### 3.4 Control Plane Layer
 
 负责：
@@ -111,6 +149,8 @@ App 是运行时编排层，不是领域逻辑中心。
 - scene / skill / tool / governance / runtime config / tool governance policy 的可调视图
 - system truth、system resource、版本快照、审计和回滚
 - tool governance effective policy 与 decision log 的控制面验收视图
+- app-owned remote tool registration、配置版本与重启恢复
+- remote tool outbound identity 的 reference-only 持久化与 network-boundary secret resolution；credential value 不进入 Control Plane、runtime trace 或 API read model
 - 最小登录、锁定状态和控制台 contract
 
 它不负责：
@@ -147,6 +187,8 @@ App 是运行时编排层，不是领域逻辑中心。
 
 能力本身是通用能力；是否允许使用，由治理层决定。
 
+Remote business tools 通过线程安全动态 catalog 进入该层。Control Plane 持有注册事实，业务应用持有 schema 实现与业务数据；Athena 不在注册文档中保存 callback credentials。
+
 ### 3.7 Execution Governance Layer
 
 负责在 capability 和真正执行之间做统一判断：
@@ -157,6 +199,8 @@ App 是运行时编排层，不是领域逻辑中心。
 - fact quality / policy checkpoint
 
 治理语义不能散落在单个 skill、tool 或 adapter 中。
+
+Remote adapter 会在 HTTP 调用前落实 allow、deny、redaction 与 sandbox-ref；网络出口同时受 exact-origin allowlist、timeout、response-size、redirect、retry/idempotency 约束。
 
 ### 3.8 Session & Continuity Plane
 
@@ -232,6 +276,8 @@ Graph callbacks 和 node outputs 不直接替代 Athena persistence，而是投�
 - model token、tool invocation、retriever hit、sandbox execution -> generic `Usage`
 - final answer、structured result、candidate update -> `ProjectionCandidate`
 
+`ProjectionCandidate` 是 runtime candidate/read-model，不是业务 truth。写入边界要求 projection schema 留在 `runtime_projection.*` namespace，materialization scope 留在 `projection_candidate_only`，并拒绝将 candidate、target 或 typed semantic payload 声明为业务 `EvidenceRecord`。
+
 Eino checkpoint payload 是 runtime-private opaque state，不进入 HTTP / SSE / Control Plane public contract。当前 runtime 已有 private checkpoint byte-store boundary，Postgres-backed runtime store 会通过 `runtime_graph_checkpoints` 表保存 checkpoint payload 与 safe metadata；外部可见恢复语义仍由 Athena `WaitState` / resume token / deferred queue contract 承接，Batch 2 再提供 read API / UI 级展示和恢复入口。
 
 除非某个能力必须位于 Athena core contract，否则后续不再优先手写一套并行 orchestration framework。需要新增编排能力时，先评估能否通过 Eino Graph / Workflow / callback / option / checkpoint 组合表达；只有 Eino 表达不了的平台契约，才在 Athena core 中新增自有抽象。
@@ -305,7 +351,7 @@ Athena 内核不再直接定义某一个业务领域。领域能力应该通过�
   - System Validation、验证型 MCP server、deterministic validation flow，用于证明 core 能力闭环真实工作。
   - 当前已落地的 `athena-validation-mcp` 是 Validation layer 的轻量 control-plane HTTP adapter，用于验证 tool schema ingestion、governance decision、safe result 和 redacted trace；它不定义标准 MCP transport，也不承接业务 truth。
 - 当前 deterministic validation flow 已通过 `/api/control-plane/runtime/validation-runs` 串起 Eino Graph、runtime persistence、tool governance、Validation MCP、`external_sandbox_ref`、trace、usage 和 projection。
-- Control Plane 额外通过 `GET /api/control-plane/runtime/contracts/foundation` 展示 Athena-owned RuntimeContract、TaskTypeRegistry、HookBinding 和 active System Truth pointer，并通过 `PUT /api/control-plane/runtime/contracts/{contractID}`、`PUT /api/control-plane/runtime/task-types/{typeKey}`、`PUT /api/control-plane/runtime/hook-bindings/{bindingID}` 提供最小 foundation write path；这些对象会在启动阶段和 `SyncSystemResources` 之后按 active truth 自动补齐，是 core truth，不是业务 evidence 或 Eino private payload。
+- Control Plane 额外通过 `GET /api/control-plane/runtime/contracts/foundation` 展示 Athena-owned RuntimeContract、TaskTypeRegistry、HookBinding 和 active System Truth pointer，并通过 `PUT /api/control-plane/runtime/contracts/{contractID}`、`PUT /api/control-plane/runtime/task-types/{typeKey}`、`PUT /api/control-plane/runtime/hook-bindings/{bindingID}` 提供最小 foundation write path；这些对象会在启动阶段和 `SyncSystemResources` 之后按 active truth 自动补齐，其中 `chat` 作为 chat / Agent Run 公共入口的默认注册任务类型随 foundation 一同初始化；这些记录是 core truth，不是业务 evidence 或 Eino private payload。
 - Enhancement Layer
   - 场景包、应用 skill、应用知识库、provider adapter、业务 workflow、应用 runtime 判断逻辑。
 - Application / Business Truth

@@ -1,0 +1,104 @@
+# docker-compose.runtime.yml starts Athena with local PostgreSQL and Redis dependencies.
+# docker-compose.runtime.yml 使用本地 PostgreSQL 与 Redis 依赖启动 Athena。
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-athena}
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-athena-local-change-me}
+    ports:
+      - "${ATHENA_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - athena-runtime-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${ATHENA_REDIS_PORT:-6379}:6379"
+    volumes:
+      - athena-runtime-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  athena-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: "${DOCKER_BUILD_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${DOCKER_BUILD_HTTPS_PROXY:-}"
+        NO_PROXY: "${DOCKER_BUILD_NO_PROXY:-}"
+    environment:
+      HTTP_PORT: "8080"
+      SESSION_STORE_DRIVER: postgres
+      MODEL_STORE_DRIVER: postgres
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-athena}
+      DB_USERNAME: ${POSTGRES_USER:-athena}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-athena-local-change-me}
+      DB_CONFIG: "sslmode=disable client_encoding=UTF8"
+      DB_MAX_IDLE_CONNS: "10"
+      DB_MAX_OPEN_CONNS: "70"
+      DB_CONN_MAX_LIFETIME_SECONDS: "300"
+      REDIS_URL: "redis://redis:6379/0"
+      SECURITY_ENCRYPTION_KEY: ${SECURITY_ENCRYPTION_KEY:-replace-before-nonlocal-use}
+      CONTROL_PLANE_STORE_PATH: /app/config/controlplane/runtime-compose.json
+      CONTROL_PLANE_ALLOWED_ORIGINS: "http://localhost:${ATHENA_WEB_PORT:-5173},http://127.0.0.1:${ATHENA_WEB_PORT:-5173}"
+      REMOTE_TOOL_ALLOWED_ORIGINS: ${REMOTE_TOOL_ALLOWED_ORIGINS:-http://fund-api:8081}
+      REMOTE_TOOL_MAX_RESPONSE_BYTES: "1048576"
+      SHARED_ROOT_DIR: /srv/shared
+      OBSERVABILITY_LOG_LEVEL: ${OBSERVABILITY_LOG_LEVEL:-info}
+    entrypoint: ["/bin/sh", "-lc"]
+    command: ["/app/athena migrate && exec /app/athena api-server"]
+    ports:
+      - "${ATHENA_HTTP_PORT:-8080}:8080"
+    volumes:
+      - athena-runtime-controlplane:/app/config/controlplane
+      - athena-runtime-shared:/srv/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/athena", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  athena-web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: "${DOCKER_BUILD_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${DOCKER_BUILD_HTTPS_PROXY:-}"
+        NO_PROXY: "${DOCKER_BUILD_NO_PROXY:-}"
+    profiles: ["control-plane"]
+    ports:
+      - "${ATHENA_WEB_PORT:-5173}:80"
+    depends_on:
+      athena-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  athena-runtime-postgres:
+  athena-runtime-redis:
+  athena-runtime-controlplane:
+  athena-runtime-shared:

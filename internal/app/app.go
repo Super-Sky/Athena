@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	einomessage "github.com/cloudwego/eino/schema"
@@ -32,21 +33,27 @@ import (
 // Service is the app-layer orchestrator that bridges transport, session rules, fast path hooks, and runtime execution.
 // Service 是 app 层的总编排器，负责衔接 transport、session 规则、fast path 挂点与 runtime 执行。
 type Service struct {
-	Config        config.Config
-	Policy        policy.CapabilityPolicy
-	SessionStore  session.Store
-	ModelStore    model.Store
-	ModelProvider model.Provider
-	SkillStore    skills.Store
-	PackageStore  skills.PackageStore
-	SkillLoader   skills.Loader
-	ControlPlane  *controlplane.Manager
-	Observability *observability.Manager
-	Runtime       *runtime.Service
-	RuntimeStore  runtime.RuntimePersistenceStore
-	ValidationMCP *validationmcp.Server
-	FastPath      FastPathEvaluator
-	requestSlots  chan struct{}
+	Config                config.Config
+	Policy                policy.CapabilityPolicy
+	SessionStore          session.Store
+	ModelStore            model.Store
+	ModelProvider         model.Provider
+	ToolCatalog           *tools.Catalog
+	SkillStore            skills.Store
+	PackageStore          skills.PackageStore
+	SkillLoader           skills.Loader
+	ControlPlane          *controlplane.Manager
+	Observability         *observability.Manager
+	Runtime               *runtime.Service
+	RuntimeStore          runtime.RuntimePersistenceStore
+	PrivilegedTraceStore  runtime.PrivilegedTracePayloadStore
+	PrivilegedTracePolicy runtime.PrivilegedTracePayloadPolicy
+	ExternalMemory        *memory.ExternalStore
+	ValidationMCP         *validationmcp.Server
+	FastPath              FastPathEvaluator
+	requestSlots          chan struct{}
+	remoteToolMu          sync.Mutex
+	remoteTools           map[string]struct{}
 }
 
 // ChatRequest is the app-layer request contract before runtime normalization.
@@ -72,6 +79,7 @@ type ChatRequest struct {
 	AppContext            map[string]any
 	InputPayload          map[string]any
 	ModelID               string
+	ToolDeclarations      []runtime.ToolDefinition
 	Customization         customization.UserCustomization
 	Supplement            *runtime.SupplementPayload
 	TimeoutAfter          time.Duration
@@ -135,6 +143,7 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 	if err != nil {
 		panic(err)
 	}
+	toolCatalog := tools.NewCatalog(toolDefs)
 
 	if obs == nil {
 		obs = observability.NewDefaultManagerWithLevel(observability.LogLevel(cfg.Observability.LogLevel))
@@ -179,6 +188,9 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 		time.Duration(cfg.ControlPlane.SessionTTLSecs)*time.Second,
 		cfg.ControlPlane.MaxFailedAttempts,
 	)
+	if err := governBuiltinToolDefinitions(toolDefs, toolCatalog, controlPlane, obs); err != nil {
+		panic(fmt.Errorf("configure built-in tool governance: %w", err))
+	}
 	effectiveDefs, err := controlPlane.ApplySkillOverrides(context.Background(), registry.List())
 	if err != nil {
 		panic(err)
@@ -188,9 +200,11 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 	// Eino Graph is the default runtime execution surface; the wrapped executor preserves current turn behavior.
 	// Eino Graph 是默认 runtime 执行承载面；被包装的 executor 继续保持当前单轮行为。
 	checkpointStore, _ := runtimeStore.(runtime.RuntimeGraphCheckpointByteStore)
+	privilegedTraceStore, _ := runtimeStore.(runtime.PrivilegedTracePayloadStore)
+	privilegedTracePolicy := privilegedTracePayloadPolicyFromConfig(cfg)
 	turnExecutor := runtime.NewEinoGraphTurnExecutor(
-		runtime.NewEinoTurnExecutorWithCheckpointStore(cfg, provider, toolDefs, obs, checkpointStore),
-		runtime.EinoGraphTurnExecutorOptions{Store: runtimeStore},
+		runtime.NewEinoTurnExecutorWithCatalog(cfg, provider, toolCatalog, obs, checkpointStore),
+		runtime.EinoGraphTurnExecutorOptions{Store: runtimeStore, PayloadStore: privilegedTraceStore, PayloadPolicy: privilegedTracePolicy},
 	)
 
 	rt := runtime.NewService(
@@ -204,6 +218,9 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 		obs,
 	)
 	if resolver, ok := rt.CapabilityResolver.(runtime.DefaultCapabilityResolver); ok {
+		resolver.ToolProvider = func(context.Context) map[string]tools.Definition {
+			return toolCatalog.Snapshot()
+		}
 		resolver.RegistryProvider = func(context.Context) *skills.Registry {
 			registry, err := effectiveSkillRegistry(controlPlane, skillLoader)
 			if err != nil {
@@ -222,27 +239,60 @@ func NewServiceWithRuntimeStore(cfg config.Config, obs *observability.Manager, s
 	}
 
 	service := &Service{
-		Config:        cfg,
-		Policy:        p,
-		SessionStore:  sessionStore,
-		ModelStore:    modelStore,
-		ModelProvider: provider,
-		SkillStore:    skillStore,
-		PackageStore:  packageStore,
-		SkillLoader:   skillLoader,
-		ControlPlane:  controlPlane,
-		Observability: obs,
-		Runtime:       rt,
-		RuntimeStore:  runtimeStore,
-		ValidationMCP: validationmcp.NewServer(),
-		FastPath:      NoopFastPathEvaluator{},
-		requestSlots:  make(chan struct{}, cfg.Runtime.MaxConcurrentRequests),
+		Config:                cfg,
+		Policy:                p,
+		SessionStore:          sessionStore,
+		ModelStore:            modelStore,
+		ModelProvider:         provider,
+		ToolCatalog:           toolCatalog,
+		SkillStore:            skillStore,
+		PackageStore:          packageStore,
+		SkillLoader:           skillLoader,
+		ControlPlane:          controlPlane,
+		Observability:         obs,
+		Runtime:               rt,
+		RuntimeStore:          runtimeStore,
+		PrivilegedTraceStore:  privilegedTraceStore,
+		PrivilegedTracePolicy: privilegedTracePolicy,
+		ExternalMemory:        memory.NewExternalStore(),
+		ValidationMCP:         validationmcp.NewServer(),
+		FastPath:              NoopFastPathEvaluator{},
+		requestSlots:          make(chan struct{}, cfg.Runtime.MaxConcurrentRequests),
+		remoteTools:           make(map[string]struct{}),
+	}
+	if err := service.reloadRemoteToolCatalog(context.Background()); err != nil {
+		panic(fmt.Errorf("restore remote tool catalog failed: %w", err))
 	}
 	if err := service.syncRuntimeContractFoundation(context.Background()); err != nil {
 		panic(fmt.Errorf("sync runtime contract foundation failed: %w", err))
 	}
 
 	return service
+}
+
+func privilegedTracePayloadPolicyFromConfig(cfg config.Config) runtime.PrivilegedTracePayloadPolicy {
+	settings := cfg.Observability.PrivilegedTracePayload
+	disabledWorkspaces := make(map[string]struct{}, len(settings.DisabledWorkspaceIDs))
+	for _, workspaceID := range settings.DisabledWorkspaceIDs {
+		if workspaceID = strings.TrimSpace(workspaceID); workspaceID != "" {
+			disabledWorkspaces[workspaceID] = struct{}{}
+		}
+	}
+	return runtime.PrivilegedTracePayloadPolicy{
+		Enabled:               settings.CaptureEnabled,
+		CaptureModel:          settings.CaptureModel,
+		CaptureTools:          settings.CaptureTools,
+		CaptureContextSummary: settings.CaptureContextSummary,
+		SampleRate:            settings.SampleRate,
+		Retention:             time.Duration(settings.RetentionHours) * time.Hour,
+		MaxPayloadBytes:       int(settings.MaxRecordBytes),
+		MaxRunBytes:           settings.MaxRunBytes,
+		MaxFieldBytes:         64 * 1024,
+		KeyID:                 strings.TrimSpace(cfg.Security.TracePayloadEncryptionKeyID),
+		EncryptionKey:         runtime.DerivePrivilegedTracePayloadKey(cfg.Security.TracePayloadEncryptionKey),
+		DisabledWorkspaceIDs:  disabledWorkspaces,
+		ExtraRedactedFields:   append([]string(nil), settings.ExtraRedactedFields...),
+	}
 }
 
 // resolveContextAssets hydrates ref-first context assets against the active truth dir compile snapshot.
@@ -443,6 +493,11 @@ func (s *Service) OpenChatSession(ctx context.Context, requestID string, req Cha
 	if err != nil {
 		return nil, err
 	}
+	resolvedContract, err := s.resolveRuntimeContractResolution(ctx, task.TaskType)
+	if err != nil {
+		return nil, err
+	}
+	applyRuntimeContractResolutionToTask(task, resolvedContract)
 	if err := s.AcquireRequestSlot(ctx); err != nil {
 		return nil, err
 	}
@@ -628,16 +683,19 @@ func (s *Service) OpenChatSession(ctx context.Context, requestID string, req Cha
 			prepared = invalidModelPrepared(reason, detail, message)
 		} else {
 			prepared, err = s.Runtime.Prepare(ctx, userSession, runtime.Input{
-				RequestID:       requestID,
-				SessionID:       userSession.ID,
-				Query:           req.Query,
-				ModelSelection:  modelSelection,
-				Task:            task,
-				Orchestration:   resolveOrchestrationState(req),
-				Customization:   req.Customization,
-				Supplement:      req.Supplement,
-				TimeoutOverride: req.TimeoutAfter,
-				Pending:         userSession.Pending,
+				RequestID:        requestID,
+				SessionID:        userSession.ID,
+				Query:            req.Query,
+				ModelSelection:   modelSelection,
+				ToolDeclarations: append([]runtime.ToolDefinition(nil), req.ToolDeclarations...),
+				Task:             task,
+				ResolvedContract: resolvedRuntimeContract(resolvedContract),
+				ResolvedTaskType: resolvedTaskTypeRegistration(resolvedContract),
+				Orchestration:    resolveOrchestrationState(req),
+				Customization:    req.Customization,
+				Supplement:       req.Supplement,
+				TimeoutOverride:  req.TimeoutAfter,
+				Pending:          userSession.Pending,
 			})
 			if err != nil {
 				s.ReleaseRequestSlot()

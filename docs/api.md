@@ -34,6 +34,9 @@ API 语义按以下边界理解：
 - `PUT /api/control-plane/skills/:name`
 - `GET /api/control-plane/tools`
 - `PUT /api/control-plane/tools/:name`
+- `GET /api/control-plane/remote-tools`
+- `PUT /api/control-plane/remote-tools/:name`
+- `DELETE /api/control-plane/remote-tools/:name`
 - `GET /api/control-plane/runtime-config`
 - `PUT /api/control-plane/runtime-config`
 - `POST /api/control-plane/runtime/validation-runs`
@@ -46,8 +49,10 @@ API 语义按以下边界理解：
 - `GET /api/control-plane/runtime/runs/:runID/steps`
 - `GET /api/control-plane/runtime/runs/:runID/lifecycle`
 - `GET /api/control-plane/runtime/runs/:runID/traces`
+- `GET /api/control-plane/runtime/runs/:runID/timeline`
 - `GET /api/control-plane/runtime/runs/:runID/usage`
 - `GET /api/control-plane/runtime/runs/:runID/projections`
+- `GET /api/control-plane/runtime/runs/:runID/checkpoints`
 - `GET /api/control-plane/governance`
 - `PUT /api/control-plane/governance`
 - `GET /api/control-plane/tool-governance/policy`
@@ -98,6 +103,11 @@ API 语义按以下边界理解：
 - `DELETE /api/skills/packages/:id`
 - `GET /api/runtime/skills`
 - `POST /api/chat/respond`
+- `POST /api/agent/runs`
+- `GET /api/agent/runs/:runID`
+- `POST /api/agent/runs/:runID/resume`
+- `POST /api/agent/runs/:runID/cancel`
+- `GET /api/agent/runs/:runID/trace`
 - `POST /api/runtime/respond`
 - `POST /api/runtime/scenario/respond`
 - `GET /api/models/providers`
@@ -118,6 +128,73 @@ API 语义按以下边界理解：
 - `POST /api/runtime/respond` 是通用 direct respond adapter：它复用 app/runtime 主路径产出一次直接响应，不定义新的场景专属 core API。
 - `POST /api/runtime/scenario/respond` 是 legacy scenario judgment 兼容入口：它继续承接 `RuntimeScenarioRequest` / `RuntimeScenarioResponse` 形态和 evidence supplement 流程，不作为新的 core direct respond contract。
 
+Agent Run API 当前暴露：
+
+- `POST /api/agent/runs`
+  - 面向业务应用创建一次目标驱动 run，输入以 `goal`、`success_criteria`、`constraints`、`budget`、`context_assets`、`tools`、`memory_scope` 和 `governance_refs` 为核心。
+  - Creates one app-facing goal-driven run. The current MVP executes synchronously through the existing app/runtime path and returns `run_id`, request status, stop reason, output, trace summary and checkpoint readouts when runtime persistence is configured.
+  - `tools` 接受 OpenAI-compatible function tool 或字符串简写，并转换为 provider-neutral runtime declarations；当前只允许调用 Athena 已注册的工具。内置 `calculator`、`current_time`、`json_schema_validate` 可直接启用；业务远程工具注册与执行属于 issue `#9`。
+  - `tool_choice` 支持 `none`、`auto`、`required` 和指定 function object。省略时，无工具默认为 `none`，有工具默认为 `auto`。
+  - The response exposes ordered `messages`, assistant `tool_calls`, correlated `tool_results`, stable call IDs and final `output`. Top-level call/result arrays are compatibility projections of the canonical transcript.
+  - `stop_reason` 使用稳定枚举：`success`、`budget_exhausted`、`deadline_exceeded`、`awaiting_input`、`awaiting_external_data`、`governance_denied`、`cancelled`、`unrecoverable_error`。
+  - `stop_reason` uses a stable runtime taxonomy instead of exposing internal lifecycle reason strings.
+- `GET /api/agent/runs/:runID`
+  - 读取单个 run 的 app-facing 状态摘要，底层复用 persisted `TaskRun` 与 trace summary。
+  - Reads the app-facing run status summary from persisted runtime records.
+- `POST /api/agent/runs/:runID/resume`
+  - 基于原 run 发起一次补数续跑；当前实现会先确认原 run 可从 runtime persistence 读回，再创建新的 runtime run，并在响应中写入 `resumed_from_run_id`。
+  - Resumes by first validating the original run readout, then starting a follow-up run with supplement / resume token metadata instead of mutating the original synchronous run in place.
+- `POST /api/agent/runs/:runID/cancel`
+  - 当前同步 MVP 不伪造异步取消；已终态 run 返回 `409` 和 `run_already_terminal`，非终态 run 返回 `409` 和 `sync_execution_not_cancellable`。
+  - The route is stable, but asynchronous cancellation is not implemented in this slice.
+- `GET /api/agent/runs/:runID/trace`
+  - 返回该 run 的 `RuntimeRun`、`RuntimeStep`、`RuntimeLifecycleEvent`、`RuntimeTrace`、`Usage`、`ProjectionCandidate`、checkpoint safe readouts 和聚合 summary。
+  - Returns the full safe trace timeline assembled from runtime persistence.
+- `GET /api/agent/runs/:runID/timeline`
+  - 将现有的 step、lifecycle、trace、usage 和 projection records 依时间投影为一条业务应用可直接展示的列表；每条 entry 包含 timestamp、duration、status、source、error 和安全 detail。
+  - Projects existing persisted records into one ordered, app-readable timeline. It does not create a duplicate trace store and never returns raw prompts, tool arguments, tool results, or business payloads.
+  - 模型回调 detail 仅返回输入/输出计数、tool call 数量、状态、耗时、Token 与脱敏错误摘要；不会返回原始 Prompt 或模型响应。
+  - Model callback detail contains only safe counts, status, duration, token usage, and a redacted error summary; raw prompts and model responses are excluded.
+  - 顶层可选 `run_manifest` 是 TaskRun 创建时冻结的 `agent_run_manifest.v1`，并通过 `manifest_status` 区分 `complete`、`partial`、`legacy_unavailable`、`unsupported_schema` 与 `invalid`。历史 run 不会从当前配置重建版本。
+  - The optional top-level `run_manifest` is frozen with TaskRun creation. It contains revision IDs/versions/sources and SHA-256 values only; `manifest_status=legacy_unavailable` preserves backward compatibility without read-time reconstruction.
+
+Control Plane privileged trace detail is a separate opt-in contract:
+
+- `GET /api/control-plane/runtime/runs/:runID/trace-payloads/:payloadRef`
+  - Requires a valid Control Plane session, enabled privileged reads, a dedicated trace encryption key, and an exact run/ref match.
+  - Returns the decrypted payload only after mandatory field redaction; every denied, missing, expired, failed, or successful read is durably audited and responses use `Cache-Control: no-store`.
+  - The Control Plane timeline may expose opaque `payload_ref`, `payload_status`, and an unavailable reason. App-facing trace/timeline responses remove the reference and never gain access to this endpoint.
+
+Control Plane 特权 trace 明细使用独立的显式开启契约。读取要求有效控制面 session、专用密钥和精确 run/ref 绑定；返回内容已完成强制字段脱敏，所有读取结果都会持久审计。普通业务应用 trace/timeline 不返回引用，也不能访问该接口。
+
+启用 `APP_AUTH_REQUIRED=true` 后，上述六条路由都要求 `X-Athena-App-Token`、`X-Athena-App-ID`、`X-Athena-Workspace-ID` 和 `X-Athena-App-Instance-ID`。Token 与精确 scope 由 `APP_AUTH_IDENTITIES_JSON` 绑定；无效身份返回 `401`，scope 外、跨租户、不存在或无归属历史 run 统一返回同形 `404`。应用 token 使用专用 header，不会进入 Platform Context 的 `Authorization` 转发链。
+
+With `APP_AUTH_REQUIRED=true`, all six routes require the dedicated app token, app ID, workspace ID, and app-instance ID headers. The configured identity grants exact scope pairs. Invalid identities return `401`; out-of-scope, cross-tenant, nonexistent, and unowned legacy runs share the same generic `404` response.
+
+Agent Run API 边界：
+
+- Athena core 不接管业务对象、业务证据或业务状态；业务仓仍通过 `context_assets`、`global_context`、`app_context` 和 `input_payload` 注入应用语义。
+- The API contract is generic. Fund, stock, drama, or other domain objects must stay in the business application layer.
+- 工具参数和结果可在同步响应中返回；持久化 trace 只保存 call ID、tool name、状态、时序、参数键和长度等安全摘要，不保存原始参数或结果。
+- Raw tool arguments/results are available to the synchronous caller, while persisted traces use a redacted correlation timeline.
+- 省略或传入 `task_type=agent_run` 时，当前内部 runtime task type 映射到已注册 `chat`，并把 `agent_run.v1` 契约写入 app context / input payload；未来注册式 task type 可以显式传入其他 `task_type`。
+- If runtime persistence is not configured, read/trace endpoints return `503`; create responses may still complete but cannot expose a persisted trace.
+
+Control Plane additionally exposes `GET /api/control-plane/runtime/runs/:runID/timeline` behind its existing authentication boundary. The Admin UI renders this same projection as expandable safe-detail rows for model, tool, governance, context, loop, usage, and delivery investigation.
+
+Production deployments must set `APP_AUTH_REQUIRED=true` and configure scoped identities. `false` is a deliberate gray mode only. Existing authenticated Control Plane sessions are system administrators; app identity headers do not replace Control Plane login.
+
+## 应用拥有的 Memory / Context API
+
+Athena 提供四条通用 API，供业务应用保存安全摘要、按归属读取摘要，并组装为可注入的上下文资产：
+
+- `POST /api/memory/write` 写入 `app_id + owner_id + scope` 三元组下的版本化摘要；必填字段为 `kind` 与 `summary`，可附带应用定义的 `schema_version` 和字符串元数据。
+- `POST /api/memory/query` 只能按完整的 `app_id + owner_id + scope` 查询。响应返回安全的 `memory_query` trace，不会跨 owner 或 scope 合并结果。
+- `POST /api/context-assets/resolve` 将查询结果转成只读 `memory_view` 资产，`source_kind=app_memory`，可直接作为 `context_assets` 注入。
+- `POST /api/context-assets/assemble` 将应用记忆摘要与调用方传入的通用 assets 组装成 `UsageTrace`、effective views 和 `external_context_compression.v1` 统计形状。
+
+The contract deliberately accepts summaries rather than domain records. `app_id`, `owner_id`, and `scope` are mandatory on every read and write; the response trace records only the operation and record IDs. Athena core does not create fund, portfolio, trade, or other business tables. The MVP store is process-local and is therefore suitable for local/demo wiring; an application must use its own durable business store until a configured persistence adapter is introduced.
+
 Validation MCP 当前暴露：
 
 - `GET /api/control-plane/validation-mcp/server` 返回内置 `athena-validation-mcp` server 描述、轻量 transport 和已摄取 tool schemas。
@@ -132,6 +209,14 @@ Runtime validation trigger 当前会把 Phase 1-5 串成一条 deterministic val
   - 再调用 Validation MCP `risk_signal_lookup`，通过 tool governance 生成 decision，并把 MCP trace / usage / projection 写入 runtime persistence。
   - 最后生成 `external_sandbox_ref` structured result，写入 sandbox lifecycle event、trace、generic usage 和 projection candidate。
   - 响应包含 `validation_mcp`、`sandbox`、`sandbox_trace`、`sandbox_usage` 和 `sandbox_projection`，用于 System Validation 页面验收。
+
+## Remote business tool registry
+
+`/api/control-plane/remote-tools` 允许独立业务服务把 HTTP tool 实现注册进 Athena live catalog。注册内容不保存 credential value；可选 `auth` 只包含 `type=bearer|header`、`secret_ref` 和 header 模式下的 `X-* header_name`。`secret_ref` 是不带 user info/query/fragment 的 provider reference，MVP runtime 支持 `env://VARIABLE_NAME`。`endpoint` 必须命中 `REMOTE_TOOL_ALLOWED_ORIGINS` 的 exact origin，schema 根节点必须为 object，`timeout_ms` 范围为 `1..30000`，`retry_max_attempts` 范围为 `0..3`。带副作用且非幂等的工具禁止重试。
+
+Callback 使用 `remote_tool_execution.v1`。请求包含 `request_id`、`tool_call_id`、`registration_id`、`app_id`、`tool_name`、JSON object `arguments`、`attempt` 和安全 metadata。响应必须回传相同 ID，并返回 `status=ok` + `content`，或标准化 `error.code/message/retryable`。
+
+Athena 禁止 callback redirect，并在任何网络请求前执行 tool governance。治理通过后，credential 仅在 HTTP 边界解析和注入；missing/revoked/expired/invalid secret 均 fail closed。Raw arguments/results 与 credential value 只在当前执行链内流转；持久化 trace 与 generic metric 只记录 origin、attempt、duration、decision ID、status、auth type、secret reference、auth result 和 normalized error code 等安全元数据。
 
 ## V1 协议补充
 
@@ -331,14 +416,17 @@ Athena 当前会优先消费 summary，再决定是否返回：
   - 管理 skill override
 - `GET/PUT /api/control-plane/tools/:name`
   - 管理 tool registry 的白名单元数据 override
+- `GET/PUT/DELETE /api/control-plane/remote-tools/:name`
+  - 管理 app-owned HTTP tool 注册；接口复用 Control Plane auth，成功后立即更新 live catalog
 - `GET/PUT /api/control-plane/runtime-config`
   - 兼容保留的 runtime tuning 入口
 - `POST /api/control-plane/runtime/validation-runs`
   - 通过 Eino runtime graph foundation 触发一次内部验证写入，返回本次生成的 `TaskRun`、`TaskStep`、lifecycle events、安全 `RuntimeTrace`、generic `Usage` 和 minimal `ProjectionCandidate`
   - 当前 trigger 会显式绑定默认 `runtime_contract_id`，因此新的 validation run 会额外写入 contract-aware `runtime_hook_binding` traces 与 `runtime_hook` usage
 - `GET /api/control-plane/runtime/contracts/foundation`
-  - 返回 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer 和 store capability surface
+  - 返回 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer、System Truth source / draft / compile 摘要和 store capability surface
   - foundation records 会在服务启动和 `POST /api/system-resources/sync` 后按 active truth 自动补齐
+  - bootstrap 默认注册 `chat` 及其 validator contract，保证 `/api/chat/*` 与 `/api/agent/runs` 在 PostgreSQL runtime store 下开箱可执行
 - `PUT /api/control-plane/runtime/contracts/:contractID`
   - 按稳定 `contractID` 创建或更新一条 `RuntimeContract`
   - payload 会经过 runtime contract 安全校验（status 枚举、credential-like plaintext 拦截）
@@ -348,6 +436,18 @@ Athena 当前会优先消费 summary，再决定是否返回：
 - `PUT /api/control-plane/runtime/hook-bindings/:bindingID`
   - 按稳定 `bindingID` 创建或更新一条 `HookBinding`
   - `binding_ref` 必须命中 internal allowlist（例如 `runtime_contract_guard`、`system_truth_guard`、`projection_boundary_guard`）
+- `GET /api/control-plane/runtime/system-truth/lifecycle`
+  - 读取 System Truth source、draft、compile result 和 active pointer history，支持 `asset_id`、`source_id`、`draft_id`、`status`、`limit`
+- `POST /api/control-plane/runtime/system-truth/sources`
+  - 追加一条 `SystemTruthSource`；若未传 `content_hash`，后端按 `content` 生成 `sha256:` 摘要
+- `POST /api/control-plane/runtime/system-truth/drafts`
+  - 基于 source 追加一条 `SystemTruthDraft`；`asset_id` 省略时继承 source，且显式传入时必须与 source 一致
+- `POST /api/control-plane/runtime/system-truth/drafts/:draftID/compile`
+  - 基于 draft 追加一条 `SystemTruthCompileResult`；成功 compile 未传 `compiled_payload` 时默认使用 draft content
+- `POST /api/control-plane/runtime/system-truth/compile-results/:compileID/activate`
+  - 激活成功 compile result，追加一条 audited active pointer；失败 compile 不能 activate
+- `POST /api/control-plane/runtime/system-truth/active-versions/:activeID/rollback`
+  - 回滚到历史 active version；实现方式是追加新的 active pointer，并记录 `rollback_from_id`，不改写历史 source / draft / compile
 - `GET /api/control-plane/runtime/runs`
   - 读取 Phase 1 持久化的 `TaskRun` 列表，支持 `workspace_id`、`status`、`limit`
 - `GET /api/control-plane/runtime/runs/:runID`
@@ -361,7 +461,13 @@ Athena 当前会优先消费 summary，再决定是否返回：
 - `GET /api/control-plane/runtime/runs/:runID/usage`
   - 读取该 run 下的 generic `Usage` 记录，支持 `step_id`、`limit`
 - `GET /api/control-plane/runtime/runs/:runID/projections`
-  - 读取该 run 下的 `ProjectionCandidate` 记录，支持 `step_id`、`limit`；当前读模型会额外暴露 `schema_version`、`semantic_payload`、`artifact_refs`、`ui_hints` 和 `materialization_target`
+  - 读取该 run 下的 `ProjectionCandidate` 记录，支持 `step_id`、`limit`。
+  - 当前读模型会额外暴露 `schema_version`、`semantic_payload`、`artifact_refs`、`ui_hints` 和 `materialization_target`。
+  - projection 写入前要求 `schema_version` 使用 `runtime_projection.*`，`materialization_target.core_materialization_scope` 保持 `projection_candidate_only`；candidate/read model 不得声明为业务 `EvidenceRecord`、business evidence、business truth 或 formal business object。
+- `GET /api/control-plane/runtime/runs/:runID/checkpoints`
+  - 读取该 run 推导出的 checkpoint-backed waiting readout 安全摘要
+  - 只返回 `checkpoint_id`、`run_id`、`stage`、`resume_token_present`、`payload_size`、`payload_sha256`、`created_at`、`updated_at`、`snapshot_available` 和 `source`
+  - 不返回 Eino private checkpoint payload，也不返回 resume token 原文；没有 checkpoint metadata 时返回空 `items`
 - `GET/PUT /api/control-plane/governance`
   - 推荐使用的治理策略控制面入口
 - `GET /api/control-plane/tool-governance/policy`
@@ -389,8 +495,8 @@ Athena 当前会优先消费 summary，再决定是否返回：
 
 控制面当前不开放：
 
-- Runtime read API 当前只读 persisted core runtime objects；不会暴露 Eino checkpoint opaque payload，也不会把 business EvidenceRecord 当作 core truth 返回
-- Runtime contract foundation read API 只暴露 Athena-owned contract / registry / hook / system truth active pointer，不暴露 Eino private callback payload 或任意可执行用户代码
+- Runtime read API 当前只读 persisted core runtime objects；不会暴露 Eino checkpoint opaque payload，也不会把 business EvidenceRecord 当作 core truth 返回；projection candidate 只代表 runtime candidate/read model 边界
+- Runtime contract foundation read API 只暴露 Athena-owned contract / registry / hook / system truth lifecycle 摘要，不暴露 Eino private callback payload 或任意可执行用户代码
 - 原始模型参数
 - execution governance 底线
 - fact quality / evidence gate 底线

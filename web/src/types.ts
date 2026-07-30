@@ -144,6 +144,75 @@ export type RuntimeTrace = {
   created_at: string;
 };
 
+export type RuntimeTraceTimelineItem = {
+  id: string;
+  kind: string;
+  timestamp: string;
+  duration_ms?: number;
+  status?: string;
+  source: string;
+  summary: string;
+  step_id?: string;
+  error?: Record<string, unknown>;
+  detail?: Record<string, unknown>;
+  payload_ref?: string;
+  payload_status?: string;
+  payload_unavailable_reason?: string;
+};
+
+export type PrivilegedTracePayload = {
+  payload_ref: string;
+  run_id: string;
+  step_id?: string;
+  trace_type: string;
+  source: string;
+  schema_version: string;
+  payload: Record<string, unknown>;
+  payload_size: number;
+  redacted_field_count: number;
+  created_at: string;
+  expires_at: string;
+};
+
+export type RuntimeRunRevisionRef = {
+  kind: string;
+  id: string;
+  version?: string;
+  content_sha256?: string;
+  source?: string;
+};
+
+export type RuntimeRunManifest = {
+  schema_version: string;
+  status: string;
+  captured_at: string;
+  manifest_sha256: string;
+  model?: RuntimeRunRevisionRef;
+  prompt?: RuntimeRunRevisionRef;
+  skills?: RuntimeRunRevisionRef[];
+  tools?: RuntimeRunRevisionRef[];
+  governance?: RuntimeRunRevisionRef[];
+  context_assets?: RuntimeRunRevisionRef[];
+  evaluators?: RuntimeRunRevisionRef[];
+  system_truth?: RuntimeRunRevisionRef[];
+  runtime_contract?: RuntimeRunRevisionRef;
+  missing?: string[];
+};
+
+export type RuntimeTraceTimeline = {
+  run: RuntimeRun;
+  items: RuntimeTraceTimelineItem[];
+  run_manifest?: RuntimeRunManifest;
+  manifest_status: "complete" | "partial" | "legacy_unavailable" | "unsupported_schema" | "invalid";
+  summary: {
+    run_id: string;
+    item_count: number;
+    failure_count: number;
+    started_at?: string;
+    completed_at?: string;
+  };
+};
+
 export type RuntimeUsage = {
   id: string;
   run_id: string;
@@ -174,6 +243,19 @@ export type RuntimeProjectionCandidate = {
   materialization_target?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   created_at: string;
+};
+
+export type RuntimeCheckpointReadout = {
+  checkpoint_id: string;
+  run_id: string;
+  stage?: string;
+  resume_token_present: boolean;
+  payload_size?: number;
+  payload_sha256?: string;
+  created_at?: string;
+  updated_at?: string;
+  snapshot_available: boolean;
+  source?: string;
 };
 
 export type RuntimeContract = {
@@ -239,11 +321,54 @@ export type SystemTruthActiveVersion = {
   activated_at: string;
 };
 
+export type SystemTruthSource = {
+  id: string;
+  asset_id: string;
+  source_kind: string;
+  source_ref?: string;
+  status: string;
+  content?: Record<string, unknown>;
+  content_hash?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type SystemTruthDraft = {
+  id: string;
+  source_id: string;
+  asset_id: string;
+  status: string;
+  author?: string;
+  reason?: string;
+  base_active_id?: string;
+  content?: Record<string, unknown>;
+  diff_summary?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SystemTruthCompileResult = {
+  id: string;
+  draft_id: string;
+  asset_id: string;
+  status: string;
+  summary?: string;
+  diagnostics?: Record<string, unknown>;
+  compiled_payload?: Record<string, unknown>;
+  content_hash?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
 export type RuntimeContractFoundation = {
   contracts: RuntimeContract[];
   task_types: RuntimeTaskTypeRegistration[];
   hook_bindings: RuntimeHookBinding[];
   active_system_truths: SystemTruthActiveVersion[];
+  system_truth_sources?: SystemTruthSource[];
+  system_truth_drafts?: SystemTruthDraft[];
+  system_truth_compile_results?: SystemTruthCompileResult[];
   store_capabilities: string[];
   unavailable_surfaces?: string[];
 };

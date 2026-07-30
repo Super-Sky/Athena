@@ -108,6 +108,19 @@ type runtimeProjectionCandidateDTO struct {
 	CreatedAt             time.Time      `json:"created_at"`
 }
 
+type runtimeCheckpointReadoutDTO struct {
+	CheckpointID       string     `json:"checkpoint_id"`
+	RunID              string     `json:"run_id"`
+	Stage              string     `json:"stage,omitempty"`
+	ResumeTokenPresent bool       `json:"resume_token_present"`
+	PayloadSize        int        `json:"payload_size,omitempty"`
+	PayloadSHA256      string     `json:"payload_sha256,omitempty"`
+	CreatedAt          *time.Time `json:"created_at,omitempty"`
+	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
+	SnapshotAvailable  bool       `json:"snapshot_available"`
+	Source             string     `json:"source,omitempty"`
+}
+
 type runtimeContractDTO struct {
 	ID                   string         `json:"id"`
 	Name                 string         `json:"name"`
@@ -171,13 +184,56 @@ type systemTruthActiveVersionDTO struct {
 	ActivatedAt     time.Time      `json:"activated_at"`
 }
 
+type systemTruthSourceDTO struct {
+	ID          string         `json:"id"`
+	AssetID     string         `json:"asset_id"`
+	SourceKind  string         `json:"source_kind"`
+	SourceRef   string         `json:"source_ref,omitempty"`
+	Status      string         `json:"status"`
+	Content     map[string]any `json:"content,omitempty"`
+	ContentHash string         `json:"content_hash,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+type systemTruthDraftDTO struct {
+	ID           string         `json:"id"`
+	SourceID     string         `json:"source_id"`
+	AssetID      string         `json:"asset_id"`
+	Status       string         `json:"status"`
+	Author       string         `json:"author,omitempty"`
+	Reason       string         `json:"reason,omitempty"`
+	BaseActiveID string         `json:"base_active_id,omitempty"`
+	Content      map[string]any `json:"content,omitempty"`
+	DiffSummary  string         `json:"diff_summary,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+type systemTruthCompileResultDTO struct {
+	ID              string         `json:"id"`
+	DraftID         string         `json:"draft_id"`
+	AssetID         string         `json:"asset_id"`
+	Status          string         `json:"status"`
+	Summary         string         `json:"summary,omitempty"`
+	Diagnostics     map[string]any `json:"diagnostics,omitempty"`
+	CompiledPayload map[string]any `json:"compiled_payload,omitempty"`
+	ContentHash     string         `json:"content_hash,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+}
+
 type runtimeContractFoundationDTO struct {
-	Contracts           []runtimeContractDTO             `json:"contracts"`
-	TaskTypes           []runtimeTaskTypeRegistrationDTO `json:"task_types"`
-	HookBindings        []runtimeHookBindingDTO          `json:"hook_bindings"`
-	ActiveSystemTruths  []systemTruthActiveVersionDTO    `json:"active_system_truths"`
-	StoreCapabilities   []string                         `json:"store_capabilities"`
-	UnavailableSurfaces []string                         `json:"unavailable_surfaces,omitempty"`
+	Contracts                 []runtimeContractDTO             `json:"contracts"`
+	TaskTypes                 []runtimeTaskTypeRegistrationDTO `json:"task_types"`
+	HookBindings              []runtimeHookBindingDTO          `json:"hook_bindings"`
+	ActiveSystemTruths        []systemTruthActiveVersionDTO    `json:"active_system_truths"`
+	SystemTruthSources        []systemTruthSourceDTO           `json:"system_truth_sources"`
+	SystemTruthDrafts         []systemTruthDraftDTO            `json:"system_truth_drafts"`
+	SystemTruthCompileResults []systemTruthCompileResultDTO    `json:"system_truth_compile_results"`
+	StoreCapabilities         []string                         `json:"store_capabilities"`
+	UnavailableSurfaces       []string                         `json:"unavailable_surfaces,omitempty"`
 }
 
 type runtimeValidationRunRequest struct {
@@ -227,6 +283,47 @@ type runtimeHookBindingUpsertRequest struct {
 	FailurePolicy string         `json:"failure_policy"`
 	Config        map[string]any `json:"config,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
+}
+
+type systemTruthSourceCreateRequest struct {
+	AssetID     string         `json:"asset_id"`
+	SourceKind  string         `json:"source_kind"`
+	SourceRef   string         `json:"source_ref,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	Content     map[string]any `json:"content,omitempty"`
+	ContentHash string         `json:"content_hash,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+type systemTruthDraftCreateRequest struct {
+	SourceID     string         `json:"source_id"`
+	AssetID      string         `json:"asset_id,omitempty"`
+	Status       string         `json:"status,omitempty"`
+	Author       string         `json:"author,omitempty"`
+	Reason       string         `json:"reason,omitempty"`
+	BaseActiveID string         `json:"base_active_id,omitempty"`
+	Content      map[string]any `json:"content,omitempty"`
+	DiffSummary  string         `json:"diff_summary,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+}
+
+type systemTruthCompileRequest struct {
+	AssetID         string         `json:"asset_id,omitempty"`
+	Status          string         `json:"status,omitempty"`
+	Summary         string         `json:"summary,omitempty"`
+	Diagnostics     map[string]any `json:"diagnostics,omitempty"`
+	CompiledPayload map[string]any `json:"compiled_payload,omitempty"`
+	ContentHash     string         `json:"content_hash,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+}
+
+type systemTruthActivateRequest struct {
+	AssetID        string         `json:"asset_id,omitempty"`
+	DraftID        string         `json:"draft_id,omitempty"`
+	ActivatedBy    string         `json:"activated_by,omitempty"`
+	Reason         string         `json:"reason,omitempty"`
+	RollbackFromID string         `json:"rollback_from_id,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 type runtimeValidationRunResponse struct {
@@ -338,6 +435,15 @@ func handleListControlPlaneRuntimeProjectionCandidates(ctx context.Context, c *h
 	c.JSON(consts.StatusOK, map[string]any{"items": runtimeProjectionCandidateDTOs(items)})
 }
 
+func handleListControlPlaneRuntimeCheckpoints(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	items, err := application.ListRuntimeCheckpointReadouts(ctx, strings.TrimSpace(c.Param("runID")))
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": runtimeCheckpointReadoutDTOs(items)})
+}
+
 func handleGetControlPlaneRuntimeContractFoundation(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
 	readout, err := application.GetRuntimeContractFoundation(ctx)
 	if err != nil {
@@ -425,6 +531,128 @@ func handlePutControlPlaneRuntimeHookBinding(ctx context.Context, c *hertzapp.Re
 	c.JSON(consts.StatusOK, runtimeHookBindingDTOFromRuntime(item))
 }
 
+func handleListControlPlaneRuntimeSystemTruthLifecycle(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	readout, err := application.GetSystemTruthLifecycleReadout(ctx, appcore.SystemTruthLifecycleReadQuery{
+		AssetID:  strings.TrimSpace(c.Query("asset_id")),
+		SourceID: strings.TrimSpace(c.Query("source_id")),
+		DraftID:  strings.TrimSpace(c.Query("draft_id")),
+		Status:   strings.TrimSpace(c.Query("status")),
+		Limit:    parseOptionalInt(c.Query("limit")),
+	})
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, systemTruthLifecycleReadoutDTO(readout))
+}
+
+func handleCreateControlPlaneRuntimeSystemTruthSource(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	var req systemTruthSourceCreateRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	item, err := application.CreateSystemTruthSource(ctx, runtime.SystemTruthSource{
+		AssetID:     strings.TrimSpace(req.AssetID),
+		SourceKind:  strings.TrimSpace(req.SourceKind),
+		SourceRef:   strings.TrimSpace(req.SourceRef),
+		Status:      strings.TrimSpace(req.Status),
+		Content:     req.Content,
+		ContentHash: strings.TrimSpace(req.ContentHash),
+		Metadata:    req.Metadata,
+	})
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, systemTruthSourceDTOFromRuntime(item))
+}
+
+func handleCreateControlPlaneRuntimeSystemTruthDraft(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	var req systemTruthDraftCreateRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	item, err := application.CreateSystemTruthDraft(ctx, runtime.SystemTruthDraft{
+		SourceID:     strings.TrimSpace(req.SourceID),
+		AssetID:      strings.TrimSpace(req.AssetID),
+		Status:       strings.TrimSpace(req.Status),
+		Author:       strings.TrimSpace(req.Author),
+		Reason:       strings.TrimSpace(req.Reason),
+		BaseActiveID: strings.TrimSpace(req.BaseActiveID),
+		Content:      req.Content,
+		DiffSummary:  strings.TrimSpace(req.DiffSummary),
+		Metadata:     req.Metadata,
+	})
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, systemTruthDraftDTOFromRuntime(item))
+}
+
+func handleCompileControlPlaneRuntimeSystemTruthDraft(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	var req systemTruthCompileRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	item, err := application.CompileSystemTruthDraft(ctx, strings.TrimSpace(c.Param("draftID")), runtime.SystemTruthCompileResult{
+		AssetID:         strings.TrimSpace(req.AssetID),
+		Status:          strings.TrimSpace(req.Status),
+		Summary:         strings.TrimSpace(req.Summary),
+		Diagnostics:     req.Diagnostics,
+		CompiledPayload: req.CompiledPayload,
+		ContentHash:     strings.TrimSpace(req.ContentHash),
+		Metadata:        req.Metadata,
+	})
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, systemTruthCompileResultDTOFromRuntime(item))
+}
+
+func handleActivateControlPlaneRuntimeSystemTruthCompileResult(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	var req systemTruthActivateRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	item, err := application.ActivateSystemTruthCompileResult(ctx, strings.TrimSpace(c.Param("compileID")), runtime.SystemTruthActiveVersion{
+		AssetID:        strings.TrimSpace(req.AssetID),
+		DraftID:        strings.TrimSpace(req.DraftID),
+		ActivatedBy:    strings.TrimSpace(req.ActivatedBy),
+		Reason:         strings.TrimSpace(req.Reason),
+		RollbackFromID: strings.TrimSpace(req.RollbackFromID),
+		Metadata:       req.Metadata,
+	})
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, systemTruthActiveVersionDTOFromRuntime(item))
+}
+
+func handleRollbackControlPlaneRuntimeSystemTruthActiveVersion(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+	var req systemTruthActivateRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	item, err := application.RollbackSystemTruthActiveVersion(ctx, strings.TrimSpace(c.Param("activeID")), runtime.SystemTruthActiveVersion{
+		ActivatedBy: strings.TrimSpace(req.ActivatedBy),
+		Reason:      strings.TrimSpace(req.Reason),
+		Metadata:    req.Metadata,
+	})
+	if err != nil {
+		writeRuntimeReadError(c, err)
+		return
+	}
+	c.JSON(consts.StatusCreated, systemTruthActiveVersionDTOFromRuntime(item))
+}
+
 func runtimeRecordReadQueryFromRequest(c *hertzapp.RequestContext) appcore.RuntimeRecordReadQuery {
 	return appcore.RuntimeRecordReadQuery{
 		RunID:  strings.TrimSpace(c.Param("runID")),
@@ -487,7 +715,7 @@ func runtimeRunDTOFromRuntime(item runtime.TaskRun) runtimeRunDTO {
 		IdempotencyScope: item.IdempotencyScope,
 		IdempotencyKey:   item.IdempotencyKey,
 		RetentionPolicy:  item.RetentionPolicy,
-		Metadata:         item.Metadata,
+		Metadata:         safeRuntimeMap(item.Metadata),
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 		StartedAt:        item.StartedAt,
@@ -511,7 +739,7 @@ func runtimeStepDTOFromRuntime(item runtime.TaskStep) runtimeStepDTO {
 		StepType:    item.StepType,
 		Name:        item.Name,
 		Status:      item.Status,
-		Metadata:    item.Metadata,
+		Metadata:    safeRuntimeMap(item.Metadata),
 		CreatedAt:   item.CreatedAt,
 		UpdatedAt:   item.UpdatedAt,
 		StartedAt:   item.StartedAt,
@@ -538,7 +766,7 @@ func runtimeLifecycleEventDTOFromRuntime(item runtime.TaskRunLifecycleEvent) run
 		FromStatus:  item.FromStatus,
 		ToStatus:    item.ToStatus,
 		Reason:      item.Reason,
-		Metadata:    item.Metadata,
+		Metadata:    safeRuntimeMap(item.Metadata),
 		OccurredAt:  item.OccurredAt,
 	}
 }
@@ -558,9 +786,9 @@ func runtimeTraceDTOFromRuntime(item runtime.RuntimeTrace) runtimeTraceDTO {
 		StepID:          item.StepID,
 		TraceType:       item.TraceType,
 		Summary:         item.Summary,
-		SafeLabels:      item.SafeLabels,
-		RedactedPayload: item.RedactedPayload,
-		Metadata:        item.Metadata,
+		SafeLabels:      safeRuntimeStringMap(item.SafeLabels),
+		RedactedPayload: safeRuntimeMap(item.RedactedPayload),
+		Metadata:        safeRuntimeMap(item.Metadata),
 		CreatedAt:       item.CreatedAt,
 	}
 }
@@ -585,7 +813,7 @@ func runtimeUsageDTOFromRuntime(item runtime.Usage) runtimeUsageDTO {
 		Amount:       item.Amount,
 		Cost:         item.Cost,
 		Currency:     item.Currency,
-		Metadata:     item.Metadata,
+		Metadata:     safeRuntimeMap(item.Metadata),
 		CreatedAt:    item.CreatedAt,
 	}
 }
@@ -607,24 +835,134 @@ func runtimeProjectionCandidateDTOFromRuntime(item runtime.ProjectionCandidate) 
 		Status:                item.Status,
 		Summary:               item.Summary,
 		SchemaVersion:         item.SchemaVersion,
-		RedactedPayload:       item.RedactedPayload,
-		SemanticPayload:       item.SemanticPayload,
-		ArtifactRefs:          item.ArtifactRefs,
-		UIHints:               item.UIHints,
-		MaterializationTarget: item.MaterializationTarget,
-		Metadata:              item.Metadata,
+		RedactedPayload:       safeRuntimeMap(item.RedactedPayload),
+		SemanticPayload:       safeRuntimeMap(item.SemanticPayload),
+		ArtifactRefs:          safeRuntimeMap(item.ArtifactRefs),
+		UIHints:               safeRuntimeMap(item.UIHints),
+		MaterializationTarget: safeRuntimeMap(item.MaterializationTarget),
+		Metadata:              safeRuntimeMap(item.Metadata),
 		CreatedAt:             item.CreatedAt,
 	}
 }
 
+func safeRuntimeMap(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(input))
+	for key, value := range input {
+		if runtimeMetadataKeySensitive(key) {
+			result[key] = "[redacted]"
+			continue
+		}
+		result[key] = safeRuntimeValue(value)
+	}
+	return result
+}
+
+func safeRuntimeStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(input))
+	for key, value := range input {
+		if runtimeMetadataKeySensitive(key) {
+			result[key] = "[redacted]"
+		} else {
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func safeRuntimeValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return safeRuntimeMap(typed)
+	case map[string]string:
+		return safeRuntimeStringMap(typed)
+	case []any:
+		result := make([]any, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, safeRuntimeValue(item))
+		}
+		return result
+	case []map[string]any:
+		result := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, safeRuntimeMap(item))
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+func runtimeMetadataKeySensitive(key string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("-", "_", " ", "_").Replace(strings.TrimSpace(key)))
+	for _, safeSuffix := range []string{"_present", "_configured", "_masked", "_count", "_sha256"} {
+		if strings.HasSuffix(normalized, safeSuffix) {
+			return false
+		}
+	}
+	if normalized == "headers" || strings.HasSuffix(normalized, "_headers") {
+		return true
+	}
+	if normalized == "token" || strings.HasSuffix(normalized, "_token") || normalized == "cookie" || strings.HasSuffix(normalized, "_cookie") {
+		return true
+	}
+	for _, fragment := range []string{
+		"authorization", "credential", "password", "secret", "api_key", "apikey", "access_token",
+		"refresh_token", "resume_token", "session_cookie", "raw_prompt", "raw_payload", "raw_input", "raw_output",
+	} {
+		if strings.Contains(normalized, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeCheckpointReadoutDTOs(items []appcore.RuntimeCheckpointReadout) []runtimeCheckpointReadoutDTO {
+	out := make([]runtimeCheckpointReadoutDTO, 0, len(items))
+	for _, item := range items {
+		out = append(out, runtimeCheckpointReadoutDTOFromApp(item))
+	}
+	return out
+}
+
+func runtimeCheckpointReadoutDTOFromApp(item appcore.RuntimeCheckpointReadout) runtimeCheckpointReadoutDTO {
+	return runtimeCheckpointReadoutDTO{
+		CheckpointID:       item.CheckpointID,
+		RunID:              item.RunID,
+		Stage:              item.Stage,
+		ResumeTokenPresent: item.ResumeTokenPresent,
+		PayloadSize:        item.PayloadSize,
+		PayloadSHA256:      item.PayloadSHA256,
+		CreatedAt:          runtimeTimePtr(item.CreatedAt),
+		UpdatedAt:          runtimeTimePtr(item.UpdatedAt),
+		SnapshotAvailable:  item.SnapshotAvailable,
+		Source:             item.Source,
+	}
+}
+
+func runtimeTimePtr(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
+}
+
 func runtimeContractFoundationDTOFromApp(item appcore.RuntimeContractFoundationReadout) runtimeContractFoundationDTO {
 	return runtimeContractFoundationDTO{
-		Contracts:           runtimeContractDTOs(item.Contracts),
-		TaskTypes:           runtimeTaskTypeRegistrationDTOs(item.TaskTypes),
-		HookBindings:        runtimeHookBindingDTOs(item.HookBindings),
-		ActiveSystemTruths:  systemTruthActiveVersionDTOs(item.ActiveSystemTruths),
-		StoreCapabilities:   item.StoreCapabilities,
-		UnavailableSurfaces: item.UnavailableSurfaces,
+		Contracts:                 runtimeContractDTOs(item.Contracts),
+		TaskTypes:                 runtimeTaskTypeRegistrationDTOs(item.TaskTypes),
+		HookBindings:              runtimeHookBindingDTOs(item.HookBindings),
+		ActiveSystemTruths:        systemTruthActiveVersionDTOs(item.ActiveSystemTruths),
+		SystemTruthSources:        systemTruthSourceDTOs(item.SystemTruthSources),
+		SystemTruthDrafts:         systemTruthDraftDTOs(item.SystemTruthDrafts),
+		SystemTruthCompileResults: systemTruthCompileResultDTOs(item.SystemTruthCompileResults),
+		StoreCapabilities:         item.StoreCapabilities,
+		UnavailableSurfaces:       item.UnavailableSurfaces,
 	}
 }
 
@@ -728,5 +1066,84 @@ func systemTruthActiveVersionDTOFromRuntime(item runtime.SystemTruthActiveVersio
 		RollbackFromID:  item.RollbackFromID,
 		Metadata:        item.Metadata,
 		ActivatedAt:     item.ActivatedAt,
+	}
+}
+
+func systemTruthLifecycleReadoutDTO(item appcore.SystemTruthLifecycleReadout) map[string]any {
+	return map[string]any{
+		"sources":         systemTruthSourceDTOs(item.Sources),
+		"drafts":          systemTruthDraftDTOs(item.Drafts),
+		"compile_results": systemTruthCompileResultDTOs(item.CompileResults),
+		"active_versions": systemTruthActiveVersionDTOs(item.ActiveVersions),
+	}
+}
+
+func systemTruthSourceDTOs(items []runtime.SystemTruthSource) []systemTruthSourceDTO {
+	out := make([]systemTruthSourceDTO, 0, len(items))
+	for _, item := range items {
+		out = append(out, systemTruthSourceDTOFromRuntime(item))
+	}
+	return out
+}
+
+func systemTruthSourceDTOFromRuntime(item runtime.SystemTruthSource) systemTruthSourceDTO {
+	return systemTruthSourceDTO{
+		ID:          item.ID,
+		AssetID:     item.AssetID,
+		SourceKind:  item.SourceKind,
+		SourceRef:   item.SourceRef,
+		Status:      item.Status,
+		Content:     item.Content,
+		ContentHash: item.ContentHash,
+		Metadata:    item.Metadata,
+		CreatedAt:   item.CreatedAt,
+	}
+}
+
+func systemTruthDraftDTOs(items []runtime.SystemTruthDraft) []systemTruthDraftDTO {
+	out := make([]systemTruthDraftDTO, 0, len(items))
+	for _, item := range items {
+		out = append(out, systemTruthDraftDTOFromRuntime(item))
+	}
+	return out
+}
+
+func systemTruthDraftDTOFromRuntime(item runtime.SystemTruthDraft) systemTruthDraftDTO {
+	return systemTruthDraftDTO{
+		ID:           item.ID,
+		SourceID:     item.SourceID,
+		AssetID:      item.AssetID,
+		Status:       item.Status,
+		Author:       item.Author,
+		Reason:       item.Reason,
+		BaseActiveID: item.BaseActiveID,
+		Content:      item.Content,
+		DiffSummary:  item.DiffSummary,
+		Metadata:     item.Metadata,
+		CreatedAt:    item.CreatedAt,
+		UpdatedAt:    item.UpdatedAt,
+	}
+}
+
+func systemTruthCompileResultDTOs(items []runtime.SystemTruthCompileResult) []systemTruthCompileResultDTO {
+	out := make([]systemTruthCompileResultDTO, 0, len(items))
+	for _, item := range items {
+		out = append(out, systemTruthCompileResultDTOFromRuntime(item))
+	}
+	return out
+}
+
+func systemTruthCompileResultDTOFromRuntime(item runtime.SystemTruthCompileResult) systemTruthCompileResultDTO {
+	return systemTruthCompileResultDTO{
+		ID:              item.ID,
+		DraftID:         item.DraftID,
+		AssetID:         item.AssetID,
+		Status:          item.Status,
+		Summary:         item.Summary,
+		Diagnostics:     item.Diagnostics,
+		CompiledPayload: item.CompiledPayload,
+		ContentHash:     item.ContentHash,
+		Metadata:        item.Metadata,
+		CreatedAt:       item.CreatedAt,
 	}
 }

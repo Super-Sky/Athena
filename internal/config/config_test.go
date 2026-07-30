@@ -1,12 +1,17 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestLoadFromEnvDefaultsToPostgresStores(t *testing.T) {
+	// Keep this default-value test independent from a developer's active APP_ENV.
+	// 让默认值测试不受开发机当前 APP_ENV 的影响。
+	t.Setenv("APP_ENV", "")
 	t.Setenv("HTTP_PORT", "8080")
 	t.Setenv("MAX_CONCURRENT_REQUESTS", "1")
 	t.Setenv("MAX_CONCURRENT_TOOLS", "1")
@@ -24,6 +29,8 @@ func TestLoadFromEnvDefaultsToPostgresStores(t *testing.T) {
 	t.Setenv("DB_MAX_OPEN_CONNS", "1")
 	t.Setenv("DB_CONN_MAX_LIFETIME_SECONDS", "1")
 	t.Setenv("SECURITY_ENCRYPTION_KEY", "test-encryption-key")
+	t.Setenv("REMOTE_TOOL_ALLOWED_ORIGINS", "http://fund-api:8081,http://127.0.0.1:8081")
+	t.Setenv("REMOTE_TOOL_MAX_RESPONSE_BYTES", "2048")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -48,6 +55,12 @@ func TestLoadFromEnvDefaultsToPostgresStores(t *testing.T) {
 	}
 	if cfg.System.ActiveStateDir != filepath.Join("output", "system-state") {
 		t.Fatalf("cfg.System.ActiveStateDir = %q, want output/system-state", cfg.System.ActiveStateDir)
+	}
+	if len(cfg.RemoteTools.AllowedOrigins) != 2 || cfg.RemoteTools.AllowedOrigins[0] != "http://fund-api:8081" {
+		t.Fatalf("cfg.RemoteTools.AllowedOrigins = %#v", cfg.RemoteTools.AllowedOrigins)
+	}
+	if cfg.RemoteTools.MaxResponseBytes != 2048 {
+		t.Fatalf("cfg.RemoteTools.MaxResponseBytes = %d, want 2048", cfg.RemoteTools.MaxResponseBytes)
 	}
 }
 
@@ -87,6 +100,66 @@ func TestConfigValidateAcceptsMemorySessionStore(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidateRequiresScopedAppIdentityWhenAppAuthIsRequired(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.AppAuth.Required = true
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "APP_AUTH_IDENTITIES_JSON") {
+		t.Fatalf("Validate() error = %v, want missing app identity error", err)
+	}
+
+	cfg.AppAuth.Identities = []AppAuthIdentityConfig{{
+		AppID: "fund-assistant", Token: "fund-secret",
+		Scopes: []AppAuthScopeConfig{{WorkspaceID: "workspace-a", AppInstanceIDs: []string{"fund-web"}}},
+	}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want valid scoped app identity", err)
+	}
+}
+
+func TestConfigValidateRejectsDuplicateAppAuthScope(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.AppAuth.Identities = []AppAuthIdentityConfig{{
+		AppID: "fund-assistant", Token: "fund-secret",
+		Scopes: []AppAuthScopeConfig{{WorkspaceID: "workspace-a", AppInstanceIDs: []string{"fund-web", "fund-web"}}},
+	}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate app auth scope") {
+		t.Fatalf("Validate() error = %v, want duplicate scope error", err)
+	}
+}
+
+func TestParseAppAuthIdentitiesJSONKeepsTokenOutOfSerializedConfig(t *testing.T) {
+	identities, err := parseAppAuthIdentitiesJSON(`[{"app_id":"fund-assistant","token":"private-token","scopes":[{"workspace_id":"workspace-a","app_instance_ids":["fund-web"]}]}]`)
+	if err != nil || len(identities) != 1 || identities[0].Token != "private-token" {
+		t.Fatalf("parse identities = %#v error=%v", identities, err)
+	}
+	payload, err := json.Marshal(AppAuthConfig{Required: true, Identities: identities})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "private-token") {
+		t.Fatalf("serialized app auth config leaks token: %s", payload)
+	}
+}
+
+func validMemoryConfigForAppAuthTest(t *testing.T) Config {
+	t.Helper()
+	return Config{
+		Server: ServerConfig{HTTPPort: 8080},
+		Model:  ModelConfig{StoreDriver: "memory"},
+		Runtime: RuntimeConfig{
+			MaxConcurrentRequests: 1, MaxConcurrentTools: 1, RequestTimeoutSeconds: 1,
+			DeferredQueueLimit: 1, ClosedTokenTTLSecs: 1, SkillPackageRevisionLimit: 1,
+		},
+		ControlPlane: ControlPlaneConfig{StorePath: filepath.Join("config", "controlplane", "overrides.json")},
+		System: SystemConfig{
+			TruthDir: filepath.Join("config", "system", "truth"), ActiveStateDir: filepath.Join("output", "system-state"),
+			CompiledAssetsDir: filepath.Join("output", "system-assets"),
+		},
+		Session:  SessionConfig{Driver: "memory", PostgresUpdateRetries: 1},
+		Database: DatabaseConfig{DBPort: 5432, MaxIdleConns: 1, MaxOpenConns: 1, ConnMaxLifetime: 1},
 	}
 }
 
@@ -277,5 +350,63 @@ func TestConfigValidateRejectsUnknownObservabilityLogLevel(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("Validate() expected error when observability log level is unsupported")
+	}
+}
+
+// TestConfigValidateFailsClosedForPrivilegedTracePayload verifies privileged capture cannot start without both admin auth and a dedicated key.
+// TestConfigValidateFailsClosedForPrivilegedTracePayload 验证特权载荷捕获缺少管理鉴权或独立密钥时无法启动。
+func TestConfigValidateFailsClosedForPrivilegedTracePayload(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.Observability.PrivilegedTracePayload = PrivilegedTracePayloadConfig{
+		CaptureEnabled: true,
+		SampleRate:     1,
+		RetentionHours: 24,
+		MaxRecordBytes: 1024,
+		MaxRunBytes:    4096,
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "CONTROL_PLANE_AUTH_TOKEN") {
+		t.Fatalf("Validate() error = %v, want control-plane token error", err)
+	}
+	cfg.ControlPlane.AuthToken = "admin-secret"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_PAYLOAD_ENCRYPTION_KEY") {
+		t.Fatalf("Validate() error = %v, want trace payload key error", err)
+	}
+	cfg.Security.TracePayloadEncryptionKey = "short-trace-secret"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "at least 32 bytes") {
+		t.Fatalf("Validate() error = %v, want trace payload key entropy error", err)
+	}
+	cfg.Security.TracePayloadEncryptionKey = "dedicated-trace-secret-at-least-32-bytes"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_PAYLOAD_ENCRYPTION_KEY_ID") {
+		t.Fatalf("Validate() error = %v, want trace payload key id error", err)
+	}
+	cfg.Security.TracePayloadEncryptionKeyID = "local-v1"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want valid privileged trace config", err)
+	}
+}
+
+// TestConfigValidateRejectsInvalidPrivilegedTracePayloadLimits verifies sampling, retention, and byte budgets remain bounded.
+// TestConfigValidateRejectsInvalidPrivilegedTracePayloadLimits 验证采样率、保留时间和字节预算始终受限。
+func TestConfigValidateRejectsInvalidPrivilegedTracePayloadLimits(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.ControlPlane.AuthToken = "admin-secret"
+	cfg.Security.TracePayloadEncryptionKey = "dedicated-trace-secret-at-least-32-bytes"
+	cfg.Security.TracePayloadEncryptionKeyID = "local-v1"
+	cfg.Observability.PrivilegedTracePayload = PrivilegedTracePayloadConfig{
+		ReadEnabled:    true,
+		SampleRate:     1.1,
+		RetentionHours: 24,
+		MaxRecordBytes: 1024,
+		MaxRunBytes:    4096,
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "SAMPLE_RATE") {
+		t.Fatalf("Validate() error = %v, want sample rate error", err)
+	}
+
+	cfg.Observability.PrivilegedTracePayload.SampleRate = 1
+	cfg.Observability.PrivilegedTracePayload.MaxRunBytes = 512
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "MAX_RUN_BYTES") {
+		t.Fatalf("Validate() error = %v, want run byte budget error", err)
 	}
 }

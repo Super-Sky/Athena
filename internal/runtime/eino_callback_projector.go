@@ -11,10 +11,12 @@ import (
 // RuntimeCallbackProjector persists fine-grained model/tool callback traces and usage records.
 // RuntimeCallbackProjector 持久化细粒度 model/tool callback trace 与 usage 记录。
 type RuntimeCallbackProjector struct {
-	Store     RuntimePersistenceStore
-	Now       func() time.Time
-	RecordSet *MinimalPersistenceRecordSet
-	Recorder  *RuntimeCallbackRecorder
+	Store         RuntimePersistenceStore
+	PayloadStore  PrivilegedTracePayloadStore
+	PayloadPolicy PrivilegedTracePayloadPolicy
+	Now           func() time.Time
+	RecordSet     *MinimalPersistenceRecordSet
+	Recorder      *RuntimeCallbackRecorder
 }
 
 // Project writes all currently recorded callback events as safe trace and generic usage records.
@@ -42,7 +44,13 @@ func (p RuntimeCallbackProjector) Project(ctx context.Context) error {
 
 func (p RuntimeCallbackProjector) projectEvent(ctx context.Context, event RuntimeComponentCallbackEvent, createdAt time.Time) error {
 	traceType := "eino_" + event.Component + "_callback"
+	traceID := defaultID("")
+	payloadMetadata := projectPrivilegedTracePayload(
+		ctx, p.PayloadStore, p.PayloadPolicy, p.RecordSet.Run.WorkspaceID, event.Component,
+		p.RecordSet.Run.ID, p.RecordSet.Step.ID, traceID, traceType, "eino_callbacks", event.PrivilegedPayload, createdAt,
+	)
 	if _, err := p.Store.CreateRuntimeTrace(ctx, RuntimeTrace{
+		ID:        traceID,
 		RunID:     p.RecordSet.Run.ID,
 		StepID:    p.RecordSet.Step.ID,
 		TraceType: traceType,
@@ -54,7 +62,7 @@ func (p RuntimeCallbackProjector) projectEvent(ctx context.Context, event Runtim
 			"resource_name": event.ResourceName,
 		},
 		RedactedPayload: callbackRedactedPayload(event),
-		Metadata:        mergeAnyMaps(event.Metadata, map[string]any{"projection_source": "runtime_callback_projector"}),
+		Metadata:        mergeAnyMaps(mergeAnyMaps(event.Metadata, map[string]any{"projection_source": "runtime_callback_projector"}), payloadMetadata),
 		CreatedAt:       createdAt,
 	}); err != nil {
 		return err

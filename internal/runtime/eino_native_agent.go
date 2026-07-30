@@ -4,9 +4,11 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
@@ -14,6 +16,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	einoschema "github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
+	modelparams "moss/internal/model/parameters"
 	runtimetools "moss/internal/tools"
 )
 
@@ -31,14 +35,17 @@ type runtimeGraphNativeState struct {
 // EinoGraphNativeAgentConfig contains the graph-native model/tool execution dependencies.
 // EinoGraphNativeAgentConfig 保存 graph-native model/tool 执行依赖。
 type EinoGraphNativeAgentConfig struct {
-	Name            string
-	Description     string
-	Instruction     string
-	Model           einomodel.ToolCallingChatModel
-	Tools           []tool.BaseTool
-	Callbacks       callbacks.Handler
-	CheckpointStore RuntimeGraphCheckpointByteStore
-	CheckpointID    string
+	Name             string
+	Description      string
+	Instruction      string
+	Model            einomodel.ToolCallingChatModel
+	Tools            []tool.BaseTool
+	ToolDeclarations []ToolDefinition
+	ToolChoice       modelparams.ToolChoice
+	ToolTranscript   *ToolCallTranscript
+	Callbacks        callbacks.Handler
+	CheckpointStore  RuntimeGraphCheckpointByteStore
+	CheckpointID     string
 }
 
 // EinoGraphNativeAgent executes one turn through Eino Graph ChatModel and ToolsNode components.
@@ -49,6 +56,8 @@ type EinoGraphNativeAgent struct {
 	instruction  string
 	runnable     compose.Runnable[[]*einoschema.Message, *einoschema.Message]
 	callbacks    callbacks.Handler
+	toolChoice   modelparams.ToolChoice
+	transcript   *ToolCallTranscript
 	checkpointID string
 	mu           sync.Mutex
 	initialInput []*einoschema.Message
@@ -72,12 +81,12 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 		return nil, fmt.Errorf("graph-native checkpoint id is required when checkpoint store is configured")
 	}
 	modelNode := cfg.Model
-	toolsNode, err := newRuntimeGraphNativeToolsNode(ctx, cfg.Tools)
+	toolsNode, err := newRuntimeGraphNativeToolsNode(ctx, cfg.Tools, cfg.ToolTranscript)
 	if err != nil {
 		return nil, err
 	}
 	if toolsNode != nil {
-		modelNode, err = bindGraphNativeTools(ctx, cfg.Model, cfg.Tools)
+		modelNode, err = bindGraphNativeTools(ctx, cfg.Model, cfg.Tools, cfg.ToolDeclarations)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +101,7 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 		runtimeGraphNativeModelNode,
 		modelNode,
 		compose.WithStatePreHandler(runtimeGraphNativeModelPreHandler),
-		compose.WithStatePostHandler(runtimeGraphNativeModelPostHandler),
+		compose.WithStatePostHandler(runtimeGraphNativeModelPostHandlerWithTranscript(cfg.ToolTranscript)),
 	); err != nil {
 		return nil, err
 	}
@@ -108,6 +117,7 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 			runtimeGraphNativeToolsNode,
 			toolsNode,
 			compose.WithStatePreHandler(runtimeGraphNativeToolsPreHandler),
+			compose.WithStatePostHandler(runtimeGraphNativeToolsPostHandlerWithTranscript(cfg.ToolTranscript)),
 		); err != nil {
 			return nil, err
 		}
@@ -143,6 +153,8 @@ func NewEinoGraphNativeAgent(ctx context.Context, cfg EinoGraphNativeAgentConfig
 		instruction:  cfg.Instruction,
 		runnable:     runnable,
 		callbacks:    cfg.Callbacks,
+		toolChoice:   cfg.ToolChoice,
+		transcript:   cfg.ToolTranscript,
 		checkpointID: checkpointID,
 	}, nil
 }
@@ -204,6 +216,7 @@ func (a *EinoGraphNativeAgent) invoke(ctx context.Context, messages []*einoschem
 				})
 				return
 			}
+			a.transcript.FailPending(err, time.Now().UTC())
 			generator.Send(&adk.AgentEvent{AgentName: a.name, Err: err})
 			return
 		}
@@ -232,6 +245,18 @@ func (a *EinoGraphNativeAgent) invokeOptions() []compose.Option {
 	if a != nil && a.callbacks != nil {
 		options = append(options, compose.WithCallbacks(a.callbacks))
 	}
+	if a != nil {
+		switch a.toolChoice.Kind {
+		case modelparams.ToolChoiceNone:
+			options = append(options, compose.WithChatModelOption(einomodel.WithToolChoice(einoschema.ToolChoiceForbidden)))
+		case modelparams.ToolChoiceRequired:
+			options = append(options, compose.WithChatModelOption(einomodel.WithToolChoice(einoschema.ToolChoiceForced)))
+		case modelparams.ToolChoiceSpecificTool:
+			options = append(options, compose.WithChatModelOption(einomodel.WithToolChoice(einoschema.ToolChoiceForced, strings.TrimSpace(a.toolChoice.ToolName))))
+		case modelparams.ToolChoiceAuto:
+			options = append(options, compose.WithChatModelOption(einomodel.WithToolChoice(einoschema.ToolChoiceAllowed)))
+		}
+	}
 	return options
 }
 
@@ -253,7 +278,7 @@ func (a *EinoGraphNativeAgent) loadInitialInput() []*einoschema.Message {
 	return appendMessageCopies(nil, a.initialInput...)
 }
 
-func newRuntimeGraphNativeToolsNode(ctx context.Context, selectedTools []tool.BaseTool) (*compose.ToolsNode, error) {
+func newRuntimeGraphNativeToolsNode(ctx context.Context, selectedTools []tool.BaseTool, transcript *ToolCallTranscript) (*compose.ToolsNode, error) {
 	if len(selectedTools) == 0 {
 		return nil, nil
 	}
@@ -261,12 +286,18 @@ func newRuntimeGraphNativeToolsNode(ctx context.Context, selectedTools []tool.Ba
 		Tools:               selectedTools,
 		ExecuteSequentially: false,
 		ToolCallMiddlewares: []compose.ToolMiddleware{
+			runtimetools.NewToolCallContextMiddleware(),
+			toolTranscriptMiddleware(transcript),
 			toolsTraceMiddleware(),
 		},
 	})
 }
 
-func bindGraphNativeTools(ctx context.Context, modelNode einomodel.ToolCallingChatModel, selectedTools []tool.BaseTool) (einomodel.ToolCallingChatModel, error) {
+func bindGraphNativeTools(ctx context.Context, modelNode einomodel.ToolCallingChatModel, selectedTools []tool.BaseTool, declarations []ToolDefinition) (einomodel.ToolCallingChatModel, error) {
+	declarationsByName := make(map[string]ToolDefinition, len(declarations))
+	for _, declaration := range declarations {
+		declarationsByName[strings.TrimSpace(declaration.Function.Name)] = declaration
+	}
 	toolInfos := make([]*einoschema.ToolInfo, 0, len(selectedTools))
 	for _, selectedTool := range selectedTools {
 		if selectedTool == nil {
@@ -276,6 +307,12 @@ func bindGraphNativeTools(ctx context.Context, modelNode einomodel.ToolCallingCh
 		if err != nil {
 			return nil, err
 		}
+		if declaration, ok := declarationsByName[info.Name]; ok {
+			info, err = graphNativeToolInfoFromDefinition(declaration)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if info != nil {
 			toolInfos = append(toolInfos, info)
 		}
@@ -284,6 +321,27 @@ func bindGraphNativeTools(ctx context.Context, modelNode einomodel.ToolCallingCh
 		return modelNode, nil
 	}
 	return modelNode.WithTools(toolInfos)
+}
+
+func graphNativeToolInfoFromDefinition(declaration ToolDefinition) (*einoschema.ToolInfo, error) {
+	info := &einoschema.ToolInfo{
+		Name:  strings.TrimSpace(declaration.Function.Name),
+		Desc:  strings.TrimSpace(declaration.Function.Description),
+		Extra: declaration.Metadata,
+	}
+	if len(declaration.Function.Parameters) == 0 {
+		return info, nil
+	}
+	payload, err := json.Marshal(declaration.Function.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tool %q parameters: %w", info.Name, err)
+	}
+	var parameters jsonschema.Schema
+	if err := json.Unmarshal(payload, &parameters); err != nil {
+		return nil, fmt.Errorf("decode tool %q parameters: %w", info.Name, err)
+	}
+	info.ParamsOneOf = einoschema.NewParamsOneOfByJSONSchema(&parameters)
+	return info, nil
 }
 
 func graphNativeInputMessages(input *adk.AgentInput, instruction string) []*einoschema.Message {
@@ -317,6 +375,25 @@ func runtimeGraphNativeModelPostHandler(_ context.Context, out *einoschema.Messa
 	return out, nil
 }
 
+func runtimeGraphNativeModelPostHandlerWithTranscript(transcript *ToolCallTranscript) func(context.Context, *einoschema.Message, *runtimeGraphNativeState) (*einoschema.Message, error) {
+	return func(ctx context.Context, out *einoschema.Message, state *runtimeGraphNativeState) (*einoschema.Message, error) {
+		if out != nil {
+			round := 0
+			if len(out.ToolCalls) > 0 {
+				round = transcript.BeginRound()
+			}
+			for index := range out.ToolCalls {
+				call := &out.ToolCalls[index]
+				call.ID = transcript.RegisterAtRound(round, call.ID, call.Type, call.Function.Name, call.Function.Arguments)
+				if strings.TrimSpace(call.Type) == "" {
+					call.Type = ToolTypeFunction
+				}
+			}
+		}
+		return runtimeGraphNativeModelPostHandler(ctx, out, state)
+	}
+}
+
 func runtimeGraphNativeToolsPreHandler(_ context.Context, in *einoschema.Message, state *runtimeGraphNativeState) (*einoschema.Message, error) {
 	if in != nil || state == nil {
 		return in, nil
@@ -328,6 +405,19 @@ func runtimeGraphNativeToolsPreHandler(_ context.Context, in *einoschema.Message
 		}
 	}
 	return in, nil
+}
+
+func runtimeGraphNativeToolsPostHandlerWithTranscript(transcript *ToolCallTranscript) func(context.Context, []*einoschema.Message, *runtimeGraphNativeState) ([]*einoschema.Message, error) {
+	return func(_ context.Context, out []*einoschema.Message, _ *runtimeGraphNativeState) ([]*einoschema.Message, error) {
+		observedAt := time.Now().UTC()
+		for _, message := range out {
+			if message == nil {
+				continue
+			}
+			transcript.ObserveResult(message.ToolCallID, message.ToolName, message.Content, observedAt)
+		}
+		return out, nil
+	}
 }
 
 func appendMessageCopies(dst []*einoschema.Message, messages ...*einoschema.Message) []*einoschema.Message {
@@ -352,4 +442,22 @@ func appendMessageCopies(dst []*einoschema.Message, messages ...*einoschema.Mess
 
 func toolsTraceMiddleware() compose.ToolMiddleware {
 	return runtimetools.NewToolTraceMiddleware().WrapToolCall
+}
+
+func toolTranscriptMiddleware(transcript *ToolCallTranscript) compose.ToolMiddleware {
+	return compose.ToolMiddleware{
+		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+				startedAt := time.Now().UTC()
+				transcript.Start(input.CallID, input.Name, input.Arguments, startedAt)
+				output, err := next(ctx, input)
+				content := ""
+				if output != nil {
+					content = output.Result
+				}
+				transcript.Finish(input.CallID, input.Name, content, err, time.Now().UTC(), time.Since(startedAt))
+				return output, err
+			}
+		},
+	}
 }

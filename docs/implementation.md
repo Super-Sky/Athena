@@ -28,6 +28,35 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - 单点 resolver
   - `internal/model/parameters/` 独立目录
 - 完整结果输出所需的 `CompleteResult / ResultSummary / ContentCard / RightPanelView / ScoreDelta` 基础类型
+- direct respond 富交付兼容 read model 已收口在 `internal/app/direct_respond_rich_delivery.go`：
+  - transport 层保留 JSON 解析、schema 修复、HTTP/SSE 映射
+  - app 层负责 `result_summary / content_cards / right_panel_view / score_delta / delivery_profile`
+  - app 层负责 workflow、automation、context assets、execution governance 和 base capability 兼容结果拼装
+- 面向业务应用的 Agent Run API 已接入 `internal/server/agent_runs.go`：
+	- `internal/server/app_auth.go` 使用独立 `X-Athena-App-Token` 和精确 workspace/app-instance scope 包装六条 Agent Run 路由；授权发生在读取子 trace records 前，create/resume 使用认证 scope 作为权威 ownership
+	- `internal/server/runtime_read.go` 对 app/Control Plane 共用 DTO 执行递归 credential-key redaction；app-facing full trace 不返回 projection semantic payload
+  - `POST /api/agent/runs` 以 `goal / success_criteria / constraints / budget / context_assets / tools / memory_scope / governance_refs` 创建一次目标驱动 run
+  - OpenAI-compatible function schemas 与 `tool_choice` 会在 transport 校验后转换为 `runtime.ToolDefinition` 和 canonical model policy；非法 schema、重复名称和错误 choice 会在执行前拒绝
+  - `ToolCallTranscript` 从 Eino model / ToolsNode loop 采集多轮调用、稳定 ID、结果、错误与 timing，并投影为有序 `messages`、顶层 `tool_calls / tool_results` 和脱敏 runtime trace
+  - `GET /api/agent/runs/:runID` 与 `GET /api/agent/runs/:runID/trace` 复用 runtime persistence read boundary 返回 run 状态、trace timeline、usage、projection 和 checkpoint safe readouts
+  - `internal/server/trace_timeline.go` 复用上述 readout，将 loop step、lifecycle、trace、usage 与 delivery projection 按时间投影成 `GET /api/agent/runs/:runID/timeline`；Control Plane 的同名 read path 和 Admin 展示共用该投影，不创建第二套 trace 存储
+  - model callback timeline detail 只投影输入/输出计数、tool call 数量、真实状态、耗时、Token 和脱敏错误摘要；后台不会读取或展示原始 Prompt、模型返回、凭据或隐式推理
+	- `internal/runtime/privileged_trace_*.go` 与 `postgres_privileged_trace_payload.go` 提供显式开启的 model/tool/context 明细脱敏、AES-GCM 加密、采样、容量/保留期控制和 PostgreSQL 密文/访问审计；`internal/server/privileged_trace_payload.go` 仅向已认证 Control Plane 提供按需、no-store、fail-closed 读取
+	- app-facing trace/timeline 会移除 privileged `payload_ref`；Control Plane timeline 只展示 opaque ref 与采集状态，后台点击查看时才触发审计读取
+  - `internal/runtime/run_manifest.go` 规范化 model、最终 prompt、skill、tool、governance、context、evaluator、system truth 和 runtime contract 的安全 revision refs；`eino_graph.go` 在 TaskRun 创建时冻结清单，timeline 只读取该持久化事实
+  - `internal/runtime/execution_stop_reason.go` 定义稳定 stop-reason taxonomy；terminal projector 将同一原因写入 run/step lifecycle，Agent Run API 与 timeline 不再暴露任意内部 reason 字符串
+  - `POST /api/agent/runs/:runID/resume` 先校验原 run 可读，再创建一次带 `resumed_from_run_id` 的 follow-up run；`POST /api/agent/runs/:runID/cancel` 当前返回同步 MVP 的稳定 unsupported / terminal response
+  - The contract is generic and app-facing. Business domains such as fund analysis must remain in the host app and enter Athena through context, assets, payload, tools and governance references.
+  - app-owned remote tools 可通过 authenticated Control Plane API list/upsert/delete，并在启动时从 control-plane document 恢复。
+  - runtime resolver 与 Eino executor 从线程安全 catalog 获取 per-operation snapshot；HTTP adapter 在网络前执行治理，并落实 origin、timeout、response budget、redirect、retry/idempotency 约束。
+  - remote registration 只持久化 `auth.type/secret_ref/header_name`；`internal/app/remote_secrets.go` 在每次调用时解析 `env://` secret，`internal/tools/remote.go` 仅在 HTTP 边界注入 bearer 或安全 `X-*` header。
+  - canonical transcript 继续承担 call/result/error trace；remote observer 补充 origin、attempt、duration、decision ID、status、auth decision、error code 与 generic metric，禁止记录 credential value。
+  - Business tool implementations and domain data remain app-owned.
+  - `internal/tools/builtin.go` 注册 calculator、current_time 和 JSON Schema subset validator；三者使用 existing catalog、governance 和 transcript 主链，不读网络、文件或业务数据。
+- 应用拥有的 memory/context API 位于 `internal/memory/external.go`、`internal/app/external_memory.go` 和 `internal/server/external_memory.go`：
+  - `POST /api/memory/write` / `query` 强制 `app_id + owner_id + scope`，仅保存通用版本化摘要和操作 trace。
+  - `resolve` 将摘要转换为只读 `app_memory` / `memory_view` context asset；`assemble` 输出 usage trace、effective views 及 `external_context_compression.v1` 统计。
+  - 当前默认实现是线程安全进程内 store，用于本地 MVP / 演示；它不会替代业务应用的 PostgreSQL 真相库，也不创建基金、持仓、交易等领域表。
 - Eino Graph runtime foundation：
   - 默认 chat/direct respond runtime 主链通过 `runtime.NewEinoGraphTurnExecutor` 包装现有 Eino ADK turn executor
   - 默认 turn agent 内部已使用 graph-native ChatModel / ToolsNode loop，并通过 Eino local state 保存 ReAct 消息历史
@@ -37,6 +66,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
 - runtime core persistence foundation：
   - Postgres migration/store 已覆盖 `TaskRun`、`TaskStep`、`RuntimeTrace`、generic `Usage`、`TaskRunLifecycleEvent` 和 minimal projection candidate
   - `PersistenceWriter` 提供事务化 deterministic minimal record set 写入
+  - projection candidate 写入前会校验 `runtime_projection.*` schema、`projection_candidate_only` materialization scope，避免升级成业务 EvidenceRecord
 - 严格场景命中、场景切换建议和 `guide questions` 的第一阶段运行时接线
 - inspection / alert / automation / knowledge candidates / score delta 在 structured respond 路径上的最小结果壳接线
 - 自动化计划草案与用户可读计划说明已开始接入 structured respond 路径
@@ -51,6 +81,7 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `/api/control-plane/scenes`
   - `/api/control-plane/skills`
   - `/api/control-plane/tools`
+  - `/api/control-plane/remote-tools`
   - `/api/control-plane/runtime-config`
   - `/api/control-plane/runtime/validation-runs`
   - `/api/control-plane/runtime/contracts/foundation`
@@ -62,8 +93,10 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `/api/control-plane/runtime/runs/:runID/steps`
   - `/api/control-plane/runtime/runs/:runID/lifecycle`
   - `/api/control-plane/runtime/runs/:runID/traces`
+  - `/api/control-plane/runtime/runs/:runID/timeline`
   - `/api/control-plane/runtime/runs/:runID/usage`
   - `/api/control-plane/runtime/runs/:runID/projections`
+  - `/api/control-plane/runtime/runs/:runID/checkpoints`
   - `/api/control-plane/governance`
   - `/api/control-plane/tool-governance/policy`
   - `/api/control-plane/tool-governance/decisions`
@@ -89,7 +122,8 @@ Athena 当前已经不再以“安全产品专用后端”定义自己，而是�
   - `System Validation` 页面支持 MCP / Sandbox Validation，能展示 deterministic validation run 的 `external_sandbox_ref` mode、execution ref、structured result、audit summary、sandbox trace 和 projection
   - `System Validation` 页面支持 contract foundation readout，能展示 RuntimeContract、TaskTypeRegistry、HookBinding、active System Truth pointer 和 foundation capability surface
   - `System Validation` 页面支持 foundation JSON 编辑与保存，可直接调用 runtime contract/task type/hook binding 控制面写接口并回读验证
-  - runtime foundation snapshot 会在服务启动和 `SyncSystemResources` 后自动同步；新的 runtime validation run 会带出 `runtime_hook_binding` traces 与 `runtime_hook` usage
+  - `System Validation` 页面支持按时间展开 Agent Trace Timeline，显示 loop/model/tool/governance/usage/delivery 的安全详情，不显示 raw prompt、tool args/result 或业务载荷
+  - runtime foundation snapshot 会在服务启动和 `SyncSystemResources` 后自动同步，并默认注册 chat / Agent Run 公共入口使用的 `chat` task type 及 validator contract；新的 runtime validation run 会带出 `runtime_hook_binding` traces 与 `runtime_hook` usage
   - `Release Readiness` 页面使用 bootstrap、system resources、provider/model 和 OpenAPI 数据汇总 v2.0.0 成品门禁，并把 gate 标记为 ready / warning / blocked；页面可直接触发 runtime validation 并展示 run / step / MCP / sandbox 结果
 
 ## 当前 system truth 模型
@@ -207,7 +241,7 @@ detail 读取当前会在进入 runtime 前尝试同轮预取，并把结果回�
 
 ## 当前 RuntimeTask 边界
 
-当前 app 层会把 chat/direct respond 等入口归一化为通用 `RuntimeTask` 后再进入 runtime。`inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 保留为 legacy-compatible / future registered semantics；Phase 0 不把这些场景字段作为 core 必填规则，也不实现完整注册式 task type validator。
+当前 app 层会把 chat/direct respond 等入口归一化为通用 `RuntimeTask` 后再进入 runtime。Runtime foundation 会幂等注册默认 `chat` validator contract，确保 PostgreSQL strict resolution 下 app-facing Agent Run 不需要手工 seed。`inspection_task`、`integration_event`、`scheduled_job`、`workflow_step_request` 保留为 legacy-compatible / future registered semantics；Phase 0 不把这些场景字段作为 core 必填规则，也不实现完整注册式 task type validator。
 
 `/api/runtime/respond` 是 generic direct respond adapter，复用同一 app/runtime 主路径，不代表独立的场景专属 runtime。旧的 `RuntimeScenarioRequest` / `RuntimeScenarioResponse` judgment 流程保留在 `/api/runtime/scenario/respond` 兼容入口，用于承接既有 mosi/OpenClaw 类场景包。
 
@@ -233,8 +267,8 @@ detail 读取当前会在进入 runtime 前尝试同轮预取，并把结果回�
 - Athena 执行治理 contract 与外部执行沙盒 contract 的正式分层
 - 外部执行宿主侧沙盒模块与结果回传闭环
 - 模型参数策略中心的更广接线
-- 将剩余 direct respond rich delivery 兼容拼装继续从 transport 层收敛到 app/runtime graph node 或 Batch 2 read model
-- Batch 2 read API / UI 中对 checkpoint-backed waiting run 的产品化展示和恢复入口
+- 将 direct respond rich delivery read model 继续从 app 层 Batch 2 read model 演进为更细粒度的 runtime graph node
+- Batch 2 read API / UI 已提供 checkpoint-backed waiting run 安全摘要展示；后续恢复入口仍需在独立 issue 中收口
 - 控制面当前只开放白名单内配置项；更细粒度的权限分层和审批流仍可继续深化
 - system object 的 Git baseline 回收仍是显式 workflow，不提供 control-plane 一键写 Git
 

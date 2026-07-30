@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	runtimescene "moss/internal/runtime/scene"
 	"moss/internal/skills"
@@ -21,6 +22,7 @@ type Manager struct {
 	activeStateDir string
 	auth           authConfig
 	authStore      AuthStateStore
+	remoteToolsMu  sync.Mutex
 }
 
 // NewManager creates one control-plane manager backed by the provided store.
@@ -450,6 +452,8 @@ func (m *Manager) RollbackVersion(ctx context.Context, versionID string) (Config
 	if m == nil || m.store == nil {
 		return ConfigVersionDetail{}, fmt.Errorf("control plane store is not configured")
 	}
+	m.remoteToolsMu.Lock()
+	defer m.remoteToolsMu.Unlock()
 	detail, err := m.store.LoadVersion(ctx, versionID)
 	if err != nil {
 		return ConfigVersionDetail{}, err
