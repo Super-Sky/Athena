@@ -691,20 +691,23 @@ func cleanupPostgresRuntimeFoundationWriteArtifacts(t *testing.T, db *gorm.DB, c
 }
 
 type testRuntimeReadStore struct {
-	runs          []runtime.TaskRun
-	steps         []runtime.TaskStep
-	events        []runtime.TaskRunLifecycleEvent
-	traces        []runtime.RuntimeTrace
-	usages        []runtime.Usage
-	projections   []runtime.ProjectionCandidate
-	snapshots     map[string]runtime.RuntimeGraphCheckpointSnapshot
-	contracts     []runtime.RuntimeContract
-	taskTypes     []runtime.TaskTypeRegistration
-	hooks         []runtime.HookBinding
-	truthSources  []runtime.SystemTruthSource
-	truthDrafts   []runtime.SystemTruthDraft
-	truthCompiles []runtime.SystemTruthCompileResult
-	activeTruths  []runtime.SystemTruthActiveVersion
+	runs               []runtime.TaskRun
+	steps              []runtime.TaskStep
+	events             []runtime.TaskRunLifecycleEvent
+	traces             []runtime.RuntimeTrace
+	usages             []runtime.Usage
+	projections        []runtime.ProjectionCandidate
+	snapshots          map[string]runtime.RuntimeGraphCheckpointSnapshot
+	contracts          []runtime.RuntimeContract
+	taskTypes          []runtime.TaskTypeRegistration
+	hooks              []runtime.HookBinding
+	truthSources       []runtime.SystemTruthSource
+	truthDrafts        []runtime.SystemTruthDraft
+	truthCompiles      []runtime.SystemTruthCompileResult
+	activeTruths       []runtime.SystemTruthActiveVersion
+	privilegedPayloads []runtime.PrivilegedTracePayload
+	privilegedAudits   []runtime.PrivilegedTracePayloadAccessAudit
+	privilegedAuditErr error
 }
 
 func (s *testRuntimeReadStore) AutoMigrate(context.Context) error { return nil }

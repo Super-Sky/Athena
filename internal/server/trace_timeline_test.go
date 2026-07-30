@@ -3,6 +3,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"moss/internal/config"
+	"moss/internal/runtime"
 )
 
 func TestProjectAgentTraceTimelineOrdersAndClassifiesRecords(t *testing.T) {
@@ -21,7 +23,15 @@ func TestProjectAgentTraceTimelineOrdersAndClassifiesRecords(t *testing.T) {
 		Traces: []runtimeTraceDTO{
 			{ID: "tool-1", StepID: "step-1", TraceType: "eino_tool_callback", Summary: "safe tool call", SafeLabels: map[string]string{"provider": "remote-tool"}, CreatedAt: start.Add(300 * time.Millisecond)},
 			{ID: "governance-1", StepID: "step-1", TraceType: "tool_governance_decision", Summary: "denied unsafe action", Metadata: map[string]any{"status": "denied", "reason": "policy"}, CreatedAt: start.Add(500 * time.Millisecond)},
-			{ID: "model-1", StepID: "step-1", TraceType: "eino_model_callback", Summary: "safe model summary", CreatedAt: start.Add(200 * time.Millisecond)},
+			{
+				ID: "model-1", StepID: "step-1", TraceType: "eino_model_callback", Summary: "safe model summary",
+				SafeLabels: map[string]string{"status": "success"},
+				RedactedPayload: map[string]any{
+					"duration_ms": 92.0, "input_count": 3, "input_runes": 420, "output_runes": 86,
+					"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150,
+				},
+				CreatedAt: start.Add(200 * time.Millisecond),
+			},
 		},
 		Usage: []runtimeUsageDTO{{ID: "usage-1", StepID: "step-1", ResourceType: "model", Provider: "openai-compatible", Unit: "tokens", Amount: 25, CreatedAt: start.Add(700 * time.Millisecond)}},
 	}
@@ -35,6 +45,16 @@ func TestProjectAgentTraceTimelineOrdersAndClassifiesRecords(t *testing.T) {
 	}
 	if items[0].DurationMS == nil || *items[0].DurationMS != 1500 {
 		t.Fatalf("step duration = %#v, want 1500ms", items[0].DurationMS)
+	}
+	if items[1].Status != "success" || items[1].DurationMS == nil || *items[1].DurationMS != 92 {
+		t.Fatalf("model item = %#v, want safe status and callback duration", items[1])
+	}
+	modelPayload, ok := items[1].Detail["redacted_payload"].(map[string]any)
+	if !ok || modelPayload["input_runes"] != 420 || modelPayload["total_tokens"] != 150 {
+		t.Fatalf("model detail = %#v, want safe callback counts", items[1].Detail)
+	}
+	if _, found := modelPayload["messages"]; found {
+		t.Fatalf("model detail = %#v, must not include raw messages", items[1].Detail)
 	}
 	if items[2].Source != "remote-tool" {
 		t.Fatalf("tool source = %q, want remote-tool", items[2].Source)
@@ -53,6 +73,100 @@ func TestProjectAgentTraceTimelineOrdersAndClassifiesRecords(t *testing.T) {
 func TestTimelineErrorDoesNotMarkNormalStatusAsFailure(t *testing.T) {
 	if value := timelineError("recorded", map[string]any{"error": "historical metadata"}); value != nil {
 		t.Fatalf("timelineError(recorded) = %#v, want nil", value)
+	}
+}
+
+func TestTimelinePayloadReferenceIsControlPlaneOnly(t *testing.T) {
+	readout := agentRunTraceReadout{Traces: []runtimeTraceDTO{{
+		ID: "trace-1", TraceType: "eino_model_callback", Summary: "model callback", CreatedAt: time.Now().UTC(),
+		Metadata: map[string]any{"payload_ref": "ptp_private", "payload_status": "recorded", "payload_expires_at": "private-expiry"},
+	}}}
+	appItems := projectAgentTraceTimeline(readout)
+	if appItems[0].PayloadRef != "" || appItems[0].PayloadStatus != "" {
+		t.Fatalf("app timeline leaked payload metadata: %#v", appItems[0])
+	}
+	if metadata, _ := appItems[0].Detail["metadata"].(map[string]any); metadata["payload_ref"] != nil || metadata["payload_expires_at"] != nil {
+		t.Fatalf("app timeline detail leaked payload reference: %#v", metadata)
+	}
+	controlItems := projectAgentTraceTimelineWithPayloadRefs(readout, true)
+	if controlItems[0].PayloadRef != "ptp_private" || controlItems[0].PayloadStatus != "recorded" {
+		t.Fatalf("control-plane timeline missing payload status: %#v", controlItems[0])
+	}
+}
+
+func TestTimelineTraceProjectionUsesOnlyRedactedFailureSummary(t *testing.T) {
+	trace := runtimeTraceDTO{
+		SafeLabels: map[string]string{"status": " ERROR "},
+		Metadata: map[string]any{
+			"error_summary": "unsafe provider detail",
+			"credential":    "must-not-be-used-as-error",
+		},
+		RedactedPayload: map[string]any{
+			"duration_ms":   -1,
+			"error_summary": "safe timeout summary",
+		},
+	}
+	status := timelineTraceRecordStatus(trace)
+	if status != "error" {
+		t.Fatalf("status = %q, want normalized error", status)
+	}
+	if duration := timelineTraceDurationMilliseconds(trace.RedactedPayload); duration != nil {
+		t.Fatalf("duration = %#v, want negative duration rejected", duration)
+	}
+	failure := timelineTraceError(trace, status)
+	if failure["error_summary"] != "safe timeout summary" {
+		t.Fatalf("failure = %#v, want redacted summary", failure)
+	}
+	if failure["error_summary"] == trace.Metadata["error_summary"] {
+		t.Fatalf("failure = %#v, must not use metadata error_summary", failure)
+	}
+
+	trace.SafeLabels["status"] = "success"
+	if failure := timelineTraceError(trace, timelineTraceRecordStatus(trace)); failure != nil {
+		t.Fatalf("success failure = %#v, want nil", failure)
+	}
+}
+
+func TestRunManifestProjectionUsesPersistedManifestAndRemovesMetadataDuplicate(t *testing.T) {
+	manifest := runtime.BuildRunManifest(&runtime.ExecutionSpec{
+		Skill: runtime.SkillSpec{PrimarySkill: "analysis", Guidance: "private prompt", RevisionRefs: []runtime.RunRevisionRef{
+			runtime.NewRunRevisionRef("skill", "analysis", "v1", "registry", "private skill"),
+		}},
+		Model: runtime.ModelSpec{Requested: runtime.ModelEndpoint{ProviderID: "provider", ProviderModelID: "model"}},
+	}, time.Date(2026, time.July, 16, 8, 0, 0, 0, time.UTC))
+	persisted, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persistedMap map[string]any
+	if err := json.Unmarshal(persisted, &persistedMap); err != nil {
+		t.Fatal(err)
+	}
+
+	projected, status := runManifestFromMetadata(map[string]any{"run_manifest": persistedMap})
+	if status != manifest.Status || projected == nil || projected.ManifestSHA256 != manifest.ManifestSHA256 {
+		t.Fatalf("projected=%#v status=%q, want persisted manifest", projected, status)
+	}
+	metadata := metadataWithoutRunManifest(map[string]any{"run_manifest": persistedMap, "writer": "graph"})
+	if _, exists := metadata["run_manifest"]; exists || metadata["writer"] != "graph" {
+		t.Fatalf("metadata = %#v, want manifest removed and other fields retained", metadata)
+	}
+}
+
+func TestRunManifestProjectionMarksLegacyRunUnavailable(t *testing.T) {
+	manifest, status := runManifestFromMetadata(map[string]any{"writer": "legacy"})
+	if manifest != nil || status != "legacy_unavailable" {
+		t.Fatalf("manifest=%#v status=%q, want legacy_unavailable", manifest, status)
+	}
+}
+
+func TestRunManifestProjectionRejectsUnknownSchemaWithoutCurrentConfigInference(t *testing.T) {
+	manifest, status := runManifestFromMetadata(map[string]any{"run_manifest": map[string]any{
+		"schema_version":  "agent_run_manifest.v99",
+		"manifest_sha256": "future-digest",
+	}})
+	if manifest != nil || status != "unsupported_schema" {
+		t.Fatalf("manifest=%#v status=%q, want unsupported_schema", manifest, status)
 	}
 }
 

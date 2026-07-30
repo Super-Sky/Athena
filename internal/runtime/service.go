@@ -24,6 +24,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"regexp"
@@ -199,6 +200,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	}
 
 	toolSet := make(map[string]string)
+	skillRevisionRefs := make([]RunRevisionRef, 0, len(filteredSkills))
 	var primary skills.AdaptedSkill
 	var auxiliary []skills.AdaptedSkill
 	for idx, name := range filteredSkills {
@@ -207,6 +209,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 			continue
 		}
 		governedSkills = append(governedSkills, name)
+		skillRevisionRefs = append(skillRevisionRefs, NewRunRevisionRef("skill", def.Name, "", "skill_registry", def))
 		adapted := r.Adapter.Adapt(def)
 		if idx == 0 {
 			primary = adapted
@@ -292,11 +295,13 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		Skill: SkillSpec{
 			PrimarySkill: primary.Name,
 			Guidance:     strings.Join(compactStrings(guidanceParts), "\n"),
+			RevisionRefs: skillRevisionRefs,
 		},
 		Tools: ToolSpec{
 			AllowedTools: allowedTools,
 			Declarations: filterRuntimeToolDeclarations(in.ToolDeclarations, allowedTools),
 			Sources:      sources,
+			RevisionRefs: runToolRevisionRefs(allowedTools, sources, toolDefinitions, in.ToolDeclarations),
 		},
 		Model: buildModelSpec(in.ModelSelection),
 		Inference: InferenceSpec{
@@ -367,6 +372,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	}
 	spec.Metadata.PreservedContext = buildPreservedContext(in, nil)
 	ApplyResolvedRuntimeContract(spec, in.ResolvedContract, in.ResolvedTaskType)
+	spec.Metadata.ManifestRefs = runManifestReferences(task, in.ResolvedContract)
 	if personaContext := taskPersonaContext(task); personaContext != nil {
 		if personaContext.ID != "" {
 			spec.Metadata.Constraints["persona_id"] = personaContext.ID
@@ -408,6 +414,12 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	applyResolvedToolChoice(spec, resolvedParameters)
 	spec.Metadata.Constraints["model_policy"] = resolvedParameters.PolicyName
 	spec.Metadata.Constraints["model_policy_version"] = resolvedParameters.PolicyVersion
+	if strings.TrimSpace(resolvedParameters.PolicyName) != "" {
+		spec.Metadata.ManifestRefs.Governance = append(spec.Metadata.ManifestRefs.Governance,
+			NewRunRevisionRef("governance_policy", resolvedParameters.PolicyName, resolvedParameters.PolicyVersion, "model_policy", map[string]string{
+				"name": resolvedParameters.PolicyName, "version": resolvedParameters.PolicyVersion,
+			}))
+	}
 	spec.Metadata.Constraints["loop_stage"] = string(policyContext.LoopStage)
 
 	if len(auxiliary) > 0 {
@@ -1632,6 +1644,89 @@ func taskContextAssetEffectiveViews(task *runtimetask.RuntimeTask) *contextasset
 		return nil
 	}
 	return &views
+}
+
+func runToolRevisionRefs(names []string, sources map[string]string, definitions map[string]tools.Definition, declarations []ToolDefinition) []RunRevisionRef {
+	declarationByName := make(map[string]ToolDefinition, len(declarations))
+	for _, declaration := range declarations {
+		declarationByName[strings.TrimSpace(declaration.Function.Name)] = declaration
+	}
+	refs := make([]RunRevisionRef, 0, len(names))
+	for _, name := range names {
+		definition := definitions[name]
+		payload := map[string]any{
+			"name": definition.Name, "description": definition.Description,
+			"required_inputs": append([]string(nil), definition.RequiredInputs...),
+			"tool_scope":      definition.ToolScope, "requires_confirmation": definition.RequiresConfirmation,
+			"side_effect_level": definition.SideEffectLevel, "input_schema_summary": definition.InputSchemaSummary,
+			"output_schema_summary": definition.OutputSchemaSummary,
+		}
+		if declaration, ok := declarationByName[name]; ok {
+			payload["declaration"] = declaration
+		}
+		refs = append(refs, NewRunRevisionRef("tool", name, "", sources[name], payload))
+	}
+	return refs
+}
+
+func runManifestReferences(task *runtimetask.RuntimeTask, contract *RuntimeContract) RunManifestReferences {
+	refs := RunManifestReferences{}
+	if contract != nil {
+		contractRef := NewRunRevisionRef("runtime_contract", contract.ID, contract.Version, "runtime_contract_store", contract)
+		refs.RuntimeContract = &contractRef
+		refs.Governance = append(refs.Governance, runMapRevisionRefs("governance_policy", "runtime_contract", contract.GovernancePolicyRefs)...)
+		refs.SystemTruth = append(refs.SystemTruth, runMapRevisionRefs("system_truth", "runtime_contract", contract.SystemTruthRefs)...)
+	}
+	if task == nil || len(task.GlobalContext) == 0 {
+		return refs
+	}
+	bundle := contextassets.BuildBundle(task.GlobalContext)
+	if bundle == nil {
+		return refs
+	}
+	resolvedAssetIDs := make(map[string]struct{}, len(bundle.ResolvedAssets))
+	for _, item := range bundle.ResolvedAssets {
+		version := strings.TrimSpace(item.CompiledVersion)
+		if version == "" && item.Asset.Ref != nil {
+			version = strings.TrimSpace(item.Asset.Ref.Version)
+		}
+		digestPayload := any(item)
+		ref := NewRunRevisionRef("context_asset", item.Asset.AssetID, version, item.Asset.SourceKind, digestPayload)
+		if checksum := strings.TrimPrefix(strings.TrimSpace(item.CompiledChecksum), "sha256:"); len(checksum) == sha256.Size*2 {
+			ref.ContentSHA256 = checksum
+		}
+		refs.ContextAssets = append(refs.ContextAssets, ref)
+		resolvedAssetIDs[strings.TrimSpace(item.Asset.AssetID)] = struct{}{}
+	}
+	for _, item := range bundle.Assets {
+		if _, resolved := resolvedAssetIDs[strings.TrimSpace(item.AssetID)]; resolved {
+			continue
+		}
+		version := ""
+		if item.Ref != nil {
+			version = item.Ref.Version
+		}
+		refs.ContextAssets = append(refs.ContextAssets,
+			NewRunRevisionRef("context_asset", item.AssetID, version, item.SourceKind+":requested", item))
+	}
+	return refs
+}
+
+func runMapRevisionRefs(kind, source string, values map[string]any) []RunRevisionRef {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	refs := make([]RunRevisionRef, 0, len(keys))
+	for _, key := range keys {
+		version := ""
+		if record, ok := values[key].(map[string]any); ok {
+			version = firstNonEmptyRunManifestValue(anyStringValue(record["version"]), anyStringValue(record["policy_version"]), anyStringValue(record["truth_dir_version"]))
+		}
+		refs = append(refs, NewRunRevisionRef(kind, key, version, source, values[key]))
+	}
+	return refs
 }
 
 func defaultSceneSkillBundle(task *runtimetask.RuntimeTask, query string, catalog []scene.Definition) []string {

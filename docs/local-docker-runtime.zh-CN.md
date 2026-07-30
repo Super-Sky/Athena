@@ -12,6 +12,16 @@ docker compose --env-file deploy/athena.runtime.env -f deploy/docker-compose.run
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
+若本地或企业网络要求构建期代理，请在未提交的 `deploy/athena.runtime.env` 中设置：
+
+```dotenv
+DOCKER_BUILD_HTTP_PROXY=http://host.docker.internal:PORT
+DOCKER_BUILD_HTTPS_PROXY=http://host.docker.internal:PORT
+DOCKER_BUILD_NO_PROXY=localhost,127.0.0.1,postgres,redis,athena-api
+```
+
+它们是 Docker build args，不是 Athena 运行时设置。直连时保持为空；代理 URL 若带凭据，绝不能提交。
+
 需要 Control Plane 页面时：
 
 ```bash

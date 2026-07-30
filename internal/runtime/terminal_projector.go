@@ -21,6 +21,7 @@ const (
 // RuntimeTerminalOutcome 表示 runner 完成后向 runtime persistence 回传的安全终态信号。
 type RuntimeTerminalOutcome struct {
 	Status          string
+	StopReason      ExecutionStopReason
 	Content         string
 	Error           error
 	ToolSideEffects bool
@@ -30,12 +31,15 @@ type RuntimeTerminalOutcome struct {
 // RuntimeTerminalProjector writes terminal output summaries through the runtime persistence boundary.
 // RuntimeTerminalProjector 通过 runtime persistence 边界写入最终输出摘要。
 type RuntimeTerminalProjector struct {
-	Store     RuntimePersistenceStore
-	Now       func() time.Time
-	RecordSet *MinimalPersistenceRecordSet
-	Metadata  map[string]any
-	Callbacks *RuntimeCallbackRecorder
-	Tools     *ToolCallTranscript
+	Store         RuntimePersistenceStore
+	PayloadStore  PrivilegedTracePayloadStore
+	PayloadPolicy PrivilegedTracePayloadPolicy
+	Now           func() time.Time
+	RecordSet     *MinimalPersistenceRecordSet
+	Metadata      map[string]any
+	Callbacks     *RuntimeCallbackRecorder
+	Tools         *ToolCallTranscript
+	ExecutionSpec *ExecutionSpec
 }
 
 // ProjectTerminalOutcome records a final runner outcome when terminal projection is configured.
@@ -57,6 +61,9 @@ func (p *RuntimeTerminalProjector) Project(ctx context.Context, outcome RuntimeT
 		return transactor.WithTransaction(ctx, func(txStore RuntimePersistenceStore) error {
 			txProjector := *p
 			txProjector.Store = txStore
+			if payloadStore, ok := txStore.(PrivilegedTracePayloadStore); ok {
+				txProjector.PayloadStore = payloadStore
+			}
 			return txProjector.project(ctx, outcome)
 		})
 	}
@@ -71,6 +78,7 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 	run := p.RecordSet.Run
 	step := p.RecordSet.Step
 	status := normalizeRuntimeTerminalStatus(outcome.Status, outcome.Error)
+	stopReason := NormalizeExecutionStopReason(status, outcome.Error, outcome.StopReason)
 	runToStatus := TaskRunStatusCompleted
 	stepToStatus := TaskStepStatusSuccess
 	if status == RuntimeTerminalStatusFailed {
@@ -83,6 +91,9 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		"projection_source": "runtime_terminal_projector",
 		"redaction_policy":  "whitelist_summary",
 	})
+	if err := p.projectContextAssembly(ctx, now); err != nil {
+		return err
+	}
 
 	if _, err := p.Store.CreateLifecycleEvent(ctx, TaskRunLifecycleEvent{
 		RunID:       run.ID,
@@ -92,8 +103,8 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		SubjectID:   step.ID,
 		FromStatus:  step.Status,
 		ToStatus:    stepToStatus,
-		Reason:      "runner_terminal_outcome_observed",
-		Metadata:    map[string]any{"safe_label": "step_terminal_observed", "terminal_status": status},
+		Reason:      string(stopReason),
+		Metadata:    map[string]any{"safe_label": "step_terminal_observed", "terminal_status": status, "stop_reason": stopReason},
 		OccurredAt:  now,
 	}); err != nil {
 		return err
@@ -105,8 +116,8 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		SubjectID:   run.ID,
 		FromStatus:  run.Status,
 		ToStatus:    runToStatus,
-		Reason:      "runner_terminal_outcome_observed",
-		Metadata:    map[string]any{"safe_label": "run_terminal_observed", "terminal_status": status},
+		Reason:      string(stopReason),
+		Metadata:    map[string]any{"safe_label": "run_terminal_observed", "terminal_status": status, "stop_reason": stopReason},
 		OccurredAt:  now.Add(time.Millisecond),
 	}); err != nil {
 		return err
@@ -181,18 +192,22 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		return err
 	}
 	if err := (RuntimeCallbackProjector{
-		Store:     p.Store,
-		Now:       p.Now,
-		RecordSet: p.RecordSet,
-		Recorder:  p.Callbacks,
+		Store:         p.Store,
+		PayloadStore:  p.PayloadStore,
+		PayloadPolicy: p.PayloadPolicy,
+		Now:           p.Now,
+		RecordSet:     p.RecordSet,
+		Recorder:      p.Callbacks,
 	}).Project(ctx); err != nil {
 		return err
 	}
 	if err := (RuntimeToolTranscriptProjector{
-		Store:      p.Store,
-		Now:        p.Now,
-		RecordSet:  p.RecordSet,
-		Transcript: p.Tools,
+		Store:         p.Store,
+		PayloadStore:  p.PayloadStore,
+		PayloadPolicy: p.PayloadPolicy,
+		Now:           p.Now,
+		RecordSet:     p.RecordSet,
+		Transcript:    p.Tools,
 	}).Project(ctx); err != nil {
 		return err
 	}
@@ -209,6 +224,32 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		},
 		Metadata:  metadata,
 		CreatedAt: now.Add(6 * time.Millisecond),
+	})
+	return err
+}
+
+func (p RuntimeTerminalProjector) projectContextAssembly(ctx context.Context, createdAt time.Time) error {
+	traceID := defaultID("")
+	payloadMetadata := projectPrivilegedTracePayload(
+		ctx, p.PayloadStore, p.PayloadPolicy, p.RecordSet.Run.WorkspaceID, privilegedTraceComponentContext,
+		p.RecordSet.Run.ID, p.RecordSet.Step.ID, traceID, "context_assembly_summary", "runtime_context_assembly",
+		privilegedContextAssemblyPayload(p.ExecutionSpec), createdAt,
+	)
+	primarySkill := ""
+	auxiliaryCount := 0
+	contextAssetCount := 0
+	if p.ExecutionSpec != nil {
+		primarySkill = strings.TrimSpace(p.ExecutionSpec.Skill.PrimarySkill)
+		auxiliaryCount = len(p.ExecutionSpec.Skill.AuxiliarySkills)
+		contextAssetCount = len(p.ExecutionSpec.Metadata.ManifestRefs.ContextAssets)
+	}
+	_, err := p.Store.CreateRuntimeTrace(ctx, RuntimeTrace{
+		ID: traceID, RunID: p.RecordSet.Run.ID, StepID: p.RecordSet.Step.ID,
+		TraceType: "context_assembly_summary", Summary: "runtime skill and context assembly observed",
+		SafeLabels:      map[string]string{"component": "internal/runtime", "source": "runtime_context_assembly", "primary_skill": primarySkill},
+		RedactedPayload: map[string]any{"primary_skill": primarySkill, "auxiliary_skill_count": auxiliaryCount, "context_asset_count": contextAssetCount},
+		Metadata:        mergeAnyMaps(map[string]any{"projection_source": "runtime_terminal_projector", "redaction_policy": "whitelist_summary"}, payloadMetadata),
+		CreatedAt:       createdAt,
 	})
 	return err
 }

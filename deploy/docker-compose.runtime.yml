@@ -33,6 +33,10 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: "${DOCKER_BUILD_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${DOCKER_BUILD_HTTPS_PROXY:-}"
+        NO_PROXY: "${DOCKER_BUILD_NO_PROXY:-}"
     environment:
       HTTP_PORT: "8080"
       SESSION_STORE_DRIVER: postgres
@@ -77,6 +81,10 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: "${DOCKER_BUILD_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${DOCKER_BUILD_HTTPS_PROXY:-}"
+        NO_PROXY: "${DOCKER_BUILD_NO_PROXY:-}"
     profiles: ["control-plane"]
     ports:
       - "${ATHENA_WEB_PORT:-5173}:80"

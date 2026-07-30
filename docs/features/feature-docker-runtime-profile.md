@@ -15,7 +15,11 @@ Issue `Super-Sky/Athena#12` 为作为业务应用通用 Agent Runtime 的 Athena
 - `athena-api`: waits for PostgreSQL and Redis, runs migration, then starts the API healthcheck.
 - `athena-web`: optional `control-plane` profile, enabled only when the Web UI is needed.
 
+Both image builds accept optional standard proxy arguments through `DOCKER_BUILD_HTTP_PROXY`, `DOCKER_BUILD_HTTPS_PROXY`, and `DOCKER_BUILD_NO_PROXY`. They only affect dependency retrieval while building an image and remain empty for direct registry access.
+
 `deploy/docker-compose.runtime.yml` 包含 PostgreSQL、Redis、Athena API 和可选 Control Plane Web。API 在两个依赖健康后先执行迁移再启动；Redis 只预留给缓存、限流和异步任务，不保存业务真相。
+
+两个镜像构建都支持 `DOCKER_BUILD_HTTP_PROXY`、`DOCKER_BUILD_HTTPS_PROXY`、`DOCKER_BUILD_NO_PROXY` 这组可选标准代理参数。它们只影响镜像构建期间的依赖获取；直连 registry 时应保持为空。
 
 ## Integration Contract / 对接契约
 

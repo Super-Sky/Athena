@@ -11,3 +11,7 @@
 
 - `master-plan.md`
   - v2.1.0 RuntimeContract foundation、Batch 2 收口、Application Runtime tool-call 与 remote business tool contract 的 canonical checklist。
+- `agent-trace-timeline/`
+  - issue #11 不可变 run manifest 的 Codex 实施记录。
+- `agent-run-app-auth/`
+  - issue #26 Agent Run 应用授权门禁的 Codex 实施与独立 review 修复记录。

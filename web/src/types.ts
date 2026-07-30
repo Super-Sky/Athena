@@ -155,11 +155,55 @@ export type RuntimeTraceTimelineItem = {
   step_id?: string;
   error?: Record<string, unknown>;
   detail?: Record<string, unknown>;
+  payload_ref?: string;
+  payload_status?: string;
+  payload_unavailable_reason?: string;
+};
+
+export type PrivilegedTracePayload = {
+  payload_ref: string;
+  run_id: string;
+  step_id?: string;
+  trace_type: string;
+  source: string;
+  schema_version: string;
+  payload: Record<string, unknown>;
+  payload_size: number;
+  redacted_field_count: number;
+  created_at: string;
+  expires_at: string;
+};
+
+export type RuntimeRunRevisionRef = {
+  kind: string;
+  id: string;
+  version?: string;
+  content_sha256?: string;
+  source?: string;
+};
+
+export type RuntimeRunManifest = {
+  schema_version: string;
+  status: string;
+  captured_at: string;
+  manifest_sha256: string;
+  model?: RuntimeRunRevisionRef;
+  prompt?: RuntimeRunRevisionRef;
+  skills?: RuntimeRunRevisionRef[];
+  tools?: RuntimeRunRevisionRef[];
+  governance?: RuntimeRunRevisionRef[];
+  context_assets?: RuntimeRunRevisionRef[];
+  evaluators?: RuntimeRunRevisionRef[];
+  system_truth?: RuntimeRunRevisionRef[];
+  runtime_contract?: RuntimeRunRevisionRef;
+  missing?: string[];
 };
 
 export type RuntimeTraceTimeline = {
   run: RuntimeRun;
   items: RuntimeTraceTimelineItem[];
+  run_manifest?: RuntimeRunManifest;
+  manifest_status: "complete" | "partial" | "legacy_unavailable" | "unsupported_schema" | "invalid";
   summary: {
     run_id: string;
     item_count: number;

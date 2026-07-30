@@ -10,13 +10,14 @@ import (
 
 	"moss/internal/controlplane"
 	"moss/internal/runtime"
+	runtimetask "moss/internal/runtime/task"
 )
 
 func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 	t.Parallel()
 
 	manager := newRuntimeFoundationTestManager(t)
-	store := newRuntimeFoundationMemoryStore()
+	store := newRuntimeFoundationWriteTestStore()
 
 	if err := syncRuntimeContractFoundationSnapshot(context.Background(), manager, store); err != nil {
 		t.Fatalf("syncRuntimeContractFoundationSnapshot() error = %v", err)
@@ -66,11 +67,34 @@ func TestSyncRuntimeContractFoundationSnapshotSeedsActiveTruth(t *testing.T) {
 			t.Fatalf("%s compatibility = %#v, want projection-only scope", seed.typeKey, taskType.Compatibility)
 		}
 	}
+	service := &Service{RuntimeStore: store}
+	resolved, err := service.resolveRuntimeContractResolution(context.Background(), runtimetask.InputKindChat)
+	if err != nil {
+		t.Fatalf("resolve default chat contract error = %v", err)
+	}
+	if resolved == nil || resolved.TaskType.TypeKey != runtimetask.InputKindChat {
+		t.Fatalf("resolved chat contract = %#v, want active chat task type", resolved)
+	}
 	if len(store.activeTruthsByAsset) == 0 {
 		t.Fatalf("activeTruthsByAsset is empty, want at least one active truth")
 	}
 	if _, ok := store.activeTruthsByAsset["persona.default"]; !ok {
 		t.Fatalf("activeTruthsByAsset missing persona.default: %#v", store.activeTruthsByAsset)
+	}
+}
+
+func TestRegisteredTaskTypeValidatorSeedsUseUniqueTypeKeys(t *testing.T) {
+	t.Parallel()
+
+	seen := make(map[string]struct{}, len(registeredTaskTypeValidatorSeeds))
+	for _, seed := range registeredTaskTypeValidatorSeeds {
+		if _, exists := seen[seed.typeKey]; exists {
+			t.Fatalf("duplicate runtime task type seed %q", seed.typeKey)
+		}
+		seen[seed.typeKey] = struct{}{}
+	}
+	if _, ok := seen[runtimetask.InputKindChat]; !ok {
+		t.Fatal("chat must remain a registered generic runtime task type")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -171,6 +172,9 @@ func TestAgentRunEndpointsCreateReadTraceAndCancel(t *testing.T) {
 	if created.RunID == "" || created.Status != "completed" || !created.TraceAvailable {
 		t.Fatalf("unexpected create response = %#v", created)
 	}
+	if created.StopReason != string(runtime.ExecutionStopSuccess) {
+		t.Fatalf("stop reason = %q, want %q", created.StopReason, runtime.ExecutionStopSuccess)
+	}
 	if created.TraceSummary == nil || created.TraceSummary.TraceCount < 2 {
 		t.Fatalf("trace summary = %#v, want writer and terminal traces", created.TraceSummary)
 	}
@@ -221,14 +225,130 @@ func TestAgentRunEndpointsCreateReadTraceAndCancel(t *testing.T) {
 	if cancel.Code != consts.StatusConflict {
 		t.Fatalf("cancel status = %d, want %d; body=%s", cancel.Code, consts.StatusConflict, cancel.Body.String())
 	}
-	if !strings.Contains(cancel.Body.String(), agentRunStopReasonAlreadyFinal) {
-		t.Fatalf("cancel body = %s, want already-terminal reason", cancel.Body.String())
+	if !strings.Contains(cancel.Body.String(), `"stop_reason":"success"`) {
+		t.Fatalf("cancel body = %s, want stable terminal reason", cancel.Body.String())
+	}
+}
+
+func TestAgentRunTraceUsesStableStopReasonAndLatestRunStatus(t *testing.T) {
+	t.Parallel()
+
+	readout := agentRunTraceReadout{
+		Run: runtimeRunDTO{Status: runtime.TaskRunStatusCompleted},
+		Events: []runtimeLifecycleEventDTO{
+			{SubjectType: runtime.LifecycleSubjectRun, ToStatus: runtime.TaskRunStatusCompleted, Reason: "minimal_persistence_complete"},
+			{EventType: "run_terminal_observed", SubjectType: runtime.LifecycleSubjectRun, ToStatus: runtime.TaskRunStatusFailed, Reason: string(runtime.ExecutionStopUnrecoverableError)},
+			{EventType: "run_completed", SubjectType: runtime.LifecycleSubjectRun, ToStatus: runtime.TaskRunStatusCompleted, Reason: "minimal_persistence_complete"},
+		},
+	}
+	readout.Run.Status = agentRunEffectiveStatus(readout.Run.Status, readout.Events)
+	if readout.Run.Status != runtime.TaskRunStatusFailed {
+		t.Fatalf("effective status = %q, want failed", readout.Run.Status)
+	}
+	if got := agentRunStopReasonFromTrace(readout); got != string(runtime.ExecutionStopUnrecoverableError) {
+		t.Fatalf("stop reason = %q, want unrecoverable_error", got)
+	}
+
+	legacy := agentRunTraceReadout{
+		Run: runtimeRunDTO{Status: runtime.TaskRunStatusCompleted},
+	}
+	if got := agentRunStopReasonFromTrace(legacy); got != string(runtime.ExecutionStopSuccess) {
+		t.Fatalf("legacy stop reason = %q, want success", got)
+	}
+
+	incomplete := agentRunTraceReadout{
+		Run: runtimeRunDTO{Status: runtime.TaskRunStatusCompleted},
+		Events: []runtimeLifecycleEventDTO{
+			{EventType: "run_running", SubjectType: runtime.LifecycleSubjectRun, ToStatus: runtime.TaskRunStatusRunning},
+			{EventType: "run_completed", SubjectType: runtime.LifecycleSubjectRun, ToStatus: runtime.TaskRunStatusCompleted, Reason: "minimal_persistence_complete"},
+		},
+	}
+	incomplete.Run.Status = agentRunEffectiveStatus(incomplete.Run.Status, incomplete.Events)
+	if incomplete.Run.Status != runtime.TaskRunStatusRunning || agentRunStopReasonFromTrace(incomplete) != "" {
+		t.Fatalf("incomplete readout = %#v, want running without stop reason", incomplete)
+	}
+
+	stepOnly := agentRunTraceReadout{
+		Run: runtimeRunDTO{Status: runtime.TaskRunStatusRunning},
+		Events: []runtimeLifecycleEventDTO{{
+			EventType: "step_terminal_observed", SubjectType: runtime.LifecycleSubjectStep,
+			Reason: string(runtime.ExecutionStopUnrecoverableError),
+		}},
+	}
+	if reason, authoritative := agentRunTerminalStopReasonFromTrace(stepOnly); authoritative || reason != "" {
+		t.Fatalf("step-only terminal reason = %q, %t, want empty, false", reason, authoritative)
+	}
+}
+
+func TestAgentRunResponseKeepsLocalWaitReasonWithoutAuthoritativeTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	readout := agentRunTraceReadout{
+		Run: runtimeRunDTO{Status: runtime.TaskRunStatusCompleted},
+		Events: []runtimeLifecycleEventDTO{{
+			EventType: "run_completed", SubjectType: runtime.LifecycleSubjectRun,
+			ToStatus: runtime.TaskRunStatusCompleted, Reason: "minimal_persistence_complete",
+		}},
+	}
+	localReason := string(runtime.ExecutionStopAwaitingInput)
+	if reason, authoritative := agentRunTerminalStopReasonFromTrace(readout); authoritative {
+		localReason = reason
+	}
+	if localReason != string(runtime.ExecutionStopAwaitingInput) {
+		t.Fatalf("response reason = %q, want awaiting_input", localReason)
+	}
+}
+
+func TestAgentRunOpenErrorUsesStableStopReasons(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want runtime.ExecutionStopReason
+	}{
+		{name: "generic", err: errors.New("open failed"), want: runtime.ExecutionStopUnrecoverableError},
+		{name: "deadline", err: context.DeadlineExceeded, want: runtime.ExecutionStopDeadlineExceeded},
+		{name: "cancelled", err: context.Canceled, want: runtime.ExecutionStopCancelled},
+		{name: "pending", err: &appcore.PendingWaitError{}, want: runtime.ExecutionStopAwaitingInput},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := agentRunOpenErrorResponse("request", agentRunStartRequest{}, agentRunExecutionOptions{}, test.err)
+			if response.StopReason != string(test.want) {
+				t.Fatalf("stop reason = %q, want %q", response.StopReason, test.want)
+			}
+		})
+	}
+}
+
+func TestAgentRunErrorStatusPreservesCancellationSemantics(t *testing.T) {
+	t.Parallel()
+
+	if got := agentRunErrorStatus(context.DeadlineExceeded); got != string(runtime.RequestStatusTimedOut) {
+		t.Fatalf("deadline status = %q, want timed_out", got)
+	}
+	if got := agentRunErrorStatus(context.Canceled); got != runtime.TaskRunStatusCancelled {
+		t.Fatalf("cancelled status = %q, want cancelled", got)
+	}
+	if got := agentRunStopReason(string(runtime.RequestStatusPolicyRejected), "policy detail"); got != string(runtime.ExecutionStopGovernanceDenied) {
+		t.Fatalf("policy stop reason = %q, want governance_denied", got)
+	}
+}
+
+func TestAgentRunRuntimeTaskTypeDefaultsToRegisteredChat(t *testing.T) {
+	t.Parallel()
+
+	for _, taskType := range []string{"", agentRunContractTaskType} {
+		req := agentRunStartRequest{TaskType: taskType}
+		if got := agentRunRuntimeTaskType(req); got != defaultAgentRunRuntimeTaskType {
+			t.Fatalf("agentRunRuntimeTaskType(%q) = %q, want %q", taskType, got, defaultAgentRunRuntimeTaskType)
+		}
 	}
 }
 
 func newAgentRunHTTPServer(t *testing.T, store runtime.RuntimePersistenceStore) *HTTPServer {
 	t.Helper()
-	seedAgentRunRuntimeContract(t, store)
 	cfg := config.Config{
 		Server: config.ServerConfig{HTTPPort: 8080},
 		ControlPlane: config.ControlPlaneConfig{
@@ -247,37 +367,6 @@ func newAgentRunHTTPServer(t *testing.T, store runtime.RuntimePersistenceStore) 
 	application := appcore.NewServiceWithRuntimeStore(cfg, nil, nil, nil, store)
 	application.FastPath = &agentRunTestFastPath{store: store}
 	return NewHTTPServer(cfg, application)
-}
-
-func seedAgentRunRuntimeContract(t *testing.T, store runtime.RuntimePersistenceStore) {
-	t.Helper()
-	registry, ok := store.(interface {
-		CreateRuntimeContract(context.Context, runtime.RuntimeContract) (runtime.RuntimeContract, error)
-		CreateTaskTypeRegistration(context.Context, runtime.TaskTypeRegistration) (runtime.TaskTypeRegistration, error)
-	})
-	if !ok {
-		return
-	}
-	ctx := context.Background()
-	contractID := "contract-chat-agent-run-test"
-	if _, err := registry.CreateRuntimeContract(ctx, runtime.RuntimeContract{
-		ID:       contractID,
-		Name:     "Chat Runtime Contract",
-		Version:  "v1",
-		Status:   runtime.RuntimeContractStatusActive,
-		TaskType: "chat",
-	}); err != nil {
-		t.Fatalf("seed runtime contract failed: %v", err)
-	}
-	if _, err := registry.CreateTaskTypeRegistration(ctx, runtime.TaskTypeRegistration{
-		ID:                "task-type-chat-agent-run-test",
-		TypeKey:           "chat",
-		DisplayName:       "Chat",
-		Status:            runtime.TaskTypeStatusActive,
-		DefaultContractID: contractID,
-	}); err != nil {
-		t.Fatalf("seed task type registration failed: %v", err)
-	}
 }
 
 func newAgentRunJSONRequestContext(body string) *hertzapp.RequestContext {

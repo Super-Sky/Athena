@@ -15,6 +15,7 @@ import type {
   ProviderModelInput,
   ProviderModelPatchInput,
   ProviderPatchInput,
+  PrivilegedTracePayload,
   RuntimeContractFoundation,
   RuntimeContractUpsertInput,
   RuntimeCheckpointReadout,
@@ -244,6 +245,10 @@ export function loadRuntimeTraces(runID: string, limit = 100) {
 
 export function loadRuntimeTimeline(runID: string) {
   return request<RuntimeTraceTimeline>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/timeline`);
+}
+
+export function loadPrivilegedTracePayload(runID: string, payloadRef: string) {
+  return request<PrivilegedTracePayload>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/trace-payloads/${encodeURIComponent(payloadRef)}`);
 }
 
 export function loadRuntimeUsage(runID: string, limit = 100) {

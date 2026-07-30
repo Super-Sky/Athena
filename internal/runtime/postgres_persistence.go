@@ -49,6 +49,8 @@ func (s *PostgresRuntimeStore) AutoMigrate(ctx context.Context) error {
 			&postgresLifecycleEventModel{},
 			&postgresProjectionCandidateModel{},
 			&postgresRuntimeGraphCheckpointModel{},
+			&postgresPrivilegedTracePayloadModel{},
+			&postgresPrivilegedTracePayloadAccessAuditModel{},
 		)
 	})
 }

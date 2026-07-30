@@ -12,6 +12,16 @@ docker compose --env-file deploy/athena.runtime.env -f deploy/docker-compose.run
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
+For a local or corporate build proxy, set these optional values in the uncommitted `deploy/athena.runtime.env` file:
+
+```dotenv
+DOCKER_BUILD_HTTP_PROXY=http://host.docker.internal:PORT
+DOCKER_BUILD_HTTPS_PROXY=http://host.docker.internal:PORT
+DOCKER_BUILD_NO_PROXY=localhost,127.0.0.1,postgres,redis,athena-api
+```
+
+They are Docker build arguments, not Athena runtime settings. Leave them empty for direct access and never commit a credential-bearing proxy URL.
+
 To include the Control Plane UI:
 
 ```bash

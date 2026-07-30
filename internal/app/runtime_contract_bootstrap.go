@@ -90,20 +90,26 @@ var runtimeValidationHookSeeds = []runtimeFoundationHookSeed{
 // registeredTaskTypeValidatorSeeds defines the generic task types that must be executable after foundation bootstrap.
 // registeredTaskTypeValidatorSeeds 定义 foundation bootstrap 后必须可执行的通用任务类型。
 var registeredTaskTypeValidatorSeeds = []registeredTaskTypeValidatorSeed{
+	// Chat is the generic default runtime task; app-facing Agent Runs map their transport contract onto it.
+	// Chat 是通用默认 runtime task；app-facing Agent Run 会把 transport contract 映射到该类型。
 	{
 		id:          "athena.task_type.chat.v1",
 		typeKey:     runtimetask.InputKindChat,
 		displayName: "Chat",
-		description: "Register the default conversational task boundary used by chat and Agent Run entrypoints.",
+		description: "Register the generic conversational boundary used by chat and Agent Run entrypoints without owning application or business semantics.",
 		scene:       "default",
-		aliases:     []any{"agent_run"},
+		aliases:     []any{"default_chat", "agent_run"},
 		properties: map[string]any{
-			"workspace_id":    map[string]any{"type": "string"},
-			"main_session_id": map[string]any{"type": "string"},
-			"query":           map[string]any{"type": "string"},
-			"input_payload":   map[string]any{"type": "object"},
-			"global_context":  map[string]any{"type": "object"},
-			"app_context":     map[string]any{"type": "object"},
+			"workspace_id":        map[string]any{"type": "string"},
+			"app_instance_id":     map[string]any{"type": "string"},
+			"app_session_id":      map[string]any{"type": "string"},
+			"session_id":          map[string]any{"type": "string"},
+			"main_session_id":     map[string]any{"type": "string"},
+			"query":               map[string]any{"type": "string"},
+			"desired_output_mode": map[string]any{"type": "string"},
+			"input_payload":       map[string]any{"type": "object"},
+			"global_context":      map[string]any{"type": "object"},
+			"app_context":         map[string]any{"type": "object"},
 		},
 	},
 	{
