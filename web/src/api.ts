@@ -17,6 +17,7 @@ import type {
   ProviderPatchInput,
   RuntimeContractFoundation,
   RuntimeContractUpsertInput,
+  RuntimeCheckpointReadout,
   RuntimeHookBindingUpsertInput,
   RuntimeLifecycleEvent,
   RuntimeProjectionCandidate,
@@ -25,6 +26,7 @@ import type {
   RuntimeTaskTypeUpsertInput,
   RuntimeTuning,
   RuntimeTrace,
+  RuntimeTraceTimeline,
   RuntimeUsage,
   RuntimeValidationRunInput,
   RuntimeValidationRunResponse,
@@ -240,6 +242,10 @@ export function loadRuntimeTraces(runID: string, limit = 100) {
   return request<{ items: RuntimeTrace[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/traces${query}`);
 }
 
+export function loadRuntimeTimeline(runID: string) {
+  return request<RuntimeTraceTimeline>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/timeline`);
+}
+
 export function loadRuntimeUsage(runID: string, limit = 100) {
   const query = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : "";
   return request<{ items: RuntimeUsage[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/usage${query}`);
@@ -248,6 +254,10 @@ export function loadRuntimeUsage(runID: string, limit = 100) {
 export function loadRuntimeProjectionCandidates(runID: string, limit = 100) {
   const query = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : "";
   return request<{ items: RuntimeProjectionCandidate[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/projections${query}`);
+}
+
+export function loadRuntimeCheckpoints(runID: string) {
+  return request<{ items: RuntimeCheckpointReadout[] }>(`/api/control-plane/runtime/runs/${encodeURIComponent(runID)}/checkpoints`);
 }
 
 export function loadRuntimeContractFoundation() {

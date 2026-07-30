@@ -35,6 +35,7 @@ type RuntimeTerminalProjector struct {
 	RecordSet *MinimalPersistenceRecordSet
 	Metadata  map[string]any
 	Callbacks *RuntimeCallbackRecorder
+	Tools     *ToolCallTranscript
 }
 
 // ProjectTerminalOutcome records a final runner outcome when terminal projection is configured.
@@ -184,6 +185,14 @@ func (p RuntimeTerminalProjector) project(ctx context.Context, outcome RuntimeTe
 		Now:       p.Now,
 		RecordSet: p.RecordSet,
 		Recorder:  p.Callbacks,
+	}).Project(ctx); err != nil {
+		return err
+	}
+	if err := (RuntimeToolTranscriptProjector{
+		Store:      p.Store,
+		Now:        p.Now,
+		RecordSet:  p.RecordSet,
+		Transcript: p.Tools,
 	}).Project(ctx); err != nil {
 		return err
 	}

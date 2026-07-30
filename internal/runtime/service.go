@@ -146,6 +146,7 @@ type DefaultCapabilityResolver struct {
 	SceneCatalogProvider func(context.Context) []scene.Definition
 	Adapter              skills.Adapter
 	Tools                map[string]tools.Definition
+	ToolProvider         func(context.Context) map[string]tools.Definition
 	Policy               policy.CapabilityPolicy
 }
 
@@ -155,8 +156,16 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	task := ensureRuntimeTask(in)
 	effectiveQuery := resolveEffectiveQuery(in)
 	orchestration := normalizeOrchestrationInput(in)
+	toolDefinitions := r.Tools
+	if r.ToolProvider != nil {
+		toolDefinitions = r.ToolProvider(ctx)
+	}
 	explicitSkills := compactStrings(in.Customization.EnabledSkills)
-	explicitTools := compactStrings(in.Customization.EnabledTools)
+	declaredToolNames, err := validateRuntimeToolDeclarations(in.ToolDeclarations, toolDefinitions)
+	if err != nil {
+		return nil, nil, err
+	}
+	explicitTools := compactStrings(append(append([]string(nil), in.Customization.EnabledTools...), declaredToolNames...))
 	registry := &r.Registry
 	if r.RegistryProvider != nil {
 		if current := r.RegistryProvider(ctx); current != nil {
@@ -209,7 +218,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		}
 	}
 	for _, toolName := range explicitTools {
-		if _, ok := r.Tools[toolName]; !ok {
+		if _, ok := toolDefinitions[toolName]; !ok {
 			continue
 		}
 		if _, exists := toolSet[toolName]; exists {
@@ -224,7 +233,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 	allowedTools := make([]string, 0, len(toolSet))
 	sources := make(map[string]string, len(toolSet))
 	for toolName, source := range toolSet {
-		if _, ok := r.Tools[toolName]; !ok {
+		if _, ok := toolDefinitions[toolName]; !ok {
 			continue
 		}
 		allowedTools = append(allowedTools, toolName)
@@ -286,6 +295,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		},
 		Tools: ToolSpec{
 			AllowedTools: allowedTools,
+			Declarations: filterRuntimeToolDeclarations(in.ToolDeclarations, allowedTools),
 			Sources:      sources,
 		},
 		Model: buildModelSpec(in.ModelSelection),
@@ -356,6 +366,7 @@ func (r DefaultCapabilityResolver) Resolve(ctx context.Context, state RuntimeSta
 		},
 	}
 	spec.Metadata.PreservedContext = buildPreservedContext(in, nil)
+	ApplyResolvedRuntimeContract(spec, in.ResolvedContract, in.ResolvedTaskType)
 	if personaContext := taskPersonaContext(task); personaContext != nil {
 		if personaContext.ID != "" {
 			spec.Metadata.Constraints["persona_id"] = personaContext.ID
@@ -636,6 +647,7 @@ func applyResolvedToolChoice(spec *ExecutionSpec, resolved modelparams.ResolvedM
 	switch resolved.ToolChoice.Kind {
 	case modelparams.ToolChoiceNone:
 		spec.Tools.AllowedTools = nil
+		spec.Tools.Declarations = nil
 		spec.Tools.Sources = nil
 	case modelparams.ToolChoiceSpecificTool:
 		if strings.TrimSpace(resolved.ToolChoice.ToolName) == "" {
@@ -653,6 +665,7 @@ func applyResolvedToolChoice(spec *ExecutionSpec, resolved modelparams.ResolvedM
 			}
 		}
 		spec.Tools.AllowedTools = filteredTools
+		spec.Tools.Declarations = filterRuntimeToolDeclarations(spec.Tools.Declarations, filteredTools)
 		spec.Tools.Sources = filteredSources
 	}
 }
@@ -1292,6 +1305,47 @@ func restrictAllowedTools(allowedTools []string, sources map[string]string, expl
 		}
 	}
 	return filteredTools, filteredSources
+}
+
+func validateRuntimeToolDeclarations(declarations []ToolDefinition, available map[string]tools.Definition) ([]string, error) {
+	names := make([]string, 0, len(declarations))
+	seen := make(map[string]struct{}, len(declarations))
+	for _, declaration := range declarations {
+		if strings.TrimSpace(declaration.Type) != ToolTypeFunction {
+			return nil, fmt.Errorf("tool type %q is not supported", declaration.Type)
+		}
+		name := strings.TrimSpace(declaration.Function.Name)
+		if name == "" {
+			return nil, fmt.Errorf("tool function name is required")
+		}
+		if _, exists := seen[name]; exists {
+			return nil, fmt.Errorf("tool function name %q is duplicated", name)
+		}
+		if _, ok := available[name]; !ok {
+			return nil, fmt.Errorf("tool function %q is not registered", name)
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func filterRuntimeToolDeclarations(declarations []ToolDefinition, allowedTools []string) []ToolDefinition {
+	if len(declarations) == 0 || len(allowedTools) == 0 {
+		return nil
+	}
+	allowed := make(map[string]struct{}, len(allowedTools))
+	for _, name := range allowedTools {
+		allowed[name] = struct{}{}
+	}
+	filtered := make([]ToolDefinition, 0, len(declarations))
+	for _, declaration := range declarations {
+		if _, ok := allowed[strings.TrimSpace(declaration.Function.Name)]; !ok {
+			continue
+		}
+		filtered = append(filtered, declaration)
+	}
+	return filtered
 }
 
 func ensureRuntimeTask(in Input) *runtimetask.RuntimeTask {

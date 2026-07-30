@@ -22,6 +22,7 @@ import {
   loadConfigVersion,
   loadModelProviders,
   loadOpenAPISpec,
+  loadRuntimeCheckpoints,
   loadRuntimeContractFoundation,
   loadRuntimeLifecycleEvents,
   loadRuntimeProjectionCandidates,
@@ -29,6 +30,7 @@ import {
   loadRuntimeRuns,
   loadRuntimeSteps,
   loadRuntimeTraces,
+  loadRuntimeTimeline,
   loadRuntimeUsage,
   loadToolGovernanceDecisions,
   loadToolGovernancePolicy,
@@ -86,6 +88,7 @@ import type {
   ProviderInput,
   ProviderModelInput,
   ProviderModelRecord,
+  RuntimeCheckpointReadout,
   RuntimeContractFoundation,
   RuntimeContractUpsertInput,
   RuntimeHookBindingUpsertInput,
@@ -93,8 +96,10 @@ import type {
   RuntimeProjectionCandidate,
   RuntimeRun,
   RuntimeStep,
+  RuntimeTaskTypeRegistration,
   RuntimeTaskTypeUpsertInput,
   RuntimeTrace,
+  RuntimeTraceTimeline,
   RuntimeValidationRunResponse,
   RuntimeUsage,
   SceneConfig,
@@ -546,11 +551,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">跳到主内容</a>
       <aside className="side-nav">
         <div className="brand-block">
           <p className="eyebrow">Athena</p>
           <h1>Control Plane</h1>
-          <p className="muted">场景、skill、tool、模型治理、策略、配置版本与 API 文档统一入口。</p>
+          <p className="muted">场景、skill、tool、模型治理、策略、配置版本与 API 文档。</p>
         </div>
         <div className="status-card">
           <span className="status-label">认证</span>
@@ -569,6 +575,7 @@ export default function App() {
               key={tab.key}
               aria-current={tab.key === activeTab ? "page" : undefined}
               className={tab.key === activeTab ? "nav-item active" : "nav-item"}
+              data-testid={`nav-${tab.key}`}
               onClick={() => setActiveTab(tab.key)}
               type="button"
             >
@@ -584,7 +591,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="content-pane">
+      <main className="content-pane" id="main-content">
         <header className="content-header">
           <div>
             <p className="eyebrow">Control Surface</p>
@@ -596,7 +603,7 @@ export default function App() {
             <strong>{authPhase === "ready" ? "online" : authPhase}</strong>
           </div>
         </header>
-        {authPhase === "loading" ? <section className="panel">正在检查控制面认证状态…</section> : null}
+        {authPhase === "loading" ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-line" /><span className="skeleton-line short" /></section> : null}
         {authPhase === "unauthenticated" ? (
           <LoginPanel
             error={error}
@@ -609,7 +616,7 @@ export default function App() {
         ) : null}
         {authPhase !== "ready" ? null : (
           <>
-        {data === null ? <section className="panel">正在初始化控制面…</section> : null}
+        {data === null ? <section className="panel loading-panel"><span className="skeleton-line wide" /><span className="skeleton-grid"><span /><span /><span /></span></section> : null}
         {data && activeTab === "overview" ? <OverviewPanel data={data} providers={providers} truthDir={authStatus?.truth_dir} systemResources={systemResources} /> : null}
         {data && activeTab === "release-readiness" ? (
           <ReleaseReadinessPanel
@@ -741,7 +748,7 @@ function OverviewPanel({
       </div>
       <div className="metric-card">
         <span>Truth Dir</span>
-        <strong>{truthDir?.version || "unknown"}</strong>
+        <strong className="metric-value-compact">{truthDir?.version || "unknown"}</strong>
         <span className="muted">{truthDir?.path || "未暴露路径"}</span>
       </div>
     </section>
@@ -966,7 +973,14 @@ function buildReleaseReadinessChecks(
     "GET /api/control-plane/runtime/runs/{runID}/lifecycle",
     "GET /api/control-plane/runtime/runs/{runID}/traces",
     "GET /api/control-plane/runtime/runs/{runID}/usage",
-    "GET /api/control-plane/runtime/runs/{runID}/projections"
+    "GET /api/control-plane/runtime/runs/{runID}/projections",
+    "GET /api/control-plane/runtime/runs/{runID}/checkpoints",
+    "GET /api/control-plane/runtime/system-truth/lifecycle",
+    "POST /api/control-plane/runtime/system-truth/sources",
+    "POST /api/control-plane/runtime/system-truth/drafts",
+    "POST /api/control-plane/runtime/system-truth/drafts/{draftID}/compile",
+    "POST /api/control-plane/runtime/system-truth/compile-results/{compileID}/activate",
+    "POST /api/control-plane/runtime/system-truth/active-versions/{activeID}/rollback"
   ];
   const governanceEndpoints = [
     "GET /api/control-plane/tool-governance/policy",
@@ -2564,8 +2578,10 @@ function SystemValidationPanel({
   const [runtimeSteps, setRuntimeSteps] = useState<RuntimeStep[]>([]);
   const [runtimeLifecycleEvents, setRuntimeLifecycleEvents] = useState<RuntimeLifecycleEvent[]>([]);
   const [runtimeTraces, setRuntimeTraces] = useState<RuntimeTrace[]>([]);
+  const [runtimeTimeline, setRuntimeTimeline] = useState<RuntimeTraceTimeline | null>(null);
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage[]>([]);
   const [runtimeProjections, setRuntimeProjections] = useState<RuntimeProjectionCandidate[]>([]);
+  const [runtimeCheckpoints, setRuntimeCheckpoints] = useState<RuntimeCheckpointReadout[]>([]);
   const [runtimeFoundation, setRuntimeFoundation] = useState<RuntimeContractFoundation | null>(null);
   const [runtimeContractDraft, setRuntimeContractDraft] = useState("");
   const [runtimeTaskTypeDraft, setRuntimeTaskTypeDraft] = useState("");
@@ -2599,6 +2615,18 @@ function SystemValidationPanel({
   const selectableSkills = sceneSkills.length > 0 ? sceneSkills : data.skills;
   const checks = buildSystemValidationChecks(data, items);
   const comparison = buildTextComparison(baselineText, candidateText);
+  const validatorSummary = summarizeTaskTypeValidators(runtimeFoundation?.task_types ?? []);
+  const projectionBoundarySummary = summarizeRuntimeProjectionBoundary(runtimeProjections);
+  const systemTruthSources = runtimeFoundation?.system_truth_sources ?? [];
+  const systemTruthDrafts = runtimeFoundation?.system_truth_drafts ?? [];
+  const systemTruthCompileResults = runtimeFoundation?.system_truth_compile_results ?? [];
+  const systemTruthLifecycleSummary = runtimeFoundation ? {
+    sources: systemTruthSources.length,
+    drafts: systemTruthDrafts.length,
+    compile_results: systemTruthCompileResults.length,
+    active_versions: runtimeFoundation.active_system_truths.length,
+    rollback_versions: runtimeFoundation.active_system_truths.filter((item) => Boolean(item.rollback_from_id)).length
+  } : null;
 
   useEffect(() => {
     if (items.length === 0) {
@@ -2699,25 +2727,31 @@ function SystemValidationPanel({
         setRuntimeSteps([]);
         setRuntimeLifecycleEvents([]);
         setRuntimeTraces([]);
+        setRuntimeTimeline(null);
         setRuntimeUsage([]);
         setRuntimeProjections([]);
+        setRuntimeCheckpoints([]);
         setRuntimeReadError("");
         return;
       }
-      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextUsage, nextProjections] = await Promise.all([
+      const [nextRun, nextSteps, nextLifecycle, nextTraces, nextTimeline, nextUsage, nextProjections, nextCheckpoints] = await Promise.all([
         loadRuntimeRun(nextRunID),
         loadRuntimeSteps(nextRunID),
         loadRuntimeLifecycleEvents(nextRunID),
         loadRuntimeTraces(nextRunID),
+        loadRuntimeTimeline(nextRunID),
         loadRuntimeUsage(nextRunID),
-        loadRuntimeProjectionCandidates(nextRunID)
+        loadRuntimeProjectionCandidates(nextRunID),
+        loadRuntimeCheckpoints(nextRunID)
       ]);
       setRuntimeRun(nextRun);
       setRuntimeSteps(nextSteps.items ?? []);
       setRuntimeLifecycleEvents(nextLifecycle.items ?? []);
       setRuntimeTraces(nextTraces.items ?? []);
+      setRuntimeTimeline(nextTimeline);
       setRuntimeUsage(nextUsage.items ?? []);
       setRuntimeProjections(nextProjections.items ?? []);
+      setRuntimeCheckpoints(nextCheckpoints.items ?? []);
       setRuntimeReadError("");
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -2730,8 +2764,10 @@ function SystemValidationPanel({
       setRuntimeSteps([]);
       setRuntimeLifecycleEvents([]);
       setRuntimeTraces([]);
+      setRuntimeTimeline(null);
       setRuntimeUsage([]);
       setRuntimeProjections([]);
+      setRuntimeCheckpoints([]);
     } finally {
       setRuntimeReadLoading(false);
     }
@@ -2916,7 +2952,7 @@ function SystemValidationPanel({
   }
 
   return (
-    <section className="panel editor-pane">
+    <section className="panel editor-pane" data-testid="system-validation-panel">
       <section className="section-card">
         <div className="section-header">
           <div>
@@ -3174,7 +3210,7 @@ function SystemValidationPanel({
         )}
       </section>
 
-      <section className="section-card runtime-readout">
+      <section className="section-card runtime-readout" data-testid="runtime-readout">
         <div className="section-header">
           <div>
             <h2>Runtime Persistence Readout</h2>
@@ -3182,13 +3218,13 @@ function SystemValidationPanel({
           </div>
           <div className="action-row">
             <span className="muted">{runtimeReadLoading ? "读取中…" : runtimeTriggerRunning ? "写入中…" : runtimeFoundationSaveRunning ? "保存中…" : runtimeReadError ? "read unavailable" : `${runtimeRuns.length} runs`}</span>
-            <button className="secondary-button" disabled={runtimeReadLoading || runtimeTriggerRunning || runtimeFoundationSaveRunning} onClick={triggerRuntimeValidationRun} type="button">
+            <button className="secondary-button" data-testid="runtime-validation-trigger" disabled={runtimeReadLoading || runtimeTriggerRunning || runtimeFoundationSaveRunning} onClick={triggerRuntimeValidationRun} type="button">
               生成 Runtime 验证记录
             </button>
-            <button className="secondary-button" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={saveRuntimeFoundationDrafts} type="button">
+            <button className="secondary-button" data-testid="runtime-foundation-save" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={saveRuntimeFoundationDrafts} type="button">
               保存 Foundation 编辑
             </button>
-            <button className="secondary-button" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={() => withValidationAction(async () => refreshRuntimeRecords())} type="button">
+            <button className="secondary-button" data-testid="runtime-foundation-refresh" disabled={runtimeReadLoading || runtimeFoundationSaveRunning} onClick={() => withValidationAction(async () => refreshRuntimeRecords())} type="button">
               刷新 Runtime 记录
             </button>
           </div>
@@ -3216,6 +3252,21 @@ function SystemValidationPanel({
                 <strong>{runtimeFoundation.active_system_truths.length}</strong>
                 <span>{runtimeFoundation.active_system_truths[0]?.asset_id || "no active pointer"}</span>
               </div>
+              <div className={(systemTruthLifecycleSummary?.sources ?? 0) > 0 && (systemTruthLifecycleSummary?.compile_results ?? 0) > 0 ? "info-card success" : "info-card"} data-testid="runtime-system-truth-lifecycle">
+                <span className="status-label">Truth Lifecycle</span>
+                <strong>{systemTruthLifecycleSummary ? `${systemTruthLifecycleSummary.sources}/${systemTruthLifecycleSummary.drafts}/${systemTruthLifecycleSummary.compile_results}` : "0/0/0"}</strong>
+                <span>{systemTruthLifecycleSummary?.rollback_versions ? `${systemTruthLifecycleSummary.rollback_versions} rollback records` : "source / draft / compile"}</span>
+              </div>
+              <div className={validatorSummary.ready === validatorSummary.expected ? "info-card success" : "info-card warning"} data-testid="runtime-task-type-validator-contracts">
+                <span className="status-label">Validator Contracts</span>
+                <strong>{validatorSummary.ready} / {validatorSummary.expected}</strong>
+                <span>{validatorSummary.missing.length ? `missing: ${validatorSummary.missing.join(", ")}` : validatorSummary.readyKeys.join(", ")}</span>
+              </div>
+              <div className={projectionBoundarySummary.crosses === 0 && projectionBoundarySummary.missingSchema === 0 ? "info-card success" : "info-card warning"} data-testid="runtime-projection-boundary">
+                <span className="status-label">Projection Boundary</span>
+                <strong>{projectionBoundarySummary.safe} / {projectionBoundarySummary.total}</strong>
+                <span>{projectionBoundarySummary.crosses > 0 ? `${projectionBoundarySummary.crosses} boundary conflicts` : projectionBoundarySummary.missingSchema > 0 ? `${projectionBoundarySummary.missingSchema} schema gaps` : "candidate-only runtime read model"}</span>
+              </div>
             </div>
             <div className="split-panel embedded-split">
               <label>
@@ -3223,11 +3274,20 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-contract-foundation"
                   className="debug-textarea compact"
+                  data-testid="runtime-contract-foundation"
                   value={formatMaybeJSON({
                     contracts: runtimeFoundation.contracts,
                     task_types: runtimeFoundation.task_types,
+                    task_type_validator_contracts: validatorSummary,
+                    projection_boundary: projectionBoundarySummary,
                     hook_bindings: runtimeFoundation.hook_bindings,
-                    active_system_truths: runtimeFoundation.active_system_truths
+                    active_system_truths: runtimeFoundation.active_system_truths,
+                    system_truth_lifecycle: {
+                      summary: systemTruthLifecycleSummary,
+                      sources: systemTruthSources,
+                      drafts: systemTruthDrafts,
+                      compile_results: systemTruthCompileResults
+                    }
                   })}
                   readOnly
                   rows={10}
@@ -3238,6 +3298,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-foundation-capabilities"
                   className="debug-textarea compact"
+                  data-testid="runtime-foundation-capabilities"
                   value={formatMaybeJSON({
                     store_capabilities: runtimeFoundation.store_capabilities,
                     unavailable_surfaces: runtimeFoundation.unavailable_surfaces ?? []
@@ -3253,6 +3314,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-contract-editor"
                   className="debug-textarea compact"
+                  data-testid="runtime-contract-editor"
                   onChange={(event) => setRuntimeContractDraft(event.target.value)}
                   rows={12}
                   value={runtimeContractDraft}
@@ -3263,6 +3325,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-task-type-editor"
                   className="debug-textarea compact"
+                  data-testid="runtime-task-type-editor"
                   onChange={(event) => setRuntimeTaskTypeDraft(event.target.value)}
                   rows={5}
                   value={runtimeTaskTypeDraft}
@@ -3270,6 +3333,7 @@ function SystemValidationPanel({
                 <textarea
                   name="runtime-hook-binding-editor"
                   className="debug-textarea compact"
+                  data-testid="runtime-hook-binding-editor"
                   onChange={(event) => setRuntimeHookBindingDraft(event.target.value)}
                   rows={6}
                   value={runtimeHookBindingDraft}
@@ -3322,19 +3386,47 @@ function SystemValidationPanel({
                 <strong>{runtimeProjections.length} candidates</strong>
                 <span>{runtimeProjectionLabel(runtimeProjections[0])}</span>
               </div>
+              <div className={runtimeCheckpoints.some((item) => item.snapshot_available) ? "info-card success" : "info-card"} data-testid="runtime-checkpoint-readout">
+                <span className="status-label">Checkpoint</span>
+                <strong>{runtimeCheckpoints.length} safe refs</strong>
+                <span>{summarizeRuntimeCheckpoints(runtimeCheckpoints)}</span>
+              </div>
             </div>
-            <div className="runtime-timeline">
-              {runtimeSteps.map((step) => (
-                <div className="runtime-timeline-row" key={step.id}>
-                  <span className="runtime-sequence">{step.sequence}</span>
-                  <div>
-                    <strong>{step.name || step.step_type || step.id}</strong>
-                    <span>{step.status} · {step.step_type || "step"} · {runtimeStepLifecycleCount(runtimeLifecycleEvents, step.id)} events</span>
-                  </div>
-                  <small>{formatRuntimeTime(step.updated_at || step.created_at)}</small>
+            <div className="runtime-record-list" data-testid="runtime-trace-timeline">
+              <div className="section-header">
+                <div>
+                  <h3>Agent Trace Timeline</h3>
+                  <p className="section-help">按时间投影 loop step、model、tool、governance、usage 与 delivery；详情只包含安全字段。</p>
                 </div>
+                <span className="muted">{runtimeTimeline?.summary.item_count ?? 0} items · {runtimeTimeline?.summary.failure_count ?? 0} failures</span>
+              </div>
+              {(runtimeTimeline?.items ?? []).map((item) => (
+                <details className="runtime-record-row runtime-timeline-detail" key={item.id}>
+                  <summary>
+                    <span className="status-label">{item.kind}</span>
+                    <strong>{item.summary}</strong>
+                    <span>{item.status || "recorded"} · {item.source}{item.duration_ms !== undefined ? ` · ${item.duration_ms} ms` : ""}</span>
+                    <small>{formatRuntimeTime(item.timestamp)}</small>
+                  </summary>
+                  <pre className="debug-pre">{formatMaybeJSON({ step_id: item.step_id, error: item.error, detail: item.detail })}</pre>
+                </details>
               ))}
             </div>
+            {runtimeCheckpoints.length > 0 ? (
+              <div className="runtime-record-list">
+                <div className="section-header">
+                  <h3>Checkpoint Safe Metadata</h3>
+                  <span className="muted">payload hidden</span>
+                </div>
+                {runtimeCheckpoints.map((checkpoint) => (
+                  <div className="runtime-record-row" key={checkpoint.checkpoint_id}>
+                    <span className="status-label">{checkpoint.stage || "checkpoint"}</span>
+                    <strong>{checkpoint.payload_sha256 ? shortHash(checkpoint.payload_sha256) : checkpoint.snapshot_available ? "snapshot" : "metadata ref"}</strong>
+                    <span>{checkpoint.payload_size ? `${checkpoint.payload_size} bytes` : "payload size hidden"} · {checkpoint.resume_token_present ? "resume token present" : "no resume token"} · {checkpoint.source || "runtime"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="split-panel embedded-split">
               <div className="runtime-record-list">
                 <div className="section-header">
@@ -4665,6 +4757,22 @@ function runtimeProjectionLabel(projection?: RuntimeProjectionCandidate | null) 
   return [projection.schema_version, projection.summary, projection.id].filter(Boolean).slice(0, 2).join(" · ") || projection.id;
 }
 
+function summarizeRuntimeCheckpoints(items: RuntimeCheckpointReadout[]) {
+  if (items.length === 0) {
+    return "no checkpoint refs";
+  }
+  const snapshots = items.filter((item) => item.snapshot_available).length;
+  const latest = items[0];
+  return `${snapshots}/${items.length} snapshots · ${latest.stage || "checkpoint"} · payload hidden`;
+}
+
+function shortHash(value?: string) {
+  if (!value) {
+    return "";
+  }
+  return value.length > 12 ? `${value.slice(0, 12)}…` : value;
+}
+
 function hasProblemStatus(status?: string) {
   const normalized = (status || "").toLowerCase();
   return normalized.includes("error") || normalized.includes("fail");
@@ -4772,11 +4880,101 @@ function defaultRuntimeTaskTypeDraft(): RuntimeTaskTypeUpsertInput {
   return {
     display_name: "Runtime Validation",
     status: "active",
+    input_schema: {
+      type: "object"
+    },
+    validator_refs: {
+      validators: ["runtime_contract_input"],
+      status: "ready"
+    },
     default_contract_id: "runtime_validation_contract",
     metadata: {
       editor_surface: "system_validation"
     }
   };
+}
+
+function summarizeTaskTypeValidators(taskTypes: RuntimeTaskTypeRegistration[]) {
+  const expectedKeys = ["inspection_task", "integration_event", "scheduled_job", "workflow_step_request"];
+  const readyKeys = expectedKeys.filter((key) => {
+    const item = taskTypes.find((taskType) => taskType.type_key === key);
+    if (!item || item.status !== "active" || !item.default_contract_id) {
+      return false;
+    }
+    const refs = item.validator_refs ?? {};
+    const validators = refs.validators;
+    const hasValidators = Array.isArray(validators) && validators.some((value) => typeof value === "string" && value.trim() !== "");
+    const status = typeof refs.status === "string" ? refs.status.trim() : "";
+    return hasValidators && (!status || status === "ready");
+  });
+  return {
+    expected: expectedKeys.length,
+    ready: readyKeys.length,
+    readyKeys,
+    missing: expectedKeys.filter((key) => !readyKeys.includes(key))
+  };
+}
+
+function summarizeRuntimeProjectionBoundary(projections: RuntimeProjectionCandidate[]) {
+  const safe = projections.filter((projection) => projectionRespectsRuntimeBoundary(projection)).length;
+  const missingSchema = projections.filter((projection) => !projection.schema_version || !projection.schema_version.startsWith("runtime_projection.")).length;
+  return {
+    total: projections.length,
+    safe,
+    missingSchema,
+    crosses: projections.length - safe
+  };
+}
+
+function projectionRespectsRuntimeBoundary(projection: RuntimeProjectionCandidate) {
+  const schemaVersion = projection.schema_version || "";
+  if (!schemaVersion.startsWith("runtime_projection.")) {
+    return false;
+  }
+  if (containsBusinessEvidenceIdentity(projection.candidate_kind) || containsBusinessEvidenceIdentity(schemaVersion)) {
+    return false;
+  }
+  const target = projection.materialization_target ?? {};
+  if (target.core_materialization_scope !== "projection_candidate_only") {
+    return false;
+  }
+  if (containsBusinessEvidenceIdentity(target)) {
+    return false;
+  }
+  return !semanticPayloadClaimsBusinessEvidence(projection.semantic_payload ?? {});
+}
+
+function semanticPayloadClaimsBusinessEvidence(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => semanticPayloadClaimsBusinessEvidence(item));
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    if (containsBusinessEvidenceIdentity(key)) {
+      return true;
+    }
+    const normalizedKey = key.trim().toLowerCase();
+    if (["kind", "type", "target_type", "object_type", "entity_type", "record_type", "schema", "schema_version"].includes(normalizedKey) && containsBusinessEvidenceIdentity(child)) {
+      return true;
+    }
+    return semanticPayloadClaimsBusinessEvidence(child);
+  });
+}
+
+function containsBusinessEvidenceIdentity(value: unknown): boolean {
+  if (typeof value === "string") {
+    const compact = value.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+    return ["evidencerecord", "businessevidence", "businesstruth", "formalbusinessobject"].some((marker) => compact.includes(marker));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => containsBusinessEvidenceIdentity(item));
+  }
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => containsBusinessEvidenceIdentity(key) || containsBusinessEvidenceIdentity(child));
 }
 
 function defaultRuntimeHookBindingDraft(contractID?: string): RuntimeHookBindingUpsertInput {

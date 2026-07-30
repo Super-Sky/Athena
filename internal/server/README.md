@@ -20,8 +20,22 @@
   - 注册 HTTP 路由、请求结构和大部分 transport handler。
 - `http_test.go`
   - 验证 HTTP 路由和 transport 行为。
+- `agent_runs.go`
+  - 暴露面向业务应用的 Agent Run API，转换 OpenAI-compatible tool contracts，并把 goal-first 请求映射到通用 app/runtime 主链和 runtime persistence trace readout。
+- `agent_runs_test.go`
+  - 验证 Agent Run 请求解析、tool schema / choice 错误、call/result message 映射以及 create/read/trace/resume/cancel 路由。
+- `external_memory.go`
+  - 暴露应用拥有 memory write/query 与 context asset resolve/assemble HTTP 合约。
+- `external_memory_test.go`
+  - 验证 ownership isolation、摘要资产解析和压缩响应形状。
+- `trace_timeline.go`
+  - 将既有 runtime step、lifecycle、trace、usage 和 projection 安全投影为 app-facing / Control Plane 共用的统一时间线。
+- `trace_timeline_test.go`
+  - 验证时间顺序、model/tool/governance 分类、失败信息和路由注册，不创建重复 trace store。
 - `control_plane.go`
-  - 暴露控制面 bootstrap、scene/skill/runtime-config 接口和控制面 CORS 处理。
+  - 暴露控制面 bootstrap、scene/skill/runtime-config、remote tool registry 接口和控制面 CORS 处理。
+- `remote_tools_test.go`
+  - 验证 remote tool 注册、HTTP 执行、治理/trace、重启恢复、删除和 origin 拒绝闭环。
 - `openapi.go`
   - 生成和暴露 OpenAPI 文档。
 - `request.go`

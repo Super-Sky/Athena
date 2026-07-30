@@ -49,6 +49,12 @@ const (
 	ProjectionSchemaVersionValidationMCP      = "runtime_projection.validation_mcp_result.v1"
 	ProjectionSchemaVersionExternalSandboxRef = "runtime_projection.external_sandbox_ref.v1"
 	ProjectionSchemaVersionAssistantMessage   = "runtime_projection.assistant_message.v1"
+
+	// Projection materialization stays inside runtime candidate/read-model boundaries.
+	// Projection materialization 只停留在 runtime candidate/read-model 边界内。
+	ProjectionMaterializationScopeCandidateOnly = "projection_candidate_only"
+	ProjectionMaterializationTargetReadModel    = "runtime_read_model"
+	ProjectionMaterializationOwnershipRuntime   = "athena_runtime_candidate"
 )
 
 // ErrInvalidRuntimePersistenceInput marks one rejected runtime persistence write.
@@ -263,6 +269,12 @@ type RuntimeContractListFilter struct {
 	Limit    int
 }
 
+// ValidateProjectionCandidate verifies one runtime projection candidate before persistence.
+// ValidateProjectionCandidate 在持久化前校验 runtime projection candidate。
+func ValidateProjectionCandidate(input ProjectionCandidate) error {
+	return validateProjectionCandidate(normalizeProjectionCandidate(input))
+}
+
 // ValidateRuntimeContract verifies one runtime contract payload before persistence.
 // ValidateRuntimeContract 在持久化前校验 runtime contract payload。
 func ValidateRuntimeContract(input RuntimeContract) error {
@@ -378,6 +390,9 @@ func validateProjectionCandidate(input ProjectionCandidate) error {
 	if strings.TrimSpace(input.CandidateKind) == "" {
 		return invalidRuntimePersistenceInput("projection candidate candidate_kind is required")
 	}
+	if err := validateProjectionCandidateBoundary(input); err != nil {
+		return err
+	}
 	for name, value := range map[string]any{
 		"redacted_payload":       input.RedactedPayload,
 		"semantic_payload":       input.SemanticPayload,
@@ -400,7 +415,141 @@ func normalizeProjectionCandidate(input ProjectionCandidate) ProjectionCandidate
 	if normalized.SchemaVersion == "" {
 		normalized.SchemaVersion = defaultProjectionSchemaVersion(normalized.CandidateKind)
 	}
+	normalized.MaterializationTarget = normalizeProjectionMaterializationTarget(normalized.MaterializationTarget)
 	return normalized
+}
+
+func normalizeProjectionMaterializationTarget(input map[string]any) map[string]any {
+	normalized := map[string]any{
+		"target_type":                ProjectionMaterializationTargetReadModel,
+		"core_materialization_scope": ProjectionMaterializationScopeCandidateOnly,
+		"ownership":                  ProjectionMaterializationOwnershipRuntime,
+	}
+	for key, value := range input {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		normalized[key] = value
+	}
+	return normalized
+}
+
+func validateProjectionCandidateBoundary(input ProjectionCandidate) error {
+	schemaVersion := strings.TrimSpace(input.SchemaVersion)
+	if schemaVersion == "" {
+		schemaVersion = defaultProjectionSchemaVersion(input.CandidateKind)
+	}
+	if schemaVersion == "" {
+		return invalidRuntimePersistenceInput("projection candidate schema_version is required")
+	}
+	if !strings.HasPrefix(schemaVersion, "runtime_projection.") {
+		return invalidRuntimePersistenceInput("projection candidate schema_version must use runtime_projection namespace")
+	}
+	if projectionBoundaryContainsBusinessEvidenceIdentity(input.CandidateKind) || projectionBoundaryContainsBusinessEvidenceIdentity(schemaVersion) {
+		return invalidRuntimePersistenceInput("projection candidate identity must remain runtime projection only")
+	}
+	target := normalizeProjectionMaterializationTarget(input.MaterializationTarget)
+	scope, _ := target["core_materialization_scope"].(string)
+	if strings.TrimSpace(scope) != ProjectionMaterializationScopeCandidateOnly {
+		return invalidRuntimePersistenceInput("projection candidate materialization scope must remain %s", ProjectionMaterializationScopeCandidateOnly)
+	}
+	if projectionBoundaryClaimsBusinessEvidence(target) {
+		return invalidRuntimePersistenceInput("projection candidate materialization target must not claim business evidence ownership")
+	}
+	if projectionSemanticPayloadClaimsBusinessEvidence(input.SemanticPayload) {
+		return invalidRuntimePersistenceInput("projection candidate semantic payload must not claim business evidence ownership")
+	}
+	return nil
+}
+
+func projectionBoundaryClaimsBusinessEvidence(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return projectionBoundaryContainsBusinessEvidenceIdentity(typed)
+	case map[string]any:
+		for key, child := range typed {
+			if projectionBoundaryContainsBusinessEvidenceIdentity(key) || projectionBoundaryClaimsBusinessEvidence(child) {
+				return true
+			}
+		}
+	case map[string]string:
+		for key, child := range typed {
+			if projectionBoundaryContainsBusinessEvidenceIdentity(key) || projectionBoundaryContainsBusinessEvidenceIdentity(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if projectionBoundaryClaimsBusinessEvidence(child) {
+				return true
+			}
+		}
+	case []string:
+		for _, child := range typed {
+			if projectionBoundaryContainsBusinessEvidenceIdentity(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func projectionSemanticPayloadClaimsBusinessEvidence(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case map[string]any:
+		for key, child := range typed {
+			if projectionBoundaryContainsBusinessEvidenceIdentity(key) {
+				return true
+			}
+			if projectionBoundarySemanticTypeKey(key) && projectionBoundaryClaimsBusinessEvidence(child) {
+				return true
+			}
+			if projectionSemanticPayloadClaimsBusinessEvidence(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if projectionSemanticPayloadClaimsBusinessEvidence(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func projectionBoundarySemanticTypeKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "kind", "type", "target_type", "object_type", "entity_type", "record_type", "schema", "schema_version":
+		return true
+	default:
+		return false
+	}
+}
+
+func projectionBoundaryContainsBusinessEvidenceIdentity(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return false
+	}
+	compact := strings.NewReplacer("_", "", "-", "", " ", "", ".", "", "/", "", ":", "").Replace(lower)
+	markers := []string{
+		"evidencerecord",
+		"businessevidence",
+		"businesstruth",
+		"formalbusinessobject",
+	}
+	for _, marker := range markers {
+		if strings.Contains(compact, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultProjectionSchemaVersion(candidateKind string) string {

@@ -2,6 +2,8 @@
 // types.go 定义场景、skill 和运行参数使用的文件化控制面契约。
 package controlplane
 
+import "moss/internal/tools"
+
 // TruthDirInfo captures the current system-truth directory path and active version marker.
 // TruthDirInfo 描述当前系统真相目录路径和活动版本标记。
 type TruthDirInfo struct {
@@ -330,11 +332,12 @@ type SystemResourceExport = SystemResourceExportInfo
 // Document stores all persisted control-plane overrides in one file.
 // Document 保存控制面所有持久化 override。
 type Document struct {
-	Scenes     []SceneConfig    `json:"scenes,omitempty"`
-	Skills     []SkillConfig    `json:"skills,omitempty"`
-	Tools      []ToolConfig     `json:"tools,omitempty"`
-	Governance GovernanceConfig `json:"governance"`
-	Runtime    RuntimeTuning    `json:"runtime"`
+	Scenes      []SceneConfig              `json:"scenes,omitempty"`
+	Skills      []SkillConfig              `json:"skills,omitempty"`
+	Tools       []ToolConfig               `json:"tools,omitempty"`
+	RemoteTools []tools.RemoteRegistration `json:"remote_tools,omitempty"`
+	Governance  GovernanceConfig           `json:"governance"`
+	Runtime     RuntimeTuning              `json:"runtime"`
 }
 
 // BootstrapPayload is the front-end bootstrap payload for the control-plane web app.

@@ -1240,11 +1240,17 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if !strings.Contains(body, `"/api/chat/respond"`) {
 		t.Fatalf("expected chat respond path in body: %s", body)
 	}
+	if !strings.Contains(body, `"/api/agent/runs"`) {
+		t.Fatalf("expected agent runs path in body: %s", body)
+	}
 	if !strings.Contains(body, `"/api/system-resources"`) {
 		t.Fatalf("expected system resources path in body: %s", body)
 	}
 	if !strings.Contains(body, `"/api/control-plane/runtime/contracts/foundation"`) {
 		t.Fatalf("expected runtime contract foundation path in body: %s", body)
+	}
+	if !strings.Contains(body, `"/api/control-plane/runtime/system-truth/lifecycle"`) {
+		t.Fatalf("expected system truth lifecycle path in body: %s", body)
 	}
 
 	var spec map[string]any
@@ -1310,6 +1316,12 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/system-resources"]; !ok {
 		t.Fatalf("openapi spec missing /api/system-resources path: %#v", paths)
 	}
+	if _, ok := paths["/api/agent/runs"]; !ok {
+		t.Fatalf("openapi spec missing /api/agent/runs path: %#v", paths)
+	}
+	if _, ok := paths["/api/agent/runs/{runID}/trace"]; !ok {
+		t.Fatalf("openapi spec missing /api/agent/runs/{runID}/trace path: %#v", paths)
+	}
 	if _, ok := paths["/api/system-resources/{id}/debug-payload"]; !ok {
 		t.Fatalf("openapi spec missing system resource debug-payload path: %#v", paths)
 	}
@@ -1331,8 +1343,52 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/control-plane/runtime/hook-bindings/{bindingID}"]; !ok {
 		t.Fatalf("openapi spec missing runtime hook binding write path: %#v", paths)
 	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/lifecycle"]; !ok {
+		t.Fatalf("openapi spec missing system truth lifecycle path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/sources"]; !ok {
+		t.Fatalf("openapi spec missing system truth source write path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/drafts"]; !ok {
+		t.Fatalf("openapi spec missing system truth draft write path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/drafts/{draftID}/compile"]; !ok {
+		t.Fatalf("openapi spec missing system truth compile path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/compile-results/{compileID}/activate"]; !ok {
+		t.Fatalf("openapi spec missing system truth activate path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/system-truth/active-versions/{activeID}/rollback"]; !ok {
+		t.Fatalf("openapi spec missing system truth rollback path: %#v", paths)
+	}
 	if _, ok := schemas["RuntimeContractFoundationResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeContractFoundationResponse: %#v", schemas)
+	}
+	if _, ok := schemas["AgentRunCreateRequest"]; !ok {
+		t.Fatalf("openapi spec missing AgentRunCreateRequest: %#v", schemas)
+	}
+	if _, ok := schemas["AgentRunResponse"]; !ok {
+		t.Fatalf("openapi spec missing AgentRunResponse: %#v", schemas)
+	}
+	for _, schemaName := range []string{"AgentRunToolChoice", "AgentRunToolCall", "AgentRunToolResult", "AgentRunMessage"} {
+		if _, ok := schemas[schemaName]; !ok {
+			t.Fatalf("openapi spec missing %s: %#v", schemaName, schemas)
+		}
+	}
+	toolChoiceSchema, ok := schemas["AgentRunToolChoice"].(map[string]any)
+	if !ok || len(toolChoiceSchema["oneOf"].([]any)) != 2 {
+		t.Fatalf("AgentRunToolChoice schema = %#v, want string/function oneOf", schemas["AgentRunToolChoice"])
+	}
+	agentRunResponseSchema := schemas["AgentRunResponse"].(map[string]any)
+	agentRunResponseProperties := agentRunResponseSchema["properties"].(map[string]any)
+	if _, ok := agentRunResponseProperties["messages"]; !ok {
+		t.Fatalf("AgentRunResponse missing messages schema: %#v", agentRunResponseSchema)
+	}
+	if _, ok := agentRunResponseProperties["tool_results"]; !ok {
+		t.Fatalf("AgentRunResponse missing tool_results schema: %#v", agentRunResponseSchema)
+	}
+	if _, ok := schemas["AgentRunTraceResponse"]; !ok {
+		t.Fatalf("openapi spec missing AgentRunTraceResponse: %#v", schemas)
 	}
 	if _, ok := schemas["RuntimeContract"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeContract: %#v", schemas)
@@ -1345,6 +1401,21 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	}
 	if _, ok := schemas["RuntimeHookBindingUpsertRequest"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeHookBindingUpsertRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthLifecycleReadoutResponse"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthLifecycleReadoutResponse: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthSourceCreateRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthSourceCreateRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthDraftCreateRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthDraftCreateRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthCompileRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthCompileRequest: %#v", schemas)
+	}
+	if _, ok := schemas["SystemTruthActivateRequest"]; !ok {
+		t.Fatalf("openapi spec missing SystemTruthActivateRequest: %#v", schemas)
 	}
 	if _, ok := paths["/api/system-resources/{id}/audit"]; !ok {
 		t.Fatalf("openapi spec missing system resource audit path: %#v", paths)
@@ -1367,6 +1438,15 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/traces"]; !ok {
 		t.Fatalf("openapi spec missing runtime traces path: %#v", paths)
 	}
+	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/timeline"]; !ok {
+		t.Fatalf("openapi spec missing runtime timeline path: %#v", paths)
+	}
+	if _, ok := paths["/api/agent/runs/{runID}/timeline"]; !ok {
+		t.Fatalf("openapi spec missing agent timeline path: %#v", paths)
+	}
+	if _, ok := paths["/api/control-plane/runtime/runs/{runID}/checkpoints"]; !ok {
+		t.Fatalf("openapi spec missing runtime checkpoints path: %#v", paths)
+	}
 	if _, ok := paths["/api/control-plane/validation-mcp/invocations"]; !ok {
 		t.Fatalf("openapi spec missing validation mcp invocation path: %#v", paths)
 	}
@@ -1375,6 +1455,9 @@ func TestSwaggerOpenAPISpecEndpoint(t *testing.T) {
 	}
 	if _, ok := schemas["RuntimeTraceListResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeTraceListResponse schema: %#v", schemas)
+	}
+	if _, ok := schemas["RuntimeCheckpointReadoutListResponse"]; !ok {
+		t.Fatalf("openapi spec missing RuntimeCheckpointReadoutListResponse schema: %#v", schemas)
 	}
 	if _, ok := schemas["RuntimeValidationRunResponse"]; !ok {
 		t.Fatalf("openapi spec missing RuntimeValidationRunResponse schema: %#v", schemas)

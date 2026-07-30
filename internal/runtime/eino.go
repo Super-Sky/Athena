@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	einomessage "github.com/cloudwego/eino/schema"
 	"moss/internal/config"
@@ -24,8 +25,21 @@ type EinoTurnExecutor struct {
 	Config          config.Config
 	ModelProvider   model.Provider
 	ToolDefs        map[string]tools.Definition
+	ToolProvider    func(context.Context) map[string]tools.Definition
 	Observability   *observability.Manager
 	CheckpointStore RuntimeGraphCheckpointByteStore
+}
+
+// NewEinoTurnExecutorWithCatalog creates an Eino executor backed by a dynamic tool catalog.
+// NewEinoTurnExecutorWithCatalog 创建由动态工具目录支持的 Eino 执行器。
+func NewEinoTurnExecutorWithCatalog(cfg config.Config, provider model.Provider, catalog *tools.Catalog, obs *observability.Manager, checkpointStore RuntimeGraphCheckpointByteStore) TurnExecutor {
+	return EinoTurnExecutor{
+		Config:          cfg,
+		ModelProvider:   provider,
+		ToolProvider:    func(context.Context) map[string]tools.Definition { return catalog.Snapshot() },
+		Observability:   obs,
+		CheckpointStore: checkpointStore,
+	}
 }
 
 // NewEinoTurnExecutor creates the default Eino-backed turn executor used by the runtime service.
@@ -58,12 +72,14 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 	if spec.Model.PrimaryConfig == nil {
 		return nil, fmt.Errorf("execution spec is missing primary model configuration")
 	}
-	chatModel, err := e.ModelProvider.NewChatModel(ctx, *spec.Model.PrimaryConfig)
+	controls := ResolveAgentRuntimeControlSettings(spec)
+	chatModel, primaryAttempts, err := e.newChatModelWithRetry(ctx, *spec.Model.PrimaryConfig, controls.ModelRetryMaxAttempts)
+	fallbackAttempts := 0
 	if err != nil {
-		if spec.Model.FallbackConfig == nil || spec.Model.ExplicitSelection {
+		if !controls.ModelFailoverEnabled || spec.Model.FallbackConfig == nil || spec.Model.ExplicitSelection {
 			return nil, err
 		}
-		chatModel, err = e.ModelProvider.NewChatModel(ctx, *spec.Model.FallbackConfig)
+		chatModel, fallbackAttempts, err = e.newChatModelWithRetry(ctx, *spec.Model.FallbackConfig, controls.ModelRetryMaxAttempts)
 		if err != nil {
 			return nil, err
 		}
@@ -79,14 +95,26 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		spec.Model.ExecutedConfig = spec.Model.FallbackConfig
 		spec.Model.FallbackUsed = true
 		spec.Model.FallbackReason = "primary_model_unavailable"
+		if controls.ModelRetryMaxAttempts > 0 {
+			spec.Model.FallbackReason = "primary_model_unavailable_after_retry"
+		}
 	} else {
 		spec.Model.Executed = spec.Model.Requested
 		spec.Model.ExecutedConfig = spec.Model.PrimaryConfig
 	}
+	if spec.Metadata.Constraints == nil {
+		spec.Metadata.Constraints = map[string]any{}
+	}
+	spec.Metadata.Constraints["runtime_model_prepare_primary_attempts"] = primaryAttempts
+	spec.Metadata.Constraints["runtime_model_prepare_fallback_attempts"] = fallbackAttempts
 
+	toolDefinitions := e.ToolDefs
+	if e.ToolProvider != nil {
+		toolDefinitions = e.ToolProvider(ctx)
+	}
 	selectedTools := make([]tool.BaseTool, 0, len(spec.Tools.AllowedTools))
 	for _, toolName := range spec.Tools.AllowedTools {
-		def, ok := e.ToolDefs[toolName]
+		def, ok := toolDefinitions[toolName]
 		if !ok {
 			continue
 		}
@@ -128,16 +156,20 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		ProviderName: spec.Model.Executed.ProviderName,
 		ModelName:    spec.Model.Executed.ProviderModelID,
 	})
+	toolTranscript := NewToolCallTranscript()
 	checkpointRef := RuntimeGraphCheckpointRefForTurn(state)
 	agent, err := NewEinoGraphNativeAgent(ctx, EinoGraphNativeAgentConfig{
-		Name:            "AthenaRuntimeAgent",
-		Description:     fmt.Sprintf("Runtime turn agent for skill=%s", spec.Skill.PrimarySkill),
-		Instruction:     instruction,
-		Model:           chatModel,
-		Tools:           selectedTools,
-		Callbacks:       callbackRecorder.Handler(),
-		CheckpointStore: e.CheckpointStore,
-		CheckpointID:    checkpointRef.CheckpointID,
+		Name:             "AthenaRuntimeAgent",
+		Description:      fmt.Sprintf("Runtime turn agent for skill=%s", spec.Skill.PrimarySkill),
+		Instruction:      instruction,
+		Model:            chatModel,
+		Tools:            selectedTools,
+		ToolDeclarations: append([]ToolDefinition(nil), spec.Tools.Declarations...),
+		ToolChoice:       resolvedToolChoice(spec.Model.ResolvedParameters),
+		ToolTranscript:   toolTranscript,
+		Callbacks:        callbackRecorder.Handler(),
+		CheckpointStore:  e.CheckpointStore,
+		CheckpointID:     checkpointRef.CheckpointID,
 	})
 	if err != nil {
 		return nil, err
@@ -181,6 +213,13 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 			"model_max_output_tokens":   resolvedPolicyMaxOutputTokens(spec.Model.ResolvedParameters),
 			"model_tool_choice":         resolvedPolicyToolChoice(spec.Model.ResolvedParameters),
 			"model_reasoning_effort":    resolvedPolicyReasoningEffort(spec.Model.ResolvedParameters),
+			"runtime_cancel_enabled":    controls.CancelEnabled,
+			"runtime_cancel_mode":       controls.CancelMode,
+			"runtime_model_retry_max":   controls.ModelRetryMaxAttempts,
+			"runtime_failover_enabled":  controls.ModelFailoverEnabled,
+			"runtime_after_agent":       controls.AfterAgentEnabled,
+			"prepare_primary_attempts":  primaryAttempts,
+			"prepare_fallback_attempts": fallbackAttempts,
 			"persona_id":                stringValue(spec.Metadata.Constraints["persona_id"]),
 			"persona_name":              stringValue(spec.Metadata.Constraints["persona_name"]),
 		},
@@ -200,8 +239,25 @@ func (e EinoTurnExecutor) Prepare(ctx context.Context, state RuntimeState, spec 
 		Runner:           runner,
 		Messages:         normalizeMessages(messages),
 		CallbackRecorder: callbackRecorder,
+		ToolTranscript:   toolTranscript,
 		CheckpointRef:    &checkpointRef,
 	}, nil
+}
+
+func (e EinoTurnExecutor) newChatModelWithRetry(ctx context.Context, cfg model.ChatConfig, maxRetry int) (einomodel.ToolCallingChatModel, int, error) {
+	totalAttempts := clampRetryAttempts(maxRetry) + 1
+	var lastErr error
+	for idx := 0; idx < totalAttempts; idx++ {
+		chatModel, err := e.ModelProvider.NewChatModel(ctx, cfg)
+		if err == nil {
+			return chatModel, idx + 1, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return nil, idx + 1, ctx.Err()
+		}
+	}
+	return nil, totalAttempts, lastErr
 }
 
 func normalizeMessages(messages []adk.Message) []adk.Message {
@@ -255,6 +311,13 @@ func resolvedPolicyToolChoice(parameters *modelparams.ResolvedModelParameters) s
 		return ""
 	}
 	return string(parameters.ToolChoice.Kind)
+}
+
+func resolvedToolChoice(parameters *modelparams.ResolvedModelParameters) modelparams.ToolChoice {
+	if parameters == nil {
+		return modelparams.ToolChoice{Kind: modelparams.ToolChoiceAuto}
+	}
+	return parameters.ToolChoice
 }
 
 func resolvedPolicyReasoningEffort(parameters *modelparams.ResolvedModelParameters) string {

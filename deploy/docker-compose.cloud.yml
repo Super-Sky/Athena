@@ -33,7 +33,7 @@ services:
       - athena-controlplane-data:/app/config/controlplane
       - athena-shared-data:/srv/shared
     healthcheck:
-      test: ["/app/athena", "healthcheck"]
+      test: ["CMD", "/app/athena", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 10

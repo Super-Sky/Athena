@@ -230,7 +230,14 @@ func (s *Service) RollbackControlPlaneConfigVersion(ctx context.Context, version
 	if s.ControlPlane == nil {
 		return controlplane.ConfigVersionDetail{}, nil
 	}
-	return s.ControlPlane.RollbackVersion(ctx, versionID)
+	detail, err := s.ControlPlane.RollbackVersion(ctx, versionID)
+	if err != nil {
+		return controlplane.ConfigVersionDetail{}, err
+	}
+	if err := s.reloadRemoteToolCatalog(ctx); err != nil {
+		return controlplane.ConfigVersionDetail{}, err
+	}
+	return detail, nil
 }
 
 // ListSystemResources returns the active truth-dir system resource catalog with detail payloads.
