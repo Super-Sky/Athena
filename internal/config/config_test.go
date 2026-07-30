@@ -103,6 +103,51 @@ func TestConfigValidateAcceptsMemorySessionStore(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAsyncJobsRequiresDurableDependencies(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.AsyncJobs = validAsyncJobConfig()
+	cfg.AsyncJobs.Enabled = true
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "database postgres config") {
+		t.Fatalf("Validate() error = %v, want postgres requirement", err)
+	}
+
+	cfg.Database = DatabaseConfig{DBType: "postgres", DBHost: "127.0.0.1", DBPort: 5432, DBName: "athena", MaxIdleConns: 1, MaxOpenConns: 1, ConnMaxLifetime: 1}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "at least 32 bytes") {
+		t.Fatalf("Validate() error = %v, want encryption key requirement", err)
+	}
+
+	cfg.Security.EncryptionKey = "0123456789abcdef0123456789abcdef"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want valid async jobs config", err)
+	}
+}
+
+func TestConfigValidateAsyncJobsRejectsInvalidRedisAndTiming(t *testing.T) {
+	cfg := validMemoryConfigForAppAuthTest(t)
+	cfg.Database = DatabaseConfig{DBType: "postgres", DBHost: "127.0.0.1", DBPort: 5432, DBName: "athena", MaxIdleConns: 1, MaxOpenConns: 1, ConnMaxLifetime: 1}
+	cfg.Security.EncryptionKey = "0123456789abcdef0123456789abcdef"
+	cfg.AsyncJobs = validAsyncJobConfig()
+	cfg.AsyncJobs.Enabled = true
+	cfg.AsyncJobs.RedisURL = "https://redis.invalid"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "valid redis or rediss URL") {
+		t.Fatalf("Validate() error = %v, want redis URL error", err)
+	}
+
+	cfg.AsyncJobs.RedisURL = "redis://127.0.0.1:6379/0"
+	cfg.AsyncJobs.RetryMaxMilliseconds = cfg.AsyncJobs.RetryBaseMilliseconds - 1
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "RETRY_MAX") {
+		t.Fatalf("Validate() error = %v, want retry range error", err)
+	}
+}
+
+func validAsyncJobConfig() AsyncJobConfig {
+	return AsyncJobConfig{
+		RedisURL: "redis://127.0.0.1:6379/0", Stream: "athena:{jobs}:deliveries", Group: "workers", Consumer: "worker-a",
+		DispatcherPollMilliseconds: 250, OutboxLeaseMilliseconds: 10000, VisibilityTimeoutMillis: 30000,
+		CancelPollMilliseconds: 250, RetryBaseMilliseconds: 1000, RetryMaxMilliseconds: 30000, MaxAttempts: 3, BatchSize: 100,
+	}
+}
+
 func TestConfigValidateRequiresScopedAppIdentityWhenAppAuthIsRequired(t *testing.T) {
 	cfg := validMemoryConfigForAppAuthTest(t)
 	cfg.AppAuth.Required = true

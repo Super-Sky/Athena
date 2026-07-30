@@ -12,6 +12,21 @@ runtime:
   closed_resume_token_ttl_seconds: 86400
   skill_package_revision_limit: 10
 
+async_jobs:
+  enabled: false
+  redis_url: redis://127.0.0.1:6379/0
+  stream: athena:{async-jobs}:deliveries
+  group: athena-workers
+  consumer: athena-worker
+  dispatcher_poll_milliseconds: 250
+  outbox_lease_milliseconds: 10000
+  visibility_timeout_milliseconds: 30000
+  cancel_poll_milliseconds: 250
+  retry_base_milliseconds: 1000
+  retry_max_milliseconds: 30000
+  max_attempts: 3
+  batch_size: 100
+
 remote_tools:
   allowed_origins: []
   max_response_bytes: 1048576
@@ -35,7 +50,7 @@ session:
   postgres_update_retries: 3
 
 security:
-  encryption_key: athena-dev-encryption-key-change-me
+  encryption_key: athena-dev-encryption-key-change-me-32
 
 database:
   db_type: postgres

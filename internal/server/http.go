@@ -346,6 +346,12 @@ type HTTPServer struct {
 // NewHTTPServer registers the health check and the single POST SSE endpoint.
 // NewHTTPServer 负责注册健康检查和唯一的 POST SSE 聊天入口。
 func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer {
+	return NewHTTPServerWithAsyncJobs(cfg, application, nil)
+}
+
+// NewHTTPServerWithAsyncJobs registers HTTP routes with an optional durable Agent Run service.
+// NewHTTPServerWithAsyncJobs 使用可选的持久 Agent Run 服务注册 HTTP 路由。
+func NewHTTPServerWithAsyncJobs(cfg config.Config, application *appcore.Service, asyncRuns *AgentRunAsyncService) *HTTPServer {
 	h := hserver.Default(hserver.WithHostPorts(":" + strconv.Itoa(cfg.Server.HTTPPort)))
 	h.GET("/swagger", handleSwaggerUI(cfg))
 	h.GET("/swagger/assets/swagger-ui.css", handleSwaggerCSS())
@@ -381,16 +387,29 @@ func NewHTTPServer(cfg config.Config, application *appcore.Service) *HTTPServer 
 		handleChatRespond(ctx, c, cfg, application)
 	})
 	h.POST("/api/agent/runs", func(ctx context.Context, c *hertzapp.RequestContext) {
-		withAppAuth(handleCreateAgentRun)(ctx, c, cfg, application)
+		withAppAuth(func(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+			handleCreateAgentRunWithAsync(ctx, c, cfg, application, asyncRuns)
+		})(ctx, c, cfg, application)
 	})
 	h.GET("/api/agent/runs/:runID", func(ctx context.Context, c *hertzapp.RequestContext) {
-		withAppAuth(handleGetAgentRun)(ctx, c, cfg, application)
+		withAppAuth(func(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+			handleGetAgentRunWithAsync(ctx, c, cfg, application, asyncRuns)
+		})(ctx, c, cfg, application)
 	})
 	h.POST("/api/agent/runs/:runID/resume", func(ctx context.Context, c *hertzapp.RequestContext) {
-		withAppAuth(handleResumeAgentRun)(ctx, c, cfg, application)
+		withAppAuth(func(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+			handleResumeAgentRunWithAsync(ctx, c, cfg, application, asyncRuns)
+		})(ctx, c, cfg, application)
 	})
 	h.POST("/api/agent/runs/:runID/cancel", func(ctx context.Context, c *hertzapp.RequestContext) {
-		withAppAuth(handleCancelAgentRun)(ctx, c, cfg, application)
+		withAppAuth(func(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+			handleCancelAgentRunWithAsync(ctx, c, cfg, application, asyncRuns)
+		})(ctx, c, cfg, application)
+	})
+	h.GET("/api/agent/runs/:runID/events", func(ctx context.Context, c *hertzapp.RequestContext) {
+		withAppAuth(func(ctx context.Context, c *hertzapp.RequestContext, cfg config.Config, application *appcore.Service) {
+			handleAgentRunAsyncEvents(ctx, c, cfg, application, asyncRuns)
+		})(ctx, c, cfg, application)
 	})
 	h.GET("/api/agent/runs/:runID/trace", func(ctx context.Context, c *hertzapp.RequestContext) {
 		withAppAuth(handleGetAgentRunTrace)(ctx, c, cfg, application)

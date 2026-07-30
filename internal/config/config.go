@@ -17,18 +17,29 @@ import (
 )
 
 const (
-	defaultConfigDir            = "config"
-	defaultHTTPPort             = 8080
-	defaultMaxConcurrentReqs    = 256
-	defaultMaxConcurrentTools   = 8
-	defaultRequestTimeoutSecs   = 60
-	defaultDeferredQueueLimit   = 32
-	defaultClosedTokenTTLSecs   = 86400
-	defaultSkillPackageRevs     = 10
-	defaultSharedRootDir        = "shared"
-	defaultControlPlaneTTL      = 28800
-	defaultControlPlaneAttempts = 5
-	defaultCompressionThreshold = 12000
+	defaultConfigDir             = "config"
+	defaultHTTPPort              = 8080
+	defaultMaxConcurrentReqs     = 256
+	defaultMaxConcurrentTools    = 8
+	defaultRequestTimeoutSecs    = 60
+	defaultDeferredQueueLimit    = 32
+	defaultClosedTokenTTLSecs    = 86400
+	defaultSkillPackageRevs      = 10
+	defaultSharedRootDir         = "shared"
+	defaultControlPlaneTTL       = 28800
+	defaultControlPlaneAttempts  = 5
+	defaultCompressionThreshold  = 12000
+	defaultAsyncJobStream        = "athena:{async-jobs}:deliveries"
+	defaultAsyncJobGroup         = "athena-workers"
+	defaultAsyncJobConsumer      = "athena-worker"
+	defaultAsyncJobPollMS        = 250
+	defaultAsyncJobOutboxLeaseMS = 10000
+	defaultAsyncJobVisibilityMS  = 30000
+	defaultAsyncJobCancelPollMS  = 250
+	defaultAsyncJobRetryBaseMS   = 1000
+	defaultAsyncJobRetryMaxMS    = 30000
+	defaultAsyncJobMaxAttempts   = 3
+	defaultAsyncJobBatchSize     = 100
 )
 
 // Config captures the top-level runtime configuration assembled from files and environment overrides.
@@ -37,6 +48,7 @@ type Config struct {
 	Server          ServerConfig          `yaml:"server"`
 	Model           ModelConfig           `yaml:"model"`
 	Runtime         RuntimeConfig         `yaml:"runtime"`
+	AsyncJobs       AsyncJobConfig        `yaml:"async_jobs"`
 	RemoteTools     RemoteToolsConfig     `yaml:"remote_tools"`
 	AppAuth         AppAuthConfig         `yaml:"app_auth"`
 	ControlPlane    ControlPlaneConfig    `yaml:"control_plane"`
@@ -46,6 +58,24 @@ type Config struct {
 	Database        DatabaseConfig        `yaml:"database"`
 	Security        SecurityConfig        `yaml:"security"`
 	Observability   ObservabilityConfig   `yaml:"observability"`
+}
+
+// AsyncJobConfig controls the durable PostgreSQL job state and Redis delivery adapter.
+// AsyncJobConfig 控制 PostgreSQL 持久任务状态与 Redis 投递适配器。
+type AsyncJobConfig struct {
+	Enabled                    bool   `yaml:"enabled"`
+	RedisURL                   string `yaml:"redis_url"`
+	Stream                     string `yaml:"stream"`
+	Group                      string `yaml:"group"`
+	Consumer                   string `yaml:"consumer"`
+	DispatcherPollMilliseconds int    `yaml:"dispatcher_poll_milliseconds"`
+	OutboxLeaseMilliseconds    int    `yaml:"outbox_lease_milliseconds"`
+	VisibilityTimeoutMillis    int    `yaml:"visibility_timeout_milliseconds"`
+	CancelPollMilliseconds     int    `yaml:"cancel_poll_milliseconds"`
+	RetryBaseMilliseconds      int    `yaml:"retry_base_milliseconds"`
+	RetryMaxMilliseconds       int    `yaml:"retry_max_milliseconds"`
+	MaxAttempts                int    `yaml:"max_attempts"`
+	BatchSize                  int    `yaml:"batch_size"`
 }
 
 // AppAuthConfig controls authenticated application access to app-facing Agent Run APIs.
@@ -185,6 +215,21 @@ func LoadFromEnv() (Config, error) {
 			ClosedTokenTTLSecs:        envInt("CLOSED_RESUME_TOKEN_TTL_SECONDS", defaultClosedTokenTTLSecs),
 			SkillPackageRevisionLimit: envInt("SKILL_PACKAGE_REVISION_LIMIT", defaultSkillPackageRevs),
 			SharedRootDir:             defaultString(strings.TrimSpace(os.Getenv("SHARED_ROOT_DIR")), defaultSharedRootDir),
+		},
+		AsyncJobs: AsyncJobConfig{
+			Enabled:                    envBool("ASYNC_JOBS_ENABLED", false),
+			RedisURL:                   strings.TrimSpace(os.Getenv("REDIS_URL")),
+			Stream:                     defaultString(strings.TrimSpace(os.Getenv("ASYNC_JOB_STREAM")), defaultAsyncJobStream),
+			Group:                      defaultString(strings.TrimSpace(os.Getenv("ASYNC_JOB_GROUP")), defaultAsyncJobGroup),
+			Consumer:                   defaultString(strings.TrimSpace(os.Getenv("ASYNC_JOB_CONSUMER")), defaultAsyncJobConsumer),
+			DispatcherPollMilliseconds: envInt("ASYNC_JOB_DISPATCHER_POLL_MS", defaultAsyncJobPollMS),
+			OutboxLeaseMilliseconds:    envInt("ASYNC_JOB_OUTBOX_LEASE_MS", defaultAsyncJobOutboxLeaseMS),
+			VisibilityTimeoutMillis:    envInt("ASYNC_JOB_VISIBILITY_TIMEOUT_MS", defaultAsyncJobVisibilityMS),
+			CancelPollMilliseconds:     envInt("ASYNC_JOB_CANCEL_POLL_MS", defaultAsyncJobCancelPollMS),
+			RetryBaseMilliseconds:      envInt("ASYNC_JOB_RETRY_BASE_MS", defaultAsyncJobRetryBaseMS),
+			RetryMaxMilliseconds:       envInt("ASYNC_JOB_RETRY_MAX_MS", defaultAsyncJobRetryMaxMS),
+			MaxAttempts:                envInt("ASYNC_JOB_MAX_ATTEMPTS", defaultAsyncJobMaxAttempts),
+			BatchSize:                  envInt("ASYNC_JOB_BATCH_SIZE", defaultAsyncJobBatchSize),
 		},
 		RemoteTools: RemoteToolsConfig{
 			AllowedOrigins:   envStringSlice("REMOTE_TOOL_ALLOWED_ORIGINS"),
@@ -331,6 +376,19 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Runtime.ClosedTokenTTLSecs = envInt("CLOSED_RESUME_TOKEN_TTL_SECONDS", cfg.Runtime.ClosedTokenTTLSecs)
 	cfg.Runtime.SkillPackageRevisionLimit = envInt("SKILL_PACKAGE_REVISION_LIMIT", cfg.Runtime.SkillPackageRevisionLimit)
 	cfg.Runtime.SharedRootDir = defaultString(strings.TrimSpace(os.Getenv("SHARED_ROOT_DIR")), cfg.Runtime.SharedRootDir)
+	cfg.AsyncJobs.Enabled = envBool("ASYNC_JOBS_ENABLED", cfg.AsyncJobs.Enabled)
+	cfg.AsyncJobs.RedisURL = defaultString(strings.TrimSpace(os.Getenv("REDIS_URL")), cfg.AsyncJobs.RedisURL)
+	cfg.AsyncJobs.Stream = defaultString(strings.TrimSpace(os.Getenv("ASYNC_JOB_STREAM")), cfg.AsyncJobs.Stream)
+	cfg.AsyncJobs.Group = defaultString(strings.TrimSpace(os.Getenv("ASYNC_JOB_GROUP")), cfg.AsyncJobs.Group)
+	cfg.AsyncJobs.Consumer = defaultString(strings.TrimSpace(os.Getenv("ASYNC_JOB_CONSUMER")), cfg.AsyncJobs.Consumer)
+	cfg.AsyncJobs.DispatcherPollMilliseconds = envInt("ASYNC_JOB_DISPATCHER_POLL_MS", cfg.AsyncJobs.DispatcherPollMilliseconds)
+	cfg.AsyncJobs.OutboxLeaseMilliseconds = envInt("ASYNC_JOB_OUTBOX_LEASE_MS", cfg.AsyncJobs.OutboxLeaseMilliseconds)
+	cfg.AsyncJobs.VisibilityTimeoutMillis = envInt("ASYNC_JOB_VISIBILITY_TIMEOUT_MS", cfg.AsyncJobs.VisibilityTimeoutMillis)
+	cfg.AsyncJobs.CancelPollMilliseconds = envInt("ASYNC_JOB_CANCEL_POLL_MS", cfg.AsyncJobs.CancelPollMilliseconds)
+	cfg.AsyncJobs.RetryBaseMilliseconds = envInt("ASYNC_JOB_RETRY_BASE_MS", cfg.AsyncJobs.RetryBaseMilliseconds)
+	cfg.AsyncJobs.RetryMaxMilliseconds = envInt("ASYNC_JOB_RETRY_MAX_MS", cfg.AsyncJobs.RetryMaxMilliseconds)
+	cfg.AsyncJobs.MaxAttempts = envInt("ASYNC_JOB_MAX_ATTEMPTS", cfg.AsyncJobs.MaxAttempts)
+	cfg.AsyncJobs.BatchSize = envInt("ASYNC_JOB_BATCH_SIZE", cfg.AsyncJobs.BatchSize)
 	if values := envStringSlice("REMOTE_TOOL_ALLOWED_ORIGINS"); len(values) > 0 {
 		cfg.RemoteTools.AllowedOrigins = values
 	}
@@ -393,6 +451,9 @@ func (c Config) Validate() error {
 	}
 	if c.Runtime.ClosedTokenTTLSecs <= 0 {
 		return fmt.Errorf("CLOSED_RESUME_TOKEN_TTL_SECONDS must be greater than 0")
+	}
+	if err := validateAsyncJobConfig(c); err != nil {
+		return err
 	}
 	if c.RemoteTools.MaxResponseBytes < 0 {
 		return fmt.Errorf("REMOTE_TOOL_MAX_RESPONSE_BYTES must be greater than or equal to 0")
@@ -470,6 +531,49 @@ func (c Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func validateAsyncJobConfig(c Config) error {
+	if !c.AsyncJobs.Enabled {
+		return nil
+	}
+	if c.PostgresDSN() == "" {
+		return fmt.Errorf("database postgres config is required when ASYNC_JOBS_ENABLED=true")
+	}
+	if len([]byte(strings.TrimSpace(c.Security.EncryptionKey))) < 32 {
+		return fmt.Errorf("SECURITY_ENCRYPTION_KEY must be at least 32 bytes when ASYNC_JOBS_ENABLED=true")
+	}
+	if strings.TrimSpace(c.AsyncJobs.RedisURL) == "" {
+		return fmt.Errorf("REDIS_URL is required when ASYNC_JOBS_ENABLED=true")
+	}
+	if parsed, err := url.Parse(c.AsyncJobs.RedisURL); err != nil || (parsed.Scheme != "redis" && parsed.Scheme != "rediss") || parsed.Host == "" {
+		return fmt.Errorf("REDIS_URL must be a valid redis or rediss URL when ASYNC_JOBS_ENABLED=true")
+	}
+	if strings.TrimSpace(c.AsyncJobs.Stream) == "" || strings.TrimSpace(c.AsyncJobs.Group) == "" || strings.TrimSpace(c.AsyncJobs.Consumer) == "" {
+		return fmt.Errorf("ASYNC_JOB_STREAM, ASYNC_JOB_GROUP, and ASYNC_JOB_CONSUMER are required when ASYNC_JOBS_ENABLED=true")
+	}
+	positive := map[string]int{
+		"ASYNC_JOB_DISPATCHER_POLL_MS":    c.AsyncJobs.DispatcherPollMilliseconds,
+		"ASYNC_JOB_OUTBOX_LEASE_MS":       c.AsyncJobs.OutboxLeaseMilliseconds,
+		"ASYNC_JOB_VISIBILITY_TIMEOUT_MS": c.AsyncJobs.VisibilityTimeoutMillis,
+		"ASYNC_JOB_CANCEL_POLL_MS":        c.AsyncJobs.CancelPollMilliseconds,
+		"ASYNC_JOB_RETRY_BASE_MS":         c.AsyncJobs.RetryBaseMilliseconds,
+		"ASYNC_JOB_RETRY_MAX_MS":          c.AsyncJobs.RetryMaxMilliseconds,
+		"ASYNC_JOB_MAX_ATTEMPTS":          c.AsyncJobs.MaxAttempts,
+		"ASYNC_JOB_BATCH_SIZE":            c.AsyncJobs.BatchSize,
+	}
+	for name, value := range positive {
+		if value <= 0 {
+			return fmt.Errorf("%s must be greater than 0", name)
+		}
+	}
+	if c.AsyncJobs.RetryMaxMilliseconds < c.AsyncJobs.RetryBaseMilliseconds {
+		return fmt.Errorf("ASYNC_JOB_RETRY_MAX_MS must be greater than or equal to ASYNC_JOB_RETRY_BASE_MS")
+	}
+	if c.AsyncJobs.VisibilityTimeoutMillis <= c.AsyncJobs.CancelPollMilliseconds {
+		return fmt.Errorf("ASYNC_JOB_VISIBILITY_TIMEOUT_MS must be greater than ASYNC_JOB_CANCEL_POLL_MS")
+	}
 	return nil
 }
 
@@ -593,6 +697,42 @@ func (c Config) PostgresDSN() string {
 // DatabaseConnMaxLifetime 会返回当前配置的 SQL 连接最大生命周期。
 func (c Config) DatabaseConnMaxLifetime() time.Duration {
 	return time.Duration(c.Database.ConnMaxLifetime) * time.Second
+}
+
+// AsyncJobDispatcherPoll returns the durable outbox dispatcher poll interval.
+// AsyncJobDispatcherPoll 返回持久 outbox dispatcher 的轮询间隔。
+func (c Config) AsyncJobDispatcherPoll() time.Duration {
+	return time.Duration(c.AsyncJobs.DispatcherPollMilliseconds) * time.Millisecond
+}
+
+// AsyncJobOutboxLease returns the PostgreSQL outbox claim lease.
+// AsyncJobOutboxLease 返回 PostgreSQL outbox claim 租约时长。
+func (c Config) AsyncJobOutboxLease() time.Duration {
+	return time.Duration(c.AsyncJobs.OutboxLeaseMilliseconds) * time.Millisecond
+}
+
+// AsyncJobVisibilityTimeout returns the Redis delivery visibility timeout.
+// AsyncJobVisibilityTimeout 返回 Redis 投递消息的可见性超时。
+func (c Config) AsyncJobVisibilityTimeout() time.Duration {
+	return time.Duration(c.AsyncJobs.VisibilityTimeoutMillis) * time.Millisecond
+}
+
+// AsyncJobCancelPoll returns the cooperative cancellation poll interval.
+// AsyncJobCancelPoll 返回协作取消的轮询间隔。
+func (c Config) AsyncJobCancelPoll() time.Duration {
+	return time.Duration(c.AsyncJobs.CancelPollMilliseconds) * time.Millisecond
+}
+
+// AsyncJobRetryBase returns the first retry backoff duration.
+// AsyncJobRetryBase 返回首次重试的退避时长。
+func (c Config) AsyncJobRetryBase() time.Duration {
+	return time.Duration(c.AsyncJobs.RetryBaseMilliseconds) * time.Millisecond
+}
+
+// AsyncJobRetryMax returns the upper bound for retry backoff.
+// AsyncJobRetryMax 返回重试退避的最大时长。
+func (c Config) AsyncJobRetryMax() time.Duration {
+	return time.Duration(c.AsyncJobs.RetryMaxMilliseconds) * time.Millisecond
 }
 
 func envInt(key string, fallback int) int {

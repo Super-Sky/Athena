@@ -107,6 +107,7 @@ API 语义按以下边界理解：
 - `GET /api/agent/runs/:runID`
 - `POST /api/agent/runs/:runID/resume`
 - `POST /api/agent/runs/:runID/cancel`
+- `GET /api/agent/runs/:runID/events`
 - `GET /api/agent/runs/:runID/trace`
 - `POST /api/runtime/respond`
 - `POST /api/runtime/scenario/respond`
@@ -133,6 +134,10 @@ Agent Run API 当前暴露：
 - `POST /api/agent/runs`
   - 面向业务应用创建一次目标驱动 run，输入以 `goal`、`success_criteria`、`constraints`、`budget`、`context_assets`、`tools`、`memory_scope` 和 `governance_refs` 为核心。
   - Creates one app-facing goal-driven run. The current MVP executes synchronously through the existing app/runtime path and returns `run_id`, request status, stop reason, output, trace summary and checkpoint readouts when runtime persistence is configured.
+  - When `ASYNC_JOBS_ENABLED=true`, callers may send `Prefer: respond-async` plus `Idempotency-Key` to enqueue a durable run. The response is `202 Accepted` with `job_id`, `run_id`, `status`, `attempt`, `max_attempts`, `events_url`, `created_at`, `updated_at`, and `Location`.
+  - 启用 `ASYNC_JOBS_ENABLED=true` 后，调用方可发送 `Prefer: respond-async` 与 `Idempotency-Key` 创建持久异步 run。响应为 `202 Accepted`，包含 `job_id`、`run_id`、`status`、`attempt`、`max_attempts`、`events_url`、`created_at`、`updated_at` 和 `Location`。
+  - Async idempotency is scoped to the authenticated `app_id + workspace_id + app_instance_id` and canonical request body. Reusing the same key with the same body returns the existing job with `duplicate=true`; reusing it with a different body returns `409 idempotency_conflict`.
+  - 异步幂等范围绑定认证后的 `app_id + workspace_id + app_instance_id` 和规范化请求体。同 key 同 body 返回既有 job 并标记 `duplicate=true`；同 key 不同 body 返回 `409 idempotency_conflict`。
   - `tools` 接受 OpenAI-compatible function tool 或字符串简写，并转换为 provider-neutral runtime declarations；当前只允许调用 Athena 已注册的工具。内置 `calculator`、`current_time`、`json_schema_validate` 可直接启用；业务远程工具注册与执行属于 issue `#9`。
   - `tool_choice` 支持 `none`、`auto`、`required` 和指定 function object。省略时，无工具默认为 `none`，有工具默认为 `auto`。
   - The response exposes ordered `messages`, assistant `tool_calls`, correlated `tool_results`, stable call IDs and final `output`. Top-level call/result arrays are compatibility projections of the canonical transcript.
@@ -146,9 +151,16 @@ Agent Run API 当前暴露：
 - `POST /api/agent/runs/:runID/resume`
   - 基于原 run 发起一次补数续跑；当前实现会先确认原 run 可从 runtime persistence 读回，再创建新的 runtime run，并在响应中写入 `resumed_from_run_id`。
   - Resumes by first validating the original run readout, then starting a follow-up run with supplement / resume token metadata instead of mutating the original synchronous run in place.
+  - For async jobs, resume is accepted only from `waiting` and requeues the same app-facing run ID with an updated encrypted request while preserving the original idempotency hash.
+  - 对异步 job，resume 只允许从 `waiting` 状态进入，并以更新后的加密请求重排同一个应用侧 run ID，同时保留原始幂等 hash。
 - `POST /api/agent/runs/:runID/cancel`
-  - 当前同步 MVP 不伪造异步取消；已终态 run 返回 `409` 和 `run_already_terminal`，非终态 run 返回 `409` 和 `sync_execution_not_cancellable`。
-  - The route is stable, but asynchronous cancellation is not implemented in this slice.
+  - 未进入 async job store 的同步 run 不伪造异步取消；已终态 run 返回 `409` 和 `run_already_terminal`，非终态 run 返回 `409` 和 `sync_execution_not_cancellable`。
+  - Synchronous runs that are not present in the async job store keep the stable unsupported / terminal fallback response.
+  - For async jobs, cancellation writes `cancel_requested` for running jobs and returns `202`; queued, retry-scheduled, delivery-pending, or waiting jobs are moved directly to `cancelled`. Workers poll cancellation and finalize cancelled results without calling business tools again after recovered delivery.
+  - 对异步 job，running 状态写入 `cancel_requested` 并返回 `202`；queued、retry-scheduled、delivery-pending 或 waiting 会直接进入 `cancelled`。worker 会轮询取消请求，并在恢复投递后落取消终态，不重新调用业务工具。
+- `GET /api/agent/runs/:runID/events`
+  - Streams durable async job lifecycle events from PostgreSQL as resumable SSE. Supports `Last-Event-ID` and `?after=<cursor>`; event data includes `cursor`, `job_id`, `run_id`, `type`, `from_status`, `to_status`, `reason`, and `occurred_at`.
+  - 将 PostgreSQL 持久 async job 生命周期事件作为可续传 SSE 输出。支持 `Last-Event-ID` 和 `?after=<cursor>`；事件数据包含 `cursor`、`job_id`、`run_id`、`type`、`from_status`、`to_status`、`reason` 和 `occurred_at`。
 - `GET /api/agent/runs/:runID/trace`
   - 返回该 run 的 `RuntimeRun`、`RuntimeStep`、`RuntimeLifecycleEvent`、`RuntimeTrace`、`Usage`、`ProjectionCandidate`、checkpoint safe readouts 和聚合 summary。
   - Returns the full safe trace timeline assembled from runtime persistence.
@@ -158,9 +170,9 @@ Agent Run API 当前暴露：
   - 顶层可选 `run_manifest` 是 TaskRun 创建时冻结的 `agent_run_manifest.v1`，并通过 `manifest_status` 区分 `complete`、`partial`、`legacy_unavailable`、`unsupported_schema` 与 `invalid`。历史 run 不会从当前配置重建版本。
   - The optional top-level `run_manifest` is frozen with TaskRun creation. It contains revision IDs/versions/sources and SHA-256 values only; `manifest_status=legacy_unavailable` preserves backward compatibility without read-time reconstruction.
 
-启用 `APP_AUTH_REQUIRED=true` 后，上述六条路由都要求 `X-Athena-App-Token`、`X-Athena-App-ID`、`X-Athena-Workspace-ID` 和 `X-Athena-App-Instance-ID`。Token 与精确 scope 由 `APP_AUTH_IDENTITIES_JSON` 绑定；无效身份返回 `401`，scope 外、跨租户、不存在或无归属历史 run 统一返回同形 `404`。应用 token 使用专用 header，不会进入 Platform Context 的 `Authorization` 转发链。
+启用 `APP_AUTH_REQUIRED=true` 后，上述 Agent Run 路由都要求 `X-Athena-App-Token`、`X-Athena-App-ID`、`X-Athena-Workspace-ID` 和 `X-Athena-App-Instance-ID`。Token 与精确 scope 由 `APP_AUTH_IDENTITIES_JSON` 绑定；无效身份返回 `401`，scope 外、跨租户、不存在或无归属历史 run 统一返回同形 `404`。应用 token 使用专用 header，不会进入 Platform Context 的 `Authorization` 转发链。
 
-With `APP_AUTH_REQUIRED=true`, all six routes require the dedicated app token, app ID, workspace ID, and app-instance ID headers. The configured identity grants exact scope pairs. Invalid identities return `401`; out-of-scope, cross-tenant, nonexistent, and unowned legacy runs share the same generic `404` response.
+With `APP_AUTH_REQUIRED=true`, all Agent Run routes require the dedicated app token, app ID, workspace ID, and app-instance ID headers. The configured identity grants exact scope pairs. Invalid identities return `401`; out-of-scope, cross-tenant, nonexistent, and unowned legacy runs share the same generic `404` response.
 
 Agent Run API 边界：
 

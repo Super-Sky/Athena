@@ -100,10 +100,15 @@ Transport 只处理协议，不承载领域推理。
 - `GET /api/agent/runs/:runID`
 - `POST /api/agent/runs/:runID/resume`
 - `POST /api/agent/runs/:runID/cancel`
+- `GET /api/agent/runs/:runID/events`
 - `GET /api/agent/runs/:runID/trace`
 - `GET /api/agent/runs/:runID/timeline`
 
 This API is an app-facing runtime entrypoint, not a business-domain API. It accepts goal, criteria, constraints, budget, context assets, memory scope, governance refs and declarative tool inputs, then maps them into the generic app/runtime path. Domain objects remain owned by the host application.
+
+When async jobs are enabled, `Prefer: respond-async` uses PostgreSQL as the durable job/outbox/event/result authority and Redis Streams as reference-only delivery. The app-facing async run ID is stable, resumable events come from PostgreSQL cursors, and raw prompts, tool arguments, tool results, or business payloads are not persisted in Redis.
+
+启用 async jobs 后，`Prefer: respond-async` 会使用 PostgreSQL 作为持久 job/outbox/event/result 权威来源，并使用 Redis Streams 进行只含引用的投递。应用侧 async run ID 保持稳定，可续传事件来自 PostgreSQL cursor，raw prompt、工具参数、工具结果或业务 payload 不会持久化到 Redis。
 
 App-facing Agent Run routes optionally enter through `internal/server/app_auth.go`. When enabled, a dedicated app token authenticates one configured identity and exact workspace/app-instance pair. The authenticated scope becomes authoritative on create/resume, and run ownership is checked immediately after loading TaskRun but before any step/trace/usage/projection child records. This keeps missing and cross-tenant resources indistinguishable while leaving authenticated Control Plane sessions as system-admin reads.
 
@@ -126,7 +131,7 @@ The timeline endpoint is a read projection over Athena-owned runtime records. It
 
 App 是运行时编排层，不是领域逻辑中心。
 
-Agent Run API 当前以同步 MVP 方式复用 App Layer：
+Agent Run API 当前复用 App Layer 执行主链；同步请求直接返回结果，异步请求通过 durable job worker 调用同一执行入口：
 
 - `goal` 会成为 runtime 当前请求目标。
 - `success_criteria` 与 provider-neutral budget 会进入 `ExecutionSpec.Inference`；Eino graph 在真实调用边界执行 model/tool/token 预算，App Layer 从准备阶段起执行最早 deadline。成功条件当前是 prompt guard，不是独立 evaluator 结论。
@@ -135,7 +140,8 @@ Agent Run API 当前以同步 MVP 方式复用 App Layer：
 - graph-native ReAct loop 通过 per-execution transcript 记录 assistant tool-call 轮次、稳定 ID、参数、tool result、错误与 timing；响应保留有序 message 结构，持久化 trace 仅投影安全摘要。
 - 当前 declaration 必须关联 Athena live catalog 中已启用的工具。业务应用可通过 authenticated remote registry 提供 HTTP callback；runtime resolver 与 Eino executor 对每次 operation 使用同一目录快照。
 - live catalog 同时包含 `calculator`、`current_time` 和 `json_schema_validate` 三个无副作用 Core 工具；它们不访问业务对象、网络或文件系统。HTTP/search/file 等能力仍需在受限 Enhancement 任务中接入。
-- `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；`cancel` 先暴露稳定路由和明确 unsupported / terminal response，不伪造异步取消。
+- 同步 `resume` 会先校验原 run 可读，再产生新的 follow-up runtime run，并通过 `resumed_from_run_id` 保留原 run 关联；未进入 async job store 的同步 `cancel` 仍返回明确 unsupported / terminal response。
+- 异步 `resume` 只允许从 `waiting` 重新排队同一个 app-facing run；异步 `cancel` 会请求 running worker 停止，或把未运行 job 直接转为 `cancelled`。
 
 The canonical runtime stays provider-neutral. OpenAI-compatible DTOs live in transport, Eino-specific conversion stays in the runtime adapter, and app-owned implementations stay behind the versioned HTTP envelope.
 

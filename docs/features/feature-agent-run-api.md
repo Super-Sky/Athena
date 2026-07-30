@@ -51,17 +51,17 @@ Athena now exposes a stable app-facing Agent Run API for business applications. 
 
 `internal/server/agent_runs.go` 是本功能的 HTTP transport 入口。它复用现有 app/runtime 主链：
 
-- `POST /api/agent/runs` 解析 goal-first 请求，构造 `app.ChatRequest` 并通过 `OpenChatSession` 执行同步 MVP。
+- `POST /api/agent/runs` 解析 goal-first 请求，构造 `app.ChatRequest` 并通过 `OpenChatSession` 执行同步路径；异步 durable path 由 `feature-agent-execution-controls.md` 继续收敛。
 - OpenAI-compatible function declarations 和 `tool_choice` 会先经过结构校验，再转换为 provider-neutral `runtime.ToolDefinition` 与 canonical tool choice。
 - Eino graph-native agent 使用调用方 schema 绑定模型工具，并通过正式模型选项执行 `none / auto / required / specific function` choice。
 - 每次 prepared execution 持有一份 `ToolCallTranscript`。模型 post-handler 注册调用并补齐稳定 ID，tool middleware 与 ToolsNode post-handler 关联结果、错误和 timing。
 - HTTP 响应按调用轮次返回 assistant/tool/final-assistant `messages`，同时保留顶层 `tool_calls` 和 `tool_results` 方便现有客户端读取。
 - Runtime persistence 为每个调用写入包含 call ID、tool name、status、timing、argument keys/runes 和 result runes 的脱敏 trace，不保存原始参数与结果。
-- Agent Run 当前是同步接口，因此返回完成后的 transcript；既有 `/api/chat/stream` 继续负责 `tool_calls` delta 合并与 tool lifecycle SSE，不在本切片新增第二套流协议。
+- 同步 Agent Run 返回完成后的 transcript；既有 `/api/chat/stream` 继续负责 `tool_calls` delta 合并与 tool lifecycle SSE。durable async lifecycle SSE 已在 issue #22 后续切片通过 `/api/agent/runs/:runID/events` 接入。
 - 省略 `task_type` 或传入 `agent_run` 时，内部 runtime task type 映射到已注册 `chat`，同时在 app context / input payload 中写入 `agent_run.v1` 契约。
 - `GET /api/agent/runs/:runID` 和 `/trace` 通过 runtime persistence read boundary 读取 run、steps、events、trace、usage、projection 与 checkpoint safe readouts。
 - `POST /api/agent/runs/:runID/resume` 先校验原 run 可读，再创建新的 follow-up run，并返回 `resumed_from_run_id`。
-- `POST /api/agent/runs/:runID/cancel` 当前只暴露稳定路由。同步 MVP 不伪造异步取消，已终态 run 返回 `run_already_terminal`，非终态 run 返回 `sync_execution_not_cancellable`。
+- `POST /api/agent/runs/:runID/cancel` 对未进入 async job store 的同步 run 不伪造异步取消，已终态 run 返回 `run_already_terminal`，非终态 run 返回 `sync_execution_not_cancellable`；async job 取消由 issue #22 durable async path 接管。
 
 `internal/server/openapi.go` 已同步 typed OpenAPI schemas。server/runtime tests 覆盖 schema conversion、choice validation、stable ID、result correlation、tool errors、redacted trace 和 create/read/trace/resume/cancel 最小链路。
 
@@ -133,7 +133,7 @@ Use the Codex in-app Browser plugin first for local browser checks. If the brows
 
 ## 风险 / Risks
 
-- 当前运行模式是同步 MVP，`cancel` 不是异步取消。
+- 当前基础同步路径的 `cancel` 不是异步取消；durable async path 已提供异步取消语义。
 - `resume` 创建 follow-up run，不会原地改写原 run。
 - 当前只执行 Athena live catalog 中已有实现的工具；未注册或 disabled 业务工具会 fail closed。
 - 同步 response 可返回 raw arguments/results；持久化 trace 始终使用脱敏摘要。

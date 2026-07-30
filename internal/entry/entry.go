@@ -11,6 +11,7 @@ import (
 	"gitee.com/super_sky/mkh_utils"
 	"gorm.io/gorm"
 	"moss/internal/app"
+	"moss/internal/asyncjob"
 	"moss/internal/config"
 	"moss/internal/model"
 	"moss/internal/observability"
@@ -22,12 +23,14 @@ import (
 // Bootstrap owns the top-level dependency graph for one athena process mode.
 // Bootstrap 持有 athena 单个进程模式下的顶层依赖图。
 type Bootstrap struct {
-	Config       config.Config
-	App          *app.Service
-	Server       *httpserver.HTTPServer
-	SessionStore session.Store
-	ModelStore   model.Store
-	RuntimeStore runtimepkg.RuntimePersistenceStore
+	Config        config.Config
+	App           *app.Service
+	Server        *httpserver.HTTPServer
+	SessionStore  session.Store
+	ModelStore    model.Store
+	RuntimeStore  runtimepkg.RuntimePersistenceStore
+	AsyncJobStore *asyncjob.PostgresStore
+	AsyncRuns     *httpserver.AgentRunAsyncService
 }
 
 // New builds the default bootstrap graph from config.
@@ -54,7 +57,25 @@ func NewWithObservability(cfg config.Config, obs *observability.Manager) (*Boots
 	if obs == nil {
 		obs = NewDefaultObservability(cfg)
 	}
-	return NewWithRuntimeDependencies(cfg, obs, sessionStore, modelStore, runtimeStore), nil
+	bootstrap := NewWithRuntimeDependencies(cfg, obs, sessionStore, modelStore, runtimeStore)
+	if cfg.AsyncJobs.Enabled {
+		asyncStore, err := NewAsyncJobStore(cfg)
+		if err != nil {
+			return nil, err
+		}
+		codec, err := asyncjob.NewCodec(cfg.Security.EncryptionKey)
+		if err != nil {
+			return nil, err
+		}
+		asyncRuns, err := httpserver.NewAgentRunAsyncService(cfg, bootstrap.App, asyncStore, codec)
+		if err != nil {
+			return nil, err
+		}
+		bootstrap.AsyncJobStore = asyncStore
+		bootstrap.AsyncRuns = asyncRuns
+		bootstrap.Server = httpserver.NewHTTPServerWithAsyncJobs(cfg, bootstrap.App, asyncRuns)
+	}
+	return bootstrap, nil
 }
 
 // NewWithDependencies builds the bootstrap graph from already-resolved dependencies.
@@ -159,6 +180,25 @@ func NewRuntimeStore(cfg config.Config) (runtimepkg.RuntimePersistenceStore, err
 	return runtimepkg.NewPostgresRuntimeStore(db), nil
 }
 
+// NewAsyncJobStore resolves the authoritative PostgreSQL async job store.
+// NewAsyncJobStore 解析权威 PostgreSQL 异步任务存储。
+func NewAsyncJobStore(cfg config.Config) (*asyncjob.PostgresStore, error) {
+	if !cfg.AsyncJobs.Enabled {
+		return nil, nil
+	}
+	db, err := session.NewPostgresDB(cfg.PostgresDSN(), postgresGORMConfig(cfg.Database.DBLogMode, cfg.Database.LogZap))
+	if err != nil {
+		return nil, err
+	}
+	if err := configurePostgresDB(cfg, db); err != nil {
+		return nil, err
+	}
+	if err := validatePostgresConnectivity("async job store", db); err != nil {
+		return nil, err
+	}
+	return asyncjob.NewPostgresStore(db), nil
+}
+
 func runtimePostgresEnabled(cfg config.Config) bool {
 	if strings.TrimSpace(cfg.PostgresDSN()) == "" {
 		return false
@@ -222,6 +262,15 @@ func MigrateStores(ctx context.Context, cfg config.Config) error {
 	}
 	if runtimeStore != nil {
 		if err := runtimeStore.AutoMigrate(ctx); err != nil {
+			return err
+		}
+	}
+	asyncStore, err := NewAsyncJobStore(cfg)
+	if err != nil {
+		return err
+	}
+	if asyncStore != nil {
+		if err := asyncStore.AutoMigrate(ctx); err != nil {
 			return err
 		}
 	}

@@ -9,7 +9,7 @@
 - `feature-agent-run-app-auth.md`
   - 说明 issue #26 的应用身份认证、精确 workspace/app-instance 授权、租户安全响应、递归脱敏与灰度上线约束。
 - `feature-agent-execution-controls.md`
-  - 说明 issue #22 的稳定 stop-reason taxonomy、runtime 持久化边界及后续 budget/Redis 切片。
+  - 说明 issue #22 的稳定 stop-reason taxonomy、预算控制、Redis-backed durable async Agent Run、PostgreSQL 权威状态和 worker/Docker 接线。
 - `feature-agent-trace-timeline.md`
   - 说明 issue #11 的统一 trace 时间线、不可变 run manifest、安全详情与后台观测入口。
 - `feature-remote-business-tools.md`
